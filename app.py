@@ -12,7 +12,7 @@ import streamlit as st
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.2.0-alpha"
+APP_VERSION = "0.2.1-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -38,6 +38,13 @@ st.set_page_config(
 st.markdown(
     """
     <style>
+    @font-face {
+        font-family: 'ManropeMSL';
+        src: url('app/static/fonts/Manrope-ExtraBold.ttf');
+        font-weight: 800 900;
+        font-display: swap;
+    }
+
     :root {
         --am-green: #00A392;
         --am-green-aston: #00524B;
@@ -122,6 +129,7 @@ st.markdown(
 
     .brand-title {
         color: var(--am-lime);
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif;
         font-size: clamp(1.75rem, 4vw, 2.55rem);
         font-weight: 900;
         line-height: 1;
@@ -133,10 +141,29 @@ st.markdown(
         height: 3px;
         max-width: 330px;
     }
-    .brand-subtitle {
-        color: var(--am-text-muted);
-        font-size: .92rem;
-        margin-top: .55rem;
+    .brand-kicker {
+        color: var(--am-lime);
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif;
+        font-size: .80rem;
+        font-weight: 900;
+        letter-spacing: .16em;
+        margin-bottom: .45rem;
+        text-transform: uppercase;
+    }
+
+    .accent-callout {
+        background: linear-gradient(135deg, rgba(206,220,0,.13), rgba(0,163,146,.08));
+        border: 1px solid rgba(206,220,0,.42);
+        border-left: 4px solid var(--am-lime);
+        border-radius: 14px;
+        color: var(--am-text);
+        margin: .65rem 0 1rem;
+        padding: .78rem 1rem;
+    }
+    .accent-callout strong {
+        color: var(--am-lime);
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif;
+        font-weight: 900;
     }
 
     .source-card, .placeholder-card {
@@ -150,8 +177,14 @@ st.markdown(
         padding: 1.2rem 1.25rem;
     }
     .source-card { min-height: 185px; }
-    .source-card h3, .placeholder-card h3 {
+    .source-card h3 {
         color: var(--am-text);
+        margin: .45rem 0 .5rem;
+    }
+    .placeholder-card h3 {
+        color: var(--am-lime);
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif;
+        font-weight: 900;
         margin: .45rem 0 .5rem;
     }
     .source-card p, .placeholder-card p {
@@ -249,18 +282,22 @@ def header() -> None:
         else:
             st.markdown("## 🎬")
     with title_col:
-        st.markdown('<div class="brand-title">Media Smart Lists</div>', unsafe_allow_html=True)
-        st.markdown('<div class="brand-rule"></div>', unsafe_allow_html=True)
         st.markdown(
-            '<div class="brand-subtitle">Un seul tableau de bord · plusieurs sources</div>',
+            '<div class="brand-kicker">Un seul tableau de bord · plusieurs sources</div>',
             unsafe_allow_html=True,
         )
+        st.markdown('<div class="brand-title">Media Smart Lists</div>', unsafe_allow_html=True)
+        st.markdown('<div class="brand-rule"></div>', unsafe_allow_html=True)
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
 
 
 def page_dashboard() -> None:
     st.subheader("🏠 Tableau de bord")
-    st.caption("Choisis d'abord une source. Aucun identifiant ni fichier n'est encore envoyé.")
+    st.markdown(
+        '<div class="accent-callout"><strong>CHOISIS TA SOURCE</strong> · '
+        'Aucun identifiant ni fichier n’est encore envoyé.</div>',
+        unsafe_allow_html=True,
+    )
     mdb_col, zip_col = st.columns(2, gap="large")
     with mdb_col:
         st.markdown(
@@ -290,9 +327,17 @@ def page_dashboard() -> None:
             st.session_state["pending_source"] = "trakt_zip"
 
     if st.session_state.get("pending_source") == "mdblist":
-        st.info("✅ Source MDBList sélectionnée. Le connecteur sera ajouté à l'étape suivante.")
+        st.markdown(
+            '<div class="accent-callout"><strong>✓ MDBLIST SÉLECTIONNÉ</strong> · '
+            'Le connecteur sera ajouté à l’étape suivante.</div>',
+            unsafe_allow_html=True,
+        )
     elif st.session_state.get("pending_source") == "trakt_zip":
-        st.info("✅ Source ZIP Trakt sélectionnée. Le parseur sera ajouté progressivement.")
+        st.markdown(
+            '<div class="accent-callout"><strong>✓ ZIP TRAKT SÉLECTIONNÉ</strong> · '
+            'Le parseur sera ajouté progressivement.</div>',
+            unsafe_allow_html=True,
+        )
 
     st.divider()
     st.markdown("### Aperçu des possibilités conservées")
@@ -322,7 +367,11 @@ def placeholder(page: str) -> None:
         """,
         unsafe_allow_html=True,
     )
-    st.info("Aucune donnée distante n'est appelée à cette étape du refactor.")
+    st.markdown(
+        '<div class="accent-callout"><strong>MODE SÛR</strong> · '
+        'Aucune donnée distante n’est appelée à cette étape du refactor.</div>',
+        unsafe_allow_html=True,
+    )
 
 
 page = navigation()
