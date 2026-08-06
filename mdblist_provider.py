@@ -1,0 +1,205 @@
+"""Lecture fournisseur-neutre des données MDBList.
+
+Aucune écriture. Les réponses restent uniquement dans st.session_state via app.py.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+
+import requests
+
+
+API_BASE = "https://api.mdblist.com"
+USER_AGENT = "Media-Smart-Lists/0.6"
+TIMEOUT = 35
+PAGE_LIMIT = 5000
+
+
+class MDBListReadError(RuntimeError):
+    pass
+
+
+class MDBListProvider:
+    def __init__(self, access_token: str):
+        if not access_token:
+            raise ValueError("Access token MDBList absent")
+        self.headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "User-Agent": USER_AGENT,
+        }
+        self.request_count = 0
+        self.rate_limit_remaining: int | None = None
+
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        try:
+            response = requests.get(
+                f"{API_BASE}{path}",
+                params=params or {},
+                headers=self.headers,
+                timeout=TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            raise MDBListReadError(f"Réseau indisponible pour {path}") from exc
+        self.request_count += 1
+        remaining = response.headers.get("X-RateLimit-Remaining") or response.headers.get("X-Rate-Limit-Remaining")
+        if remaining and str(remaining).isdigit():
+            self.rate_limit_remaining = int(remaining)
+        if response.status_code == 401:
+            raise MDBListReadError("Session MDBList expirée ou révoquée")
+        if response.status_code >= 400:
+            raise MDBListReadError(f"MDBList a répondu HTTP {response.status_code} pour {path}")
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise MDBListReadError(f"Réponse JSON invalide pour {path}") from exc
+
+    def _paged_dict(
+        self,
+        path: str,
+        keys: tuple[str, ...],
+        extra_params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        merged = {key: [] for key in keys}
+        offset = 0
+        pages = 0
+        last_pagination: dict[str, Any] = {}
+        while True:
+            params = {"limit": PAGE_LIMIT, "offset": offset}
+            params.update(extra_params or {})
+            response = self._get(path, params)
+            if not isinstance(response, dict):
+                raise MDBListReadError(f"Format paginé inattendu pour {path}")
+            pages += 1
+            for key in keys:
+                values = response.get(key) or []
+                if isinstance(values, list):
+                    merged[key].extend(values)
+            pagination = response.get("pagination") or {}
+            last_pagination = pagination if isinstance(pagination, dict) else {}
+            if not last_pagination.get("has_more"):
+                break
+            offset += PAGE_LIMIT
+            if pages >= 100:
+                raise MDBListReadError(f"Pagination anormalement longue pour {path}")
+        merged["pagination"] = last_pagination
+        merged["pages"] = pages
+        return merged
+
+    def watched(self) -> dict[str, Any]:
+        return self._paged_dict(
+            "/sync/watched",
+            ("movies", "shows", "seasons", "episodes"),
+        )
+
+    def ratings(self) -> dict[str, Any]:
+        return self._paged_dict(
+            "/sync/ratings",
+            ("movies", "shows", "seasons", "episodes"),
+        )
+
+    def watchlist(self) -> dict[str, Any]:
+        return self._paged_dict(
+            "/watchlist/items",
+            ("movies", "shows"),
+            {
+                "append_to_response": "genres,poster,description,ratings",
+                "unified": "false",
+            },
+        )
+
+    def dropped(self) -> dict[str, Any]:
+        return self._paged_dict(
+            "/sync/dropped",
+            ("shows",),
+        )
+
+    def playback(self) -> list[dict[str, Any]]:
+        response = self._get("/sync/playback")
+        if isinstance(response, list):
+            return response
+        if isinstance(response, dict):
+            values = response.get("items") or response.get("playback") or []
+            return values if isinstance(values, list) else []
+        return []
+
+    def upnext(self) -> list[dict[str, Any]]:
+        all_items: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            response = self._get("/upnext", {"limit": 100, "offset": offset})
+            if not isinstance(response, dict):
+                break
+            values = response.get("items") or []
+            if isinstance(values, list):
+                all_items.extend(values)
+            if not response.get("has_more"):
+                break
+            offset += 100
+            if offset >= 10000:
+                break
+        return all_items
+
+    def static_lists(self) -> list[dict[str, Any]]:
+        response = self._get("/lists/user", {"unified": "false"})
+        if not isinstance(response, list):
+            raise MDBListReadError("Format des listes utilisateur inattendu")
+        static = [
+            item for item in response
+            if isinstance(item, dict)
+            and (item.get("type") == "static" or item.get("dynamic") is False)
+        ]
+        output: list[dict[str, Any]] = []
+        for metadata in static:
+            list_id = metadata.get("id")
+            if list_id is None:
+                continue
+            items = self._paged_dict(
+                f"/lists/{list_id}/items",
+                ("movies", "shows"),
+                {
+                    "append_to_response": "genres,poster,description,ratings",
+                    "unified": "false",
+                },
+            )
+            output.append(
+                {
+                    "id": list_id,
+                    "name": metadata.get("name") or "Liste MDBList",
+                    "private": metadata.get("private"),
+                    "movies": items["movies"],
+                    "shows": items["shows"],
+                    "pages": items["pages"],
+                }
+            )
+        return output
+
+    def load_dataset(self) -> dict[str, Any]:
+        sections: dict[str, Any] = {}
+        errors: list[dict[str, str]] = []
+        loaders = (
+            ("watched", self.watched),
+            ("watchlist", self.watchlist),
+            ("static_lists", self.static_lists),
+            ("ratings", self.ratings),
+            ("playback", self.playback),
+            ("upnext", self.upnext),
+            ("dropped", self.dropped),
+        )
+        for name, loader in loaders:
+            try:
+                sections[name] = loader()
+            except MDBListReadError as exc:
+                errors.append({"section": name, "error": str(exc)})
+                sections[name] = [] if name in {"static_lists", "playback", "upnext"} else {}
+        return {
+            "provider": "mdblist",
+            "mode": "realtime",
+            "loaded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "sections": sections,
+            "errors": errors,
+            "request_count": self.request_count,
+            "rate_limit_remaining": self.rate_limit_remaining,
+        }

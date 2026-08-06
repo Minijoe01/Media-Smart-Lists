@@ -27,7 +27,7 @@ DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 COOKIE_NAME = "media_smart_lists_mdblist_oauth_v1"
 COOKIE_DAYS = 365
 REQUEST_TIMEOUT = 20
-USER_AGENT = "Media-Smart-Lists/0.5.1"
+USER_AGENT = "Media-Smart-Lists/0.6"
 
 ACCESS_KEY = "_mdblist_access_token"
 REFRESH_KEY = "_mdblist_refresh_token"

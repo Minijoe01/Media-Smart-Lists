@@ -14,10 +14,11 @@ import streamlit as st
 from streamlit_cookies_controller import CookieController
 
 import mdblist_oauth as mdb_oauth
+from mdblist_provider import MDBListProvider
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.5.1-alpha"
+APP_VERSION = "0.6.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -216,6 +217,29 @@ st.markdown(
     .source-card p, .placeholder-card p {
         color: var(--am-text-muted);
     }
+    .media-list-card {
+        background: rgba(8, 55, 50, .62);
+        border: 1px solid var(--am-border);
+        border-left: 3px solid var(--am-green);
+        border-radius: 13px;
+        color: var(--am-text);
+        margin: .45rem 0;
+        padding: .78rem .92rem;
+    }
+    .media-list-card strong {
+        color: var(--am-text);
+        font-weight: 700;
+    }
+    .media-list-card span {
+        color: var(--am-text-muted);
+    }
+    .media-list-card small {
+        color: var(--am-text-muted);
+        display: block;
+        font-size: .78rem;
+        margin-top: .28rem;
+    }
+
     .source-badge {
         background: rgba(206,220,0,.12);
         border: 1px solid rgba(206,220,0,.42);
@@ -229,6 +253,7 @@ st.markdown(
 
     /* Boutons historiques : verre vert, sans ombre. */
     .stButton > button,
+    div[data-testid="stButton"] > button,
     div[data-testid="stDownloadButton"] > button,
     div[data-testid="stFormSubmitButton"] > button {
         background: rgba(5, 38, 34, 0.75) !important;
@@ -243,19 +268,22 @@ st.markdown(
         width: 100% !important;
     }
     .stButton > button:hover,
+    div[data-testid="stButton"] > button:hover,
     div[data-testid="stDownloadButton"] > button:hover,
     div[data-testid="stFormSubmitButton"] > button:hover {
         background: rgba(8, 55, 50, 0.85) !important;
         border-color: rgba(0,163,146,0.50) !important;
         box-shadow: none !important;
     }
-    .stButton > button[kind="primary"] {
+    .stButton > button[kind="primary"],
+    div[data-testid="stButton"] > button[kind="primary"] {
         background: linear-gradient(135deg, var(--am-green), var(--am-green-aston)) !important;
         border: none !important;
         color: #fff !important;
         font-weight: 700 !important;
     }
-    .stButton > button[kind="primary"]:hover {
+    .stButton > button[kind="primary"]:hover,
+    div[data-testid="stButton"] > button[kind="primary"]:hover {
         background: linear-gradient(135deg, #00B8A5, #006058) !important;
     }
 
@@ -375,12 +403,12 @@ def _render_connected_mdblist() -> None:
     )
     refresh_col, disconnect_col = st.columns(2)
     with refresh_col:
-        if st.button("Actualiser les compteurs", key="refresh_mdblist_summary"):
+        if st.button("Actualiser les compteurs", type="primary", key="refresh_mdblist_summary"): 
             with st.spinner("Actualisation MDBList…"):
                 mdb_oauth.load_account_summary(cookies)
             st.rerun()
     with disconnect_col:
-        if st.button("Se déconnecter de MDBList", key="disconnect_mdblist"):
+        if st.button("Se déconnecter de MDBList", type="primary", key="disconnect_mdblist"): 
             with st.spinner("Déconnexion et révocation MDBList…"):
                 mdb_oauth.disconnect(cookies)
             st.session_state["pending_source"] = "mdblist"
@@ -389,8 +417,10 @@ def _render_connected_mdblist() -> None:
 
 def _render_device_flow(flow: dict) -> None:
     complete_url = str(flow.get("verification_uri_complete") or "")
+    verification_uri = str(flow.get("verification_uri") or "https://mdblist.com/oauth/device/")
     user_code = str(flow.get("user_code") or "")
     safe_url = escape(complete_url, quote=True)
+    safe_verification_uri = escape(verification_uri, quote=True)
     safe_code = escape(user_code)
 
     left, right = st.columns(2, gap="large")
@@ -403,6 +433,13 @@ def _render_device_flow(flow: dict) -> None:
             unsafe_allow_html=True,
         )
         st.caption("Sur ce navigateur ou n’importe quel autre appareil.")
+        st.markdown(
+            f'<div class="accent-callout"><strong>SANS SMARTPHONE</strong> · '
+            f'Ouvre <a href="{safe_verification_uri}" target="_blank" rel="noopener noreferrer" '
+            f'style="color:#CEDC00;font-weight:700;">{safe_verification_uri}</a> '
+            'depuis un navigateur, puis saisis le code ci-dessous.</div>',
+            unsafe_allow_html=True,
+        )
         st.markdown(
             f'<div class="accent-callout"><strong>CODE MDBLIST</strong> · '
             f'<span style="color:#CEDC00;font-size:1.18rem;font-weight:800;letter-spacing:3px;">'
@@ -486,6 +523,276 @@ def render_mdblist_connector() -> None:
             )
 
 
+def _dataset() -> dict:
+    value = st.session_state.get("_normalized_dataset")
+    return value if isinstance(value, dict) else {}
+
+
+def _sections() -> dict:
+    value = _dataset().get("sections")
+    return value if isinstance(value, dict) else {}
+
+
+def _media_title(item: dict) -> str:
+    if not isinstance(item, dict):
+        return "Titre inconnu"
+    for key in ("title", "name"):
+        if item.get(key):
+            return str(item[key])
+    for key in ("movie", "show", "episode"):
+        nested = item.get(key)
+        if isinstance(nested, dict):
+            return str(nested.get("title") or nested.get("name") or "Titre inconnu")
+    return "Titre inconnu"
+
+
+def _media_year(item: dict) -> str:
+    if not isinstance(item, dict):
+        return ""
+    value = item.get("release_year") or item.get("year")
+    if value:
+        return str(value)
+    for key in ("movie", "show"):
+        nested = item.get(key)
+        if isinstance(nested, dict) and nested.get("year"):
+            return str(nested["year"])
+    return ""
+
+
+def _genres(item: dict) -> list[str]:
+    values = item.get("genres") if isinstance(item, dict) else []
+    if not values:
+        for key in ("movie", "show"):
+            nested = item.get(key) if isinstance(item, dict) else None
+            if isinstance(nested, dict) and nested.get("genres"):
+                values = nested["genres"]
+                break
+    output = []
+    for value in values or []:
+        if isinstance(value, dict):
+            value = value.get("name") or value.get("slug")
+        if value:
+            output.append(str(value).strip().title())
+    return sorted(set(output))
+
+
+def load_mdblist_dataset() -> None:
+    valid, message = mdb_oauth.ensure_valid_session(cookies)
+    if not valid:
+        st.markdown(
+            f'<div class="accent-callout"><strong>SESSION INDISPONIBLE</strong> · '
+            f'{escape(message or "Reconnecte MDBList.")}</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    try:
+        provider = MDBListProvider(mdb_oauth.access_token())
+        data = provider.load_dataset()
+    except Exception:
+        st.markdown(
+            '<div class="accent-callout"><strong>LECTURE IMPOSSIBLE</strong> · '
+            'MDBList n’a pas pu charger les données pour le moment.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    st.session_state["_normalized_dataset"] = data
+    account = mdb_oauth.account_summary()
+    if data.get("rate_limit_remaining") is not None and account:
+        account["rate_limit_remaining"] = data["rate_limit_remaining"]
+        st.session_state[mdb_oauth.ACCOUNT_KEY] = account
+        mdb_oauth.persist_cookie(cookies)
+
+
+def render_data_loader() -> None:
+    if not mdb_oauth.is_connected():
+        return
+    data = _dataset()
+    label = "Actualiser mes données MDBList" if data else "Charger mes données MDBList"
+    if st.button(label, type="primary", key="load_mdblist_dataset"):
+        with st.spinner("Chargement MDBList en lecture seule…"):
+            load_mdblist_dataset()
+        st.rerun()
+    if data:
+        errors = data.get("errors") or []
+        request_count = data.get("request_count", 0)
+        loaded_at = str(data.get("loaded_at") or "").replace("T", " ").replace("Z", " UTC")
+        st.caption(f"Données chargées : {loaded_at} · {request_count} requête(s) API")
+        if errors:
+            st.markdown(
+                f'<div class="accent-callout"><strong>CHARGEMENT PARTIEL</strong> · '
+                f'{len(errors)} section(s) indisponible(s). Les autres restent utilisables.</div>',
+                unsafe_allow_html=True,
+            )
+
+
+def render_dataset_overview() -> None:
+    sections = _sections()
+    if not sections:
+        return
+    watched = sections.get("watched") or {}
+    watchlist = sections.get("watchlist") or {}
+    ratings = sections.get("ratings") or {}
+    lists = sections.get("static_lists") or []
+    playback = sections.get("playback") or []
+    dropped = sections.get("dropped") or {}
+
+    first = st.columns(4)
+    first[0].metric("Films vus", len(watched.get("movies") or []))
+    first[1].metric("Épisodes vus", len(watched.get("episodes") or []))
+    first[2].metric(
+        "Watchlist",
+        len(watchlist.get("movies") or []) + len(watchlist.get("shows") or []),
+    )
+    first[3].metric("Listes statiques", len(lists))
+
+    second = st.columns(4)
+    second[0].metric(
+        "Notes",
+        sum(len(ratings.get(key) or []) for key in ("movies", "shows", "seasons", "episodes")),
+    )
+    second[1].metric("Reprises", len(playback))
+    second[2].metric("Séries abandonnées", len(dropped.get("shows") or []))
+    second[3].metric("Up Next", len(sections.get("upnext") or []))
+
+
+def render_watchlist_page() -> None:
+    st.markdown('<div class="page-title">🎯 Que regarder ?</div>', unsafe_allow_html=True)
+    sections = _sections()
+    watchlist = sections.get("watchlist") or {}
+    items = list(watchlist.get("movies") or []) + list(watchlist.get("shows") or [])
+    if not items:
+        st.markdown(
+            '<div class="accent-callout"><strong>WATCHLIST NON CHARGÉE</strong> · '
+            'Connecte MDBList puis charge les données depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    all_genres = sorted({genre for item in items for genre in _genres(item)})
+    filter_col, type_col, limit_col = st.columns(3)
+    genre = filter_col.selectbox("Genre", ["Tous"] + all_genres, key="watchlist_genre")
+    media_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
+    display_limit = limit_col.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
+
+    filtered = []
+    for item in items:
+        if genre != "Tous" and genre not in _genres(item):
+            continue
+        item_type = str(item.get("mediatype") or "")
+        if media_type == "Films" and item_type not in {"movie", "movies"}:
+            continue
+        if media_type == "Séries" and item_type not in {"show", "tv", "series"}:
+            continue
+        filtered.append(item)
+
+    st.markdown(
+        f'<div class="accent-callout"><strong>{len(filtered)} RÉSULTAT(S)</strong> · '
+        'Filtrage local de la Watchlist MDBList, sans appel API supplémentaire.</div>',
+        unsafe_allow_html=True,
+    )
+    columns = st.columns(2)
+    for index, item in enumerate(filtered[:display_limit]):
+        title = escape(_media_title(item))
+        year = escape(_media_year(item))
+        genres = escape(" · ".join(_genres(item)) or "Genres indisponibles")
+        with columns[index % 2]:
+            st.markdown(
+                f'<div class="media-list-card"><strong>{title}</strong>'
+                f'<span>{(" (" + year + ")") if year else ""}</span>'
+                f'<small>{genres}</small></div>',
+                unsafe_allow_html=True,
+            )
+    if len(filtered) > display_limit:
+        st.caption(f"{len(filtered) - display_limit} résultat(s) supplémentaire(s) masqué(s).")
+
+
+def render_progress_page() -> None:
+    st.markdown('<div class="page-title">▶️ En cours de lecture</div>', unsafe_allow_html=True)
+    sections = _sections()
+    playback = sections.get("playback") or []
+    upnext = sections.get("upnext") or []
+    dropped = (sections.get("dropped") or {}).get("shows") or []
+    if not _dataset():
+        st.markdown(
+            '<div class="accent-callout"><strong>DONNÉES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    cols = st.columns(3)
+    cols[0].metric("Points de reprise", len(playback))
+    cols[1].metric("Prochains épisodes", len(upnext))
+    cols[2].metric("Séries abandonnées", len(dropped))
+
+    st.markdown("### Prochains épisodes")
+    if not upnext:
+        st.caption("Aucun épisode Up Next disponible.")
+    for item in upnext[:20]:
+        show = item.get("show") or {}
+        episode = item.get("next_episode") or {}
+        title = escape(str(show.get("title") or "Série"))
+        season = episode.get("season")
+        number = episode.get("episode")
+        ep_title = escape(str(episode.get("title") or ""))
+        st.markdown(
+            f'<div class="media-list-card"><strong>{title}</strong>'
+            f'<span> · S{int(season or 0):02d}E{int(number or 0):02d}</span>'
+            f'<small>{ep_title}</small></div>',
+            unsafe_allow_html=True,
+        )
+
+    if dropped:
+        st.markdown("### Séries abandonnées")
+        st.caption("Statut MDBList Dropped — lecture seule dans cette étape.")
+        for item in dropped[:30]:
+            st.markdown(
+                f'<div class="media-list-card"><strong>{escape(_media_title(item))}</strong></div>',
+                unsafe_allow_html=True,
+            )
+
+
+def render_static_lists_page() -> None:
+    st.markdown('<div class="page-title">🧹 Nettoyage des listes</div>', unsafe_allow_html=True)
+    lists = _sections().get("static_lists") or []
+    if not lists:
+        st.markdown(
+            '<div class="accent-callout"><strong>LISTES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    st.markdown(
+        '<div class="accent-callout"><strong>LECTURE SEULE</strong> · '
+        'Aucune suppression ou modification de liste à cette étape.</div>',
+        unsafe_allow_html=True,
+    )
+    for item in lists:
+        movies = item.get("movies") or []
+        shows = item.get("shows") or []
+        st.markdown(
+            f'<div class="media-list-card"><strong>{escape(str(item.get("name") or "Liste"))}</strong>'
+            f'<small>{len(movies)} film(s) · {len(shows)} série(s)</small></div>',
+            unsafe_allow_html=True,
+        )
+
+
+def render_basic_stats_page() -> None:
+    st.markdown('<div class="page-title">📊 Statistiques</div>', unsafe_allow_html=True)
+    if not _dataset():
+        st.markdown(
+            '<div class="accent-callout"><strong>STATISTIQUES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    render_dataset_overview()
+    st.markdown(
+        '<div class="accent-callout"><strong>PREMIÈRE BASE MDBLIST</strong> · '
+        'Les graphiques, filtres temporels et statistiques legacy seront reconnectés progressivement.</div>',
+        unsafe_allow_html=True,
+    )
+
+
 def page_dashboard() -> None:
     st.markdown('<div class="page-title">🏠 Tableau de bord</div>', unsafe_allow_html=True)
     if not st.session_state.get("pending_source") and not mdb_oauth.is_connected():
@@ -533,6 +840,12 @@ def page_dashboard() -> None:
             unsafe_allow_html=True,
         )
 
+    if mdb_oauth.is_connected():
+        st.divider()
+        st.markdown('<div class="page-title">📥 Données MDBList</div>', unsafe_allow_html=True)
+        render_data_loader()
+        render_dataset_overview()
+
     st.divider()
     st.markdown("### Aperçu des possibilités conservées")
     cols = st.columns(4)
@@ -578,6 +891,14 @@ page = navigation()
 header()
 if page == "🏠 Tableau de bord":
     page_dashboard()
+elif page == "▶️ En cours de lecture":
+    render_progress_page()
+elif page == "🧹 Nettoyage des listes":
+    render_static_lists_page()
+elif page == "🎯 Que regarder ?":
+    render_watchlist_page()
+elif page == "📊 Statistiques":
+    render_basic_stats_page()
 else:
     placeholder(page)
 
