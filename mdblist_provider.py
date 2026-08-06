@@ -12,7 +12,7 @@ import requests
 
 
 API_BASE = "https://api.mdblist.com"
-USER_AGENT = "Media-Smart-Lists/0.6"
+USER_AGENT = "Media-Smart-Lists/0.6.1"
 TIMEOUT = 35
 PAGE_LIMIT = 5000
 
@@ -100,15 +100,38 @@ class MDBListProvider:
             ("movies", "shows", "seasons", "episodes"),
         )
 
-    def watchlist(self) -> dict[str, Any]:
+    def watchlist(self, filter_genre: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "append_to_response": "genres,poster,description,ratings",
+            "unified": "false",
+        }
+        if filter_genre:
+            params["filter_genre"] = filter_genre
         return self._paged_dict(
             "/watchlist/items",
             ("movies", "shows"),
-            {
-                "append_to_response": "genres,poster,description,ratings",
-                "unified": "false",
-            },
+            params,
         )
+
+    def genres(self) -> list[dict[str, str]]:
+        response = self._get("/genres")
+        values = response if isinstance(response, list) else (
+            response.get("genres") if isinstance(response, dict) else []
+        )
+        output: list[dict[str, str]] = []
+        for value in values or []:
+            if isinstance(value, str):
+                slug = value.strip().lower()
+                title = value.strip().title()
+            elif isinstance(value, dict):
+                slug = str(value.get("slug") or value.get("name") or "").strip().lower()
+                title = str(value.get("title") or value.get("name") or slug).strip().title()
+            else:
+                continue
+            if slug:
+                output.append({"slug": slug, "title": title or slug.title()})
+        unique = {item["slug"]: item for item in output}
+        return sorted(unique.values(), key=lambda item: item["title"].casefold())
 
     def dropped(self) -> dict[str, Any]:
         return self._paged_dict(
@@ -182,6 +205,7 @@ class MDBListProvider:
         loaders = (
             ("watched", self.watched),
             ("watchlist", self.watchlist),
+            ("genres", self.genres),
             ("static_lists", self.static_lists),
             ("ratings", self.ratings),
             ("playback", self.playback),
@@ -193,7 +217,7 @@ class MDBListProvider:
                 sections[name] = loader()
             except MDBListReadError as exc:
                 errors.append({"section": name, "error": str(exc)})
-                sections[name] = [] if name in {"static_lists", "playback", "upnext"} else {}
+                sections[name] = [] if name in {"genres", "static_lists", "playback", "upnext"} else {}
         return {
             "provider": "mdblist",
             "mode": "realtime",
