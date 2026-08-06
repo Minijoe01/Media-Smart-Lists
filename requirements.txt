@@ -1,0 +1,9 @@
+streamlit==1.60.0
+requests
+pandas
+openpyxl
+qrcode
+pillow
+streamlit-cookies-controller
+streamlit-echarts
+pytz
