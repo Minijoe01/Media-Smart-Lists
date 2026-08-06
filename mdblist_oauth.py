@@ -1,7 +1,8 @@
 """OAuth Device Code MDBList avec persistance chiffrée côté navigateur.
 
-Le navigateur ne reçoit jamais le refresh token en clair. Il conserve seulement
-un blob Fernet chiffré et authentifié. L'access token reste dans st.session_state.
+Le navigateur ne reçoit jamais les tokens en clair. Il conserve seulement
+un blob Fernet chiffré et authentifié. La session active utilise st.session_state ;
+le blob contient aussi un access token non expiré et un résumé pour le retour instantané.
 """
 
 from __future__ import annotations
@@ -26,7 +27,7 @@ DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 COOKIE_NAME = "media_smart_lists_mdblist_oauth_v1"
 COOKIE_DAYS = 365
 REQUEST_TIMEOUT = 20
-USER_AGENT = "Media-Smart-Lists/0.5"
+USER_AGENT = "Media-Smart-Lists/0.5.1"
 
 ACCESS_KEY = "_mdblist_access_token"
 REFRESH_KEY = "_mdblist_refresh_token"
@@ -73,23 +74,59 @@ def _safe_json(response: requests.Response) -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def _encrypt_refresh_token(refresh_token: str) -> str:
-    payload = json.dumps(
-        {"version": 1, "refresh_token": refresh_token},
-        separators=(",", ":"),
-    ).encode("utf-8")
+def _current_cookie_bundle() -> dict[str, Any]:
+    """Bundle chiffré v2 : tokens + résumé non sensible pour affichage instantané."""
+    return {
+        "version": 2,
+        "access_token": str(st.session_state.get(ACCESS_KEY) or ""),
+        "refresh_token": str(st.session_state.get(REFRESH_KEY) or ""),
+        "expires_at": int(st.session_state.get(EXPIRES_KEY) or 0),
+        "account": account_summary(),
+        "lists": lists_summary(),
+    }
+
+
+def _encrypt_bundle(bundle: dict[str, Any]) -> str:
+    payload = json.dumps(bundle, separators=(",", ":")).encode("utf-8")
     return _fernet().encrypt(payload).decode("ascii")
 
 
-def _decrypt_refresh_token(value: str) -> str:
+def _decrypt_bundle(value: str) -> dict[str, Any]:
     try:
         payload = _fernet().decrypt(value.encode("ascii"))
         data = json.loads(payload.decode("utf-8"))
     except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
-        return ""
-    if not isinstance(data, dict) or data.get("version") != 1:
-        return ""
-    return str(data.get("refresh_token") or "")
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    # Compatibilité avec le cookie v1 déjà installé : refresh token seul.
+    if data.get("version") == 1:
+        return {
+            "version": 1,
+            "refresh_token": str(data.get("refresh_token") or ""),
+        }
+    if data.get("version") != 2:
+        return {}
+    return data
+
+
+def _restore_bundle_to_session(bundle: dict[str, Any]) -> None:
+    access = str(bundle.get("access_token") or "")
+    refresh_token = str(bundle.get("refresh_token") or "")
+    if access:
+        st.session_state[ACCESS_KEY] = access
+    if refresh_token:
+        st.session_state[REFRESH_KEY] = refresh_token
+    try:
+        expires_at = int(bundle.get("expires_at") or 0)
+    except (TypeError, ValueError):
+        expires_at = 0
+    if expires_at:
+        st.session_state[EXPIRES_KEY] = expires_at
+    if isinstance(bundle.get("account"), dict) and bundle["account"]:
+        st.session_state[ACCOUNT_KEY] = bundle["account"]
+    if isinstance(bundle.get("lists"), dict) and bundle["lists"]:
+        st.session_state[LISTS_KEY] = bundle["lists"]
 
 
 def _clear_session() -> None:
@@ -107,13 +144,14 @@ def _clear_session() -> None:
         st.session_state.pop(key, None)
 
 
-def _set_cookie(cookies: Any, refresh_token: str) -> bool:
-    if not refresh_token:
+def persist_cookie(cookies: Any) -> bool:
+    bundle = _current_cookie_bundle()
+    if not bundle.get("refresh_token"):
         return False
     try:
         cookies.set(
             COOKIE_NAME,
-            _encrypt_refresh_token(refresh_token),
+            _encrypt_bundle(bundle),
             expires=datetime.now() + timedelta(days=COOKIE_DAYS),
         )
         return True
@@ -144,7 +182,7 @@ def save_tokens(cookies: Any, token_data: dict[str, Any]) -> bool:
     st.session_state[ACCESS_KEY] = access_token
     st.session_state[REFRESH_KEY] = refresh_token
     st.session_state[EXPIRES_KEY] = int(time.time()) + max(expires_in, 60)
-    return _set_cookie(cookies, refresh_token)
+    return persist_cookie(cookies)
 
 
 def is_connected() -> bool:
@@ -278,10 +316,17 @@ def ensure_valid_session(cookies: Any) -> tuple[bool, str]:
         except Exception:
             encrypted_cookie = ""
         if encrypted_cookie:
-            refresh_token = _decrypt_refresh_token(encrypted_cookie)
-            if not refresh_token:
+            bundle = _decrypt_bundle(encrypted_cookie)
+            if not bundle:
                 _remove_cookie(cookies)
                 return False, "La connexion mémorisée est illisible et a été supprimée."
+            _restore_bundle_to_session(bundle)
+            token = access_token()
+            expires_at = int(st.session_state.get(EXPIRES_KEY) or 0)
+            # Chemin rapide : aucun appel réseau tant que l'access token est valide.
+            if token and expires_at and time.time() < expires_at - 300:
+                return True, "Connexion MDBList restaurée instantanément."
+            refresh_token = str(st.session_state.get(REFRESH_KEY) or "")
 
     if not refresh_token:
         return False, ""
@@ -300,7 +345,7 @@ def ensure_valid_session(cookies: Any) -> tuple[bool, str]:
     return False, message
 
 
-def load_account_summary() -> tuple[bool, str]:
+def load_account_summary(cookies: Any | None = None) -> tuple[bool, str]:
     token = access_token()
     if not token:
         return False, "Access token MDBList absent."
@@ -351,6 +396,8 @@ def load_account_summary() -> tuple[bool, str]:
         "static": static_count,
         "dynamic": dynamic_count,
     }
+    if cookies is not None:
+        persist_cookie(cookies)
     return True, "Compte MDBList chargé."
 
 

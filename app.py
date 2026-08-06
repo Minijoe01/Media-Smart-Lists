@@ -17,7 +17,7 @@ import mdblist_oauth as mdb_oauth
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.5.0-alpha"
+APP_VERSION = "0.5.1-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -343,7 +343,7 @@ def _render_connected_mdblist() -> None:
     account = mdb_oauth.account_summary()
     lists_summary = mdb_oauth.lists_summary()
     if not account:
-        loaded, message = mdb_oauth.load_account_summary()
+        loaded, message = mdb_oauth.load_account_summary(cookies)
         if not loaded:
             st.markdown(
                 f'<div class="accent-callout"><strong>CONNEXION ACTIVE</strong> · {escape(message)}</div>',
@@ -370,13 +370,21 @@ def _render_connected_mdblist() -> None:
     cols[3].metric("Limite de listes", account.get("list_limit") or "—")
     st.caption(
         f"Listes statiques : {lists_summary.get('static', 0)} · "
-        f"dynamiques : {lists_summary.get('dynamic', 0)}"
+        f"dynamiques : {lists_summary.get('dynamic', 0)} · "
+        "valeurs conservées pour une reconnexion instantanée"
     )
-    if st.button("Se déconnecter de MDBList", key="disconnect_mdblist"):
-        with st.spinner("Déconnexion et révocation MDBList…"):
-            mdb_oauth.disconnect(cookies)
-        st.session_state["pending_source"] = "mdblist"
-        st.rerun()
+    refresh_col, disconnect_col = st.columns(2)
+    with refresh_col:
+        if st.button("Actualiser les compteurs", key="refresh_mdblist_summary"):
+            with st.spinner("Actualisation MDBList…"):
+                mdb_oauth.load_account_summary(cookies)
+            st.rerun()
+    with disconnect_col:
+        if st.button("Se déconnecter de MDBList", key="disconnect_mdblist"):
+            with st.spinner("Déconnexion et révocation MDBList…"):
+                mdb_oauth.disconnect(cookies)
+            st.session_state["pending_source"] = "mdblist"
+            st.rerun()
 
 
 def _render_device_flow(flow: dict) -> None:
@@ -420,7 +428,7 @@ def _render_device_flow(flow: dict) -> None:
             if status == "success" and isinstance(payload, dict):
                 mdb_oauth.save_tokens(cookies, payload)
                 mdb_oauth.clear_flow()
-                mdb_oauth.load_account_summary()
+                mdb_oauth.load_account_summary(cookies)
                 st.rerun()
             if status == "slow_down":
                 interval += 5
@@ -480,11 +488,12 @@ def render_mdblist_connector() -> None:
 
 def page_dashboard() -> None:
     st.markdown('<div class="page-title">🏠 Tableau de bord</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="accent-callout"><strong>CHOISIS TA SOURCE</strong> · '
-        'Aucun identifiant ni fichier n’est encore envoyé.</div>',
-        unsafe_allow_html=True,
-    )
+    if not st.session_state.get("pending_source") and not mdb_oauth.is_connected():
+        st.markdown(
+            '<div class="accent-callout"><strong>CHOISIS TA SOURCE</strong> · '
+            'Aucun identifiant ni fichier n’est encore envoyé.</div>',
+            unsafe_allow_html=True,
+        )
     mdb_col, zip_col = st.columns(2, gap="large")
     with mdb_col:
         st.markdown(
@@ -563,7 +572,7 @@ restored, _restore_message = mdb_oauth.ensure_valid_session(cookies)
 if restored:
     st.session_state["pending_source"] = "mdblist"
     if not mdb_oauth.account_summary():
-        mdb_oauth.load_account_summary()
+        mdb_oauth.load_account_summary(cookies)
 
 page = navigation()
 header()
