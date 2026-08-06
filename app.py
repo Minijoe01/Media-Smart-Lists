@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import os
 
+import requests
 import streamlit as st
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.3.0-alpha"
+APP_VERSION = "0.4.0-alpha"
+MDBLIST_API_BASE = "https://api.mdblist.com"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -155,15 +157,36 @@ st.markdown(
         background: linear-gradient(135deg, rgba(206,220,0,.13), rgba(0,163,146,.08));
         border: 1px solid rgba(206,220,0,.42);
         border-left: 4px solid var(--am-lime);
-        border-radius: 14px;
+        border-radius: 13px;
         color: var(--am-text);
-        margin: .65rem 0 1rem;
-        padding: .78rem 1rem;
+        font-size: .88rem;
+        line-height: 1.45;
+        margin: .55rem 0 .9rem;
+        padding: .62rem .85rem;
     }
     .accent-callout strong {
         color: var(--am-lime);
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif;
-        font-weight: 900;
+        font-size: .76rem;
+        font-weight: 800;
+        letter-spacing: .09em;
+    }
+
+    .page-title {
+        color: var(--am-text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: 1.48rem;
+        font-weight: 650;
+        letter-spacing: -.025em;
+        line-height: 1.25;
+        margin: .15rem 0 .25rem;
+    }
+    .wordmark-wrap img {
+        display: block;
+        height: auto;
+        margin: 0 0 .35rem 0;
+        max-width: 100%;
+        width: min(300px, 62vw);
     }
 
     .source-card, .placeholder-card {
@@ -233,6 +256,24 @@ st.markdown(
         background: linear-gradient(135deg, #00B8A5, #006058) !important;
     }
 
+    div[data-testid="stMetric"] {
+        background: var(--am-bg-card) !important;
+        border: 1px solid var(--am-border) !important;
+        border-radius: 16px !important;
+        box-shadow: none !important;
+        min-height: 112px;
+        padding: 18px 15px !important;
+    }
+    div[data-testid="stMetricValue"] {
+        color: var(--am-text) !important;
+        font-size: 1.25rem !important;
+        font-weight: 750 !important;
+    }
+    div[data-testid="stMetricLabel"] p {
+        color: var(--am-text-muted) !important;
+        font-size: .84rem !important;
+    }
+
     div[data-testid="stAlert"] {
         background: rgba(8, 55, 50, .55) !important;
         border: 1px solid rgba(255,255,255,.08) !important;
@@ -276,20 +317,158 @@ def navigation() -> str:
 
 def header() -> None:
     wordmark_path = os.path.join("static", "wordmark.png")
-    st.markdown(
-        '<div class="brand-kicker">Un seul tableau de bord · plusieurs sources</div>',
-        unsafe_allow_html=True,
-    )
     if os.path.exists(wordmark_path):
-        st.image(wordmark_path, width=510)
+        # Même solution que l'app legacy : fichier statique servi directement,
+        # sans redimensionnement raster de st.image (plus net sur PC et mobile).
+        st.markdown(
+            "<div class='wordmark-wrap'>"
+            "<img src='app/static/wordmark.png' alt='Media Smart Lists'>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
     else:
         st.markdown('<div class="brand-title">Media Smart Lists</div>', unsafe_allow_html=True)
         st.markdown('<div class="brand-rule"></div>', unsafe_allow_html=True)
-    st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:.45rem'></div>", unsafe_allow_html=True)
+
+
+def _forget_mdblist() -> None:
+    """Efface toute donnée d'authentification MDBList de cette session."""
+    for key in (
+        "_mdblist_api_key",
+        "_mdblist_account",
+        "_mdblist_lists_summary",
+        "mdb_api_key_entry",
+    ):
+        st.session_state.pop(key, None)
+
+
+def _connect_mdblist(api_key: str) -> tuple[bool, str]:
+    """Deux GET uniquement. Ne journalise jamais la clé ni les URL finales."""
+    try:
+        user_response = requests.get(
+            f"{MDBLIST_API_BASE}/user",
+            params={"apikey": api_key},
+            headers={"Accept": "application/json", "User-Agent": "Media-Smart-Lists/0.4"},
+            timeout=20,
+        )
+    except requests.RequestException:
+        return False, "MDBList est injoignable pour le moment. Réessaie plus tard."
+
+    if user_response.status_code != 200:
+        return False, f"Connexion refusée par MDBList (HTTP {user_response.status_code})."
+
+    try:
+        account = user_response.json()
+    except ValueError:
+        return False, "Réponse MDBList illisible."
+    if not isinstance(account, dict):
+        return False, "Réponse de compte MDBList inattendue."
+
+    try:
+        lists_response = requests.get(
+            f"{MDBLIST_API_BASE}/lists/user",
+            params={"apikey": api_key, "unified": "false"},
+            headers={"Accept": "application/json", "User-Agent": "Media-Smart-Lists/0.4"},
+            timeout=20,
+        )
+    except requests.RequestException:
+        return False, "Compte reconnu, mais les listes MDBList sont temporairement injoignables."
+
+    if lists_response.status_code != 200:
+        return False, f"Compte reconnu, mais lecture des listes impossible (HTTP {lists_response.status_code})."
+    try:
+        lists = lists_response.json()
+    except ValueError:
+        return False, "Réponse des listes MDBList illisible."
+    if not isinstance(lists, list):
+        return False, "Format des listes MDBList inattendu."
+
+    static_count = sum(
+        1 for item in lists
+        if isinstance(item, dict)
+        and (item.get("type") == "static" or item.get("dynamic") is False)
+    )
+    dynamic_count = sum(
+        1 for item in lists
+        if isinstance(item, dict)
+        and (item.get("type") == "dynamic" or item.get("dynamic") is True)
+    )
+
+    # Seules les informations utiles à l'interface sont conservées.
+    st.session_state["_mdblist_api_key"] = api_key
+    st.session_state["_mdblist_account"] = {
+        "username": account.get("username") or account.get("name") or "Compte MDBList",
+        "plan": account.get("plan") or "Inconnu",
+        "rate_limit": account.get("rate_limit"),
+        "rate_limit_remaining": account.get("rate_limit_remaining"),
+        "list_limit": (account.get("limits") or {}).get("lists"),
+    }
+    st.session_state["_mdblist_lists_summary"] = {
+        "total": len(lists),
+        "static": static_count,
+        "dynamic": dynamic_count,
+    }
+    return True, "Connexion MDBList validée en lecture seule."
+
+
+def render_mdblist_connector() -> None:
+    account = st.session_state.get("_mdblist_account")
+    lists_summary = st.session_state.get("_mdblist_lists_summary") or {}
+
+    st.markdown(
+        '<div class="accent-callout"><strong>TEST EN LECTURE SEULE</strong> · '
+        'Deux requêtes GET seront effectuées : compte et listes. Aucune écriture.</div>',
+        unsafe_allow_html=True,
+    )
+
+    if account:
+        st.success(f"Connexion active pour {account['username']}.")
+        cols = st.columns(4)
+        cols[0].metric("Forfait", account.get("plan") or "—")
+        remaining = account.get("rate_limit_remaining")
+        limit = account.get("rate_limit")
+        cols[1].metric("Quota restant", f"{remaining}/{limit}" if remaining is not None and limit else "—")
+        cols[2].metric("Listes actuelles", lists_summary.get("total", 0))
+        cols[3].metric("Limite de listes", account.get("list_limit") or "—")
+        st.caption(
+            f"Listes statiques : {lists_summary.get('static', 0)} · "
+            f"dynamiques : {lists_summary.get('dynamic', 0)}"
+        )
+        st.button("Oublier immédiatement la clé MDBList", on_click=_forget_mdblist)
+        return
+
+    st.markdown(
+        '<div class="accent-callout"><strong>CONFIDENTIALITÉ</strong> · '
+        'La clé reste uniquement dans la mémoire de cette session Streamlit : '
+        'aucun cookie, aucun fichier, aucun cache et aucun journal applicatif.</div>',
+        unsafe_allow_html=True,
+    )
+    with st.form("mdblist_connection_form", clear_on_submit=False):
+        api_key = st.text_input(
+            "Clé API MDBList",
+            type="password",
+            key="mdb_api_key_entry",
+            help="Disponible dans les préférences MDBList. Ne la publie jamais sur GitHub.",
+        )
+        submitted = st.form_submit_button("Tester la connexion MDBList", type="primary")
+
+    if submitted:
+        clean_key = (api_key or "").strip()
+        if not clean_key:
+            st.error("Saisis d'abord ta clé API MDBList.")
+            return
+        with st.spinner("Vérification MDBList en lecture seule…"):
+            success, message = _connect_mdblist(clean_key)
+        if success:
+            st.session_state["mdb_connection_message"] = message
+            st.rerun()
+        else:
+            st.error(message)
 
 
 def page_dashboard() -> None:
-    st.subheader("🏠 Tableau de bord")
+    st.markdown('<div class="page-title">🏠 Tableau de bord</div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="accent-callout"><strong>CHOISIS TA SOURCE</strong> · '
         'Aucun identifiant ni fichier n’est encore envoyé.</div>',
@@ -324,15 +503,13 @@ def page_dashboard() -> None:
             st.session_state["pending_source"] = "trakt_zip"
 
     if st.session_state.get("pending_source") == "mdblist":
-        st.markdown(
-            '<div class="accent-callout"><strong>✓ MDBLIST SÉLECTIONNÉ</strong> · '
-            'Le connecteur sera ajouté à l’étape suivante.</div>',
-            unsafe_allow_html=True,
-        )
+        st.divider()
+        st.markdown('<div class="page-title">🔐 Connexion MDBList</div>', unsafe_allow_html=True)
+        render_mdblist_connector()
     elif st.session_state.get("pending_source") == "trakt_zip":
         st.markdown(
             '<div class="accent-callout"><strong>✓ ZIP TRAKT SÉLECTIONNÉ</strong> · '
-            'Le parseur sera ajouté progressivement.</div>',
+            'Le parseur sécurisé sera ajouté à l’étape suivante.</div>',
             unsafe_allow_html=True,
         )
 
@@ -351,7 +528,7 @@ def page_dashboard() -> None:
 
 
 def placeholder(page: str) -> None:
-    st.subheader(page)
+    st.markdown(f'<div class="page-title">{page}</div>', unsafe_allow_html=True)
     st.markdown(
         f"""
         <div class="placeholder-card">
