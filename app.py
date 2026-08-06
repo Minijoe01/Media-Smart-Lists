@@ -12,7 +12,7 @@ import streamlit as st
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.2.1-alpha"
+APP_VERSION = "0.3.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -275,17 +275,14 @@ def navigation() -> str:
 
 
 def header() -> None:
-    icon_col, title_col = st.columns([0.08, 0.92], vertical_alignment="center")
-    with icon_col:
-        if os.path.exists("logo.png"):
-            st.image("logo.png", width=58)
-        else:
-            st.markdown("## 🎬")
-    with title_col:
-        st.markdown(
-            '<div class="brand-kicker">Un seul tableau de bord · plusieurs sources</div>',
-            unsafe_allow_html=True,
-        )
+    wordmark_path = os.path.join("static", "wordmark.png")
+    st.markdown(
+        '<div class="brand-kicker">Un seul tableau de bord · plusieurs sources</div>',
+        unsafe_allow_html=True,
+    )
+    if os.path.exists(wordmark_path):
+        st.image(wordmark_path, width=510)
+    else:
         st.markdown('<div class="brand-title">Media Smart Lists</div>', unsafe_allow_html=True)
         st.markdown('<div class="brand-rule"></div>', unsafe_allow_html=True)
     st.markdown("<div style='height:.75rem'></div>", unsafe_allow_html=True)
@@ -323,7 +320,7 @@ def page_dashboard() -> None:
             """,
             unsafe_allow_html=True,
         )
-        if st.button("Préparer l'import ZIP Trakt", key="choose_zip"):
+        if st.button("Préparer l'import ZIP Trakt", type="primary", key="choose_zip"):
             st.session_state["pending_source"] = "trakt_zip"
 
     if st.session_state.get("pending_source") == "mdblist":
