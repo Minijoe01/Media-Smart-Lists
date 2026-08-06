@@ -7,3 +7,5 @@ pillow
 streamlit-cookies-controller
 streamlit-echarts
 pytz
+
+cryptography>=42.0.0

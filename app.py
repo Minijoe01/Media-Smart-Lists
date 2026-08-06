@@ -7,14 +7,17 @@ Aucun secret et aucun appel distant à ce stade.
 from __future__ import annotations
 
 import os
+import time
+from html import escape
 
-import requests
 import streamlit as st
+from streamlit_cookies_controller import CookieController
+
+import mdblist_oauth as mdb_oauth
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.4.0-alpha"
-MDBLIST_API_BASE = "https://api.mdblist.com"
+APP_VERSION = "0.5.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -295,6 +298,10 @@ st.markdown(
 )
 
 
+# Une seule instance par session/app, comme dans Trakt Smart Lists.
+cookies = CookieController()
+
+
 def navigation() -> str:
     if "page_active" not in st.session_state:
         st.session_state["page_active"] = PAGES[0]
@@ -332,139 +339,143 @@ def header() -> None:
     st.markdown("<div style='height:.45rem'></div>", unsafe_allow_html=True)
 
 
-def _forget_mdblist() -> None:
-    """Efface toute donnée d'authentification MDBList de cette session."""
-    for key in (
-        "_mdblist_api_key",
-        "_mdblist_account",
-        "_mdblist_lists_summary",
-        "mdb_api_key_entry",
-    ):
-        st.session_state.pop(key, None)
+def _render_connected_mdblist() -> None:
+    account = mdb_oauth.account_summary()
+    lists_summary = mdb_oauth.lists_summary()
+    if not account:
+        loaded, message = mdb_oauth.load_account_summary()
+        if not loaded:
+            st.markdown(
+                f'<div class="accent-callout"><strong>CONNEXION ACTIVE</strong> · {escape(message)}</div>',
+                unsafe_allow_html=True,
+            )
+            return
+        account = mdb_oauth.account_summary()
+        lists_summary = mdb_oauth.lists_summary()
 
-
-def _connect_mdblist(api_key: str) -> tuple[bool, str]:
-    """Deux GET uniquement. Ne journalise jamais la clé ni les URL finales."""
-    try:
-        user_response = requests.get(
-            f"{MDBLIST_API_BASE}/user",
-            params={"apikey": api_key},
-            headers={"Accept": "application/json", "User-Agent": "Media-Smart-Lists/0.4"},
-            timeout=20,
-        )
-    except requests.RequestException:
-        return False, "MDBList est injoignable pour le moment. Réessaie plus tard."
-
-    if user_response.status_code != 200:
-        return False, f"Connexion refusée par MDBList (HTTP {user_response.status_code})."
-
-    try:
-        account = user_response.json()
-    except ValueError:
-        return False, "Réponse MDBList illisible."
-    if not isinstance(account, dict):
-        return False, "Réponse de compte MDBList inattendue."
-
-    try:
-        lists_response = requests.get(
-            f"{MDBLIST_API_BASE}/lists/user",
-            params={"apikey": api_key, "unified": "false"},
-            headers={"Accept": "application/json", "User-Agent": "Media-Smart-Lists/0.4"},
-            timeout=20,
-        )
-    except requests.RequestException:
-        return False, "Compte reconnu, mais les listes MDBList sont temporairement injoignables."
-
-    if lists_response.status_code != 200:
-        return False, f"Compte reconnu, mais lecture des listes impossible (HTTP {lists_response.status_code})."
-    try:
-        lists = lists_response.json()
-    except ValueError:
-        return False, "Réponse des listes MDBList illisible."
-    if not isinstance(lists, list):
-        return False, "Format des listes MDBList inattendu."
-
-    static_count = sum(
-        1 for item in lists
-        if isinstance(item, dict)
-        and (item.get("type") == "static" or item.get("dynamic") is False)
+    st.markdown(
+        f'<div class="accent-callout"><strong>✓ CONNECTÉ À MDBLIST</strong> · '
+        f'{escape(str(account.get("username") or "Compte MDBList"))}</div>',
+        unsafe_allow_html=True,
     )
-    dynamic_count = sum(
-        1 for item in lists
-        if isinstance(item, dict)
-        and (item.get("type") == "dynamic" or item.get("dynamic") is True)
+    cols = st.columns(4)
+    cols[0].metric("Forfait", account.get("plan") or "—")
+    remaining = account.get("rate_limit_remaining")
+    limit = account.get("rate_limit")
+    cols[1].metric(
+        "Quota restant",
+        f"{remaining}/{limit}" if remaining is not None and limit else "—",
     )
+    cols[2].metric("Listes actuelles", lists_summary.get("total", 0))
+    cols[3].metric("Limite de listes", account.get("list_limit") or "—")
+    st.caption(
+        f"Listes statiques : {lists_summary.get('static', 0)} · "
+        f"dynamiques : {lists_summary.get('dynamic', 0)}"
+    )
+    if st.button("Se déconnecter de MDBList", key="disconnect_mdblist"):
+        with st.spinner("Déconnexion et révocation MDBList…"):
+            mdb_oauth.disconnect(cookies)
+        st.session_state["pending_source"] = "mdblist"
+        st.rerun()
 
-    # Seules les informations utiles à l'interface sont conservées.
-    st.session_state["_mdblist_api_key"] = api_key
-    st.session_state["_mdblist_account"] = {
-        "username": account.get("username") or account.get("name") or "Compte MDBList",
-        "plan": account.get("plan") or "Inconnu",
-        "rate_limit": account.get("rate_limit"),
-        "rate_limit_remaining": account.get("rate_limit_remaining"),
-        "list_limit": (account.get("limits") or {}).get("lists"),
-    }
-    st.session_state["_mdblist_lists_summary"] = {
-        "total": len(lists),
-        "static": static_count,
-        "dynamic": dynamic_count,
-    }
-    return True, "Connexion MDBList validée en lecture seule."
+
+def _render_device_flow(flow: dict) -> None:
+    complete_url = str(flow.get("verification_uri_complete") or "")
+    user_code = str(flow.get("user_code") or "")
+    safe_url = escape(complete_url, quote=True)
+    safe_code = escape(user_code)
+
+    left, right = st.columns(2, gap="large")
+    with left:
+        st.markdown(
+            f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer" '
+            'style="display:inline-block; background:linear-gradient(135deg,#00A392,#00524B); '
+            'color:white; padding:.9em 1.7em; border-radius:12px; text-decoration:none; '
+            'font-weight:700;">Autoriser l\'accès MDBList</a>',
+            unsafe_allow_html=True,
+        )
+        st.caption("Sur ce navigateur ou n’importe quel autre appareil.")
+        st.markdown(
+            f'<div class="accent-callout"><strong>CODE MDBLIST</strong> · '
+            f'<span style="color:#CEDC00;font-size:1.18rem;font-weight:800;letter-spacing:3px;">'
+            f'{safe_code}</span></div>',
+            unsafe_allow_html=True,
+        )
+    with right:
+        if complete_url:
+            st.image(mdb_oauth.qr_png(complete_url), width=160)
+            st.caption("Ou scanne le QR code avec ton téléphone.")
+
+    st.caption("La page vérifie automatiquement l’autorisation, comme Trakt Smart Lists.")
+    status_box = st.empty()
+    interval = max(int(flow.get("interval") or 5), 5)
+    expires_at = int(flow.get("expires_at") or 0)
+
+    with st.spinner("Attente de l’autorisation MDBList…"):
+        while time.time() < expires_at:
+            remaining = max(expires_at - int(time.time()), 0)
+            status_box.caption(f"Code valable encore {remaining // 60}:{remaining % 60:02d}")
+            time.sleep(interval)
+            status, payload = mdb_oauth.poll_device_once(flow)
+            if status == "success" and isinstance(payload, dict):
+                mdb_oauth.save_tokens(cookies, payload)
+                mdb_oauth.clear_flow()
+                mdb_oauth.load_account_summary()
+                st.rerun()
+            if status == "slow_down":
+                interval += 5
+                continue
+            if status in {"expired", "denied", "error"}:
+                mdb_oauth.clear_flow()
+                st.markdown(
+                    f'<div class="accent-callout"><strong>CONNEXION NON TERMINÉE</strong> · '
+                    f'{escape(str(payload))}</div>',
+                    unsafe_allow_html=True,
+                )
+                return
+
+    mdb_oauth.clear_flow()
+    st.markdown(
+        '<div class="accent-callout"><strong>CODE EXPIRÉ</strong> · Relance une nouvelle connexion.</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def render_mdblist_connector() -> None:
-    account = st.session_state.get("_mdblist_account")
-    lists_summary = st.session_state.get("_mdblist_lists_summary") or {}
-
-    st.markdown(
-        '<div class="accent-callout"><strong>TEST EN LECTURE SEULE</strong> · '
-        'Deux requêtes GET seront effectuées : compte et listes. Aucune écriture.</div>',
-        unsafe_allow_html=True,
-    )
-
-    if account:
-        st.success(f"Connexion active pour {account['username']}.")
-        cols = st.columns(4)
-        cols[0].metric("Forfait", account.get("plan") or "—")
-        remaining = account.get("rate_limit_remaining")
-        limit = account.get("rate_limit")
-        cols[1].metric("Quota restant", f"{remaining}/{limit}" if remaining is not None and limit else "—")
-        cols[2].metric("Listes actuelles", lists_summary.get("total", 0))
-        cols[3].metric("Limite de listes", account.get("list_limit") or "—")
-        st.caption(
-            f"Listes statiques : {lists_summary.get('static', 0)} · "
-            f"dynamiques : {lists_summary.get('dynamic', 0)}"
+    configured, config_message = mdb_oauth.configured()
+    if not configured:
+        st.markdown(
+            f'<div class="accent-callout"><strong>CONFIGURATION INCOMPLÈTE</strong> · '
+            f'{escape(config_message)}</div>',
+            unsafe_allow_html=True,
         )
-        st.button("Oublier immédiatement la clé MDBList", on_click=_forget_mdblist)
+        return
+
+    if mdb_oauth.is_connected():
+        _render_connected_mdblist()
+        return
+
+    flow = mdb_oauth.current_flow()
+    if flow:
+        _render_device_flow(flow)
         return
 
     st.markdown(
-        '<div class="accent-callout"><strong>CONFIDENTIALITÉ</strong> · '
-        'La clé reste uniquement dans la mémoire de cette session Streamlit : '
-        'aucun cookie, aucun fichier, aucun cache et aucun journal applicatif.</div>',
+        '<div class="accent-callout"><strong>OAUTH DEVICE CODE</strong> · '
+        'Aucune clé API à chercher ou à saisir. MDBList affichera la demande d’autorisation.</div>',
         unsafe_allow_html=True,
     )
-    with st.form("mdblist_connection_form", clear_on_submit=False):
-        api_key = st.text_input(
-            "Clé API MDBList",
-            type="password",
-            key="mdb_api_key_entry",
-            help="Disponible dans les préférences MDBList. Ne la publie jamais sur GitHub.",
-        )
-        submitted = st.form_submit_button("Tester la connexion MDBList", type="primary")
-
-    if submitted:
-        clean_key = (api_key or "").strip()
-        if not clean_key:
-            st.error("Saisis d'abord ta clé API MDBList.")
-            return
-        with st.spinner("Vérification MDBList en lecture seule…"):
-            success, message = _connect_mdblist(clean_key)
-        if success:
-            st.session_state["mdb_connection_message"] = message
+    if st.button("Se connecter avec MDBList", type="primary", key="start_mdblist_oauth"):
+        with st.spinner("Création du code MDBList…"):
+            started, message = mdb_oauth.start_device_flow()
+        if started:
             st.rerun()
         else:
-            st.error(message)
+            st.markdown(
+                f'<div class="accent-callout"><strong>CONNEXION IMPOSSIBLE</strong> · '
+                f'{escape(message)}</div>',
+                unsafe_allow_html=True,
+            )
 
 
 def page_dashboard() -> None:
@@ -547,6 +558,12 @@ def placeholder(page: str) -> None:
         unsafe_allow_html=True,
     )
 
+
+restored, _restore_message = mdb_oauth.ensure_valid_session(cookies)
+if restored:
+    st.session_state["pending_source"] = "mdblist"
+    if not mdb_oauth.account_summary():
+        mdb_oauth.load_account_summary()
 
 page = navigation()
 header()
