@@ -210,18 +210,21 @@ def _base_text_style() -> dict[str, Any]:
 
 
 def monthly_options(df: pd.DataFrame) -> dict[str, Any]:
-    """Heures par mois — courbe citron."""
+    """Heures par mois — courbe citron, triée chronologiquement."""
     if df.empty:
         return {}
     df = df.copy()
+    df["an_mois"] = df["date_dt"].dt.year * 100 + df["date_dt"].dt.month
     df["mois"] = df["date_dt"].dt.strftime("%m-%Y")
-    hours = (df.groupby("mois")["duree"].sum() / 60).round(1).sort_index()
+    grouped = df.groupby(["an_mois", "mois"])["duree"].sum().round(1).reset_index()
+    grouped = grouped.sort_values("an_mois")
+    hours = grouped["duree"]
     option = _base_text_style()
     option["title"] = {"text": "Heures par mois", "textStyle": {"color": COL_TEXT}}
-    option["xAxis"] = {"type": "category", "data": list(hours.index), "axisLabel": {"color": COL_MUTED}}
+    option["xAxis"] = {"type": "category", "data": list(grouped["mois"]), "axisLabel": {"color": COL_MUTED}}
     option["series"] = [
         {
-            "data": list(hours.values),
+            "data": list(hours),
             "type": "line",
             "smooth": True,
             "lineStyle": {"color": COL_LIME, "width": 3},
@@ -248,7 +251,7 @@ def genre_pie_options(df: pd.DataFrame) -> dict[str, Any]:
             "left": "center",
             "textStyle": {"color": COL_TEXT},
         },
-        "tooltip": {"trigger": "item"},
+        "tooltip": {"trigger": "item", "formatter": "{b} : {c} contenu(s) ({d}%)"},
         "backgroundColor": "transparent",
         "legend": {"bottom": 0, "textStyle": {"color": COL_MUTED}},
         "series": [
@@ -418,13 +421,14 @@ def evolution_options(df: pd.DataFrame) -> dict[str, Any] | None:
             "stack": "heures",
             "barMaxWidth": 44,
             "emphasis": {"focus": "series"},
+            "valueFormatter": "{value} h",
             "data": [round(genre_years[genre].get(year, 0), 1) for year in years],
         }
         for genre in top5
     ]
     return {
         "backgroundColor": "transparent",
-        "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
+        "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}, "valueFormatter": "{value} h"},
         "legend": {"bottom": 0, "textStyle": {"color": COL_MUTED}},
         "xAxis": {"type": "category", "data": [str(year) for year in years], "axisLabel": {"color": COL_MUTED}},
         "yAxis": {"type": "value", "name": "Heures", "axisLabel": {"color": COL_MUTED}, "splitLine": {"lineStyle": {"color": COL_SPLIT}}},

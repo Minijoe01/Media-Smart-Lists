@@ -23,6 +23,7 @@ import pandas as pd
 
 import mdblist_oauth as mdb_oauth
 import stats_engine as stats_mod
+import wrapped_engine as wrapped_mod
 from calendar_engine import (
     CALENDAR_SORT_OPTIONS,
     CALENDAR_TIMING_OPTIONS,
@@ -456,11 +457,13 @@ st.markdown(
     }
 
     /* Barres de progression : toujours aux couleurs du thème. */
-    div[data-testid="stProgress"] [role="progressbar"] > div > div {
+    div[data-testid="stProgress"] [role="progressbar"] > div > div,
+    div[data-testid="stProgress"] [role="progressbar"] > div > div > div {
         background: linear-gradient(90deg, var(--am-green), var(--am-lime)) !important;
         border-radius: 999px;
     }
-    div[data-testid="stProgress"] [role="progressbar"] > div {
+    div[data-testid="stProgress"] [role="progressbar"] > div,
+    div[data-testid="stProgress"] > div > div > div {
         background: rgba(255, 255, 255, 0.08) !important;
         border-radius: 999px;
     }
@@ -864,15 +867,31 @@ def _render_echarts(option: dict, height: str = "400px") -> None:
     numeric = int(str(height).replace("px", "") or 400)
     html = f"""<!DOCTYPE html><html><head>
 <meta charset="utf-8">
+<style>
+html,body{{width:100%;height:{numeric}px;margin:0;padding:0;overflow:hidden;background:transparent;}}
+#chart{{width:100%;height:100%;}}
+</style>
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-<style>html,body,#chart{{width:100%;height:{numeric}px;margin:0;background:transparent;}}</style>
 </head><body><div id="chart"></div>
 <script>
 (function() {{
   var option = {payload};
-  var chart = echarts.init(document.getElementById('chart'));
-  chart.setOption(option);
-  window.addEventListener('resize', function() {{ chart.resize(); }});
+  function draw() {{
+    var el = document.getElementById('chart');
+    var chart = echarts.getInstanceByDom(el) || echarts.init(el);
+    chart.setOption(option);
+    chart.resize();
+  }}
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {{
+    setTimeout(draw, 50);
+  }} else {{
+    window.addEventListener('load', function() {{ setTimeout(draw, 50); }});
+  }}
+  window.addEventListener('resize', function() {{
+    var el = document.getElementById('chart');
+    var chart = echarts.getInstanceByDom(el);
+    if (chart) {{ chart.resize(); }}
+  }});
 }})();
 </script></body></html>"""
     try:
@@ -1605,7 +1624,8 @@ def _apply_playback_poster_cache(rows: list[dict]) -> list[dict]:
 
 
 def _refresh_missing_playback_posters(rows: list[dict]) -> tuple[bool, str]:
-    tmdb_ids = []
+    movie_ids: list[int] = []
+    show_ids: list[int] = []
     for row in rows:
         ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
         value = ids.get("tmdb")
@@ -1614,17 +1634,19 @@ def _refresh_missing_playback_posters(rows: list[dict]) -> tuple[bool, str]:
                 media_id = int(value)
             except (TypeError, ValueError):
                 continue
-            if media_id > 0 and media_id not in tmdb_ids:
-                tmdb_ids.append(media_id)
-    tmdb_ids = tmdb_ids[:200]
-    if not tmdb_ids:
+            target = movie_ids if str(row.get("media_kind") or row.get("kind") or "") == "movie" else show_ids
+            if media_id > 0 and media_id not in target:
+                target.append(media_id)
+    movie_ids = movie_ids[:200]
+    show_ids = show_ids[:200]
+    if not movie_ids and not show_ids:
         return False, "Aucun identifiant TMDb disponible pour compléter ces posters."
     valid, message = mdb_oauth.ensure_valid_session(cookies)
     if not valid:
         return False, message or "Session MDBList indisponible."
     try:
         provider = MDBListProvider(mdb_oauth.access_token())
-        metadata = provider.media_info_batch(tmdb_ids)
+        metadata = provider.media_info_batch(movie_ids=movie_ids, show_ids=show_ids)
     except Exception:
         return False, "MDBList n’a pas pu compléter les posters pour le moment."
     cache = st.session_state.get(PLAYBACK_POSTER_CACHE_KEY)
@@ -2146,59 +2168,62 @@ def _calendar_call_count(horizon_days: int) -> int:
 
 
 def _calendar_batch_count() -> int:
-    """Nombre d'appels groupés (200 identifiants) pour enrichir les dates à venir."""
-    count = len(_calendar_tmdb_ids(_dataset()))
-    return min(3, -(-count // 200)) if count else 0
+    """Nombre d'appels groupés (1 par type, 200 identifiants max) pour enrichir."""
+    movie_ids, show_ids = _calendar_tmdb_ids(_dataset())
+    count = (1 if movie_ids else 0) + (1 if show_ids else 0)
+    return min(3, count)
 
 
-def _calendar_tmdb_ids(dataset: dict[str, Any]) -> list[int]:
-    """Identifiants TMDb des contenus personnels, par ordre de priorité
-    (séries en cours d'abord, puis Watchlist, puis listes)."""
-    ordered: list[Any] = []
-    seen: set[int] = set()
+def _calendar_tmdb_ids(dataset: dict[str, Any]) -> tuple[list[int], list[int]]:
+    """Identifiants TMDb des contenus personnels, séparés films / séries,
+    par ordre de priorité (séries en cours d'abord, puis Watchlist, listes)."""
+    movie_ids: list[int] = []
+    show_ids: list[int] = []
+    seen_movie: set[int] = set()
+    seen_show: set[int] = set()
     sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
 
-    def push(value: Any) -> None:
+    def push(bucket: list[int], seen: set[int], value: Any) -> None:
         try:
             media_id = int(value)
         except (TypeError, ValueError):
             return
         if media_id > 0 and media_id not in seen:
             seen.add(media_id)
-            ordered.append(media_id)
+            bucket.append(media_id)
 
-    def scan(media: Any, nested: str = "") -> None:
+    def scan(media: Any, kind: str) -> None:
         if not isinstance(media, dict):
             return
-        child = media.get(nested) if nested else None
-        target = child if isinstance(child, dict) else media
-        ids = target.get("ids") if isinstance(target.get("ids"), dict) else {}
-        push(ids.get("tmdb"))
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        push(movie_ids if kind == "movie" else show_ids,
+             seen_movie if kind == "movie" else seen_show,
+             ids.get("tmdb"))
 
     for row in sections.get("upnext") or []:
         if isinstance(row, dict):
-            scan(row.get("show"))
+            scan(row.get("show"), "show")
     watchlist = sections.get("watchlist") or {}
     for movie in watchlist.get("movies") or []:
-        scan(movie)
+        scan(movie, "movie")
     for show in watchlist.get("shows") or []:
-        scan(show)
+        scan(show, "show")
     for item in sections.get("user_lists") or []:
         if not isinstance(item, dict):
             continue
         for movie in item.get("movies") or []:
-            scan(movie)
+            scan(movie, "movie")
         for show in item.get("shows") or []:
-            scan(show)
+            scan(show, "show")
     # Secours : les sources normalisées du dataset.
     for source in dataset.get("sources") or []:
         if not isinstance(source, dict) or source.get("kind") == "aggregate":
             continue
         for movie in source.get("movies") or []:
-            scan(movie)
+            scan(movie, "movie")
         for show in source.get("shows") or []:
-            scan(show)
-    return ordered
+            scan(show, "show")
+    return movie_ids, show_ids
 
 
 def _parse_date_only(value: Any) -> date | None:
@@ -2228,24 +2253,27 @@ def _enrich_calendar_metadata(
     C'est ce qui permet de voir par exemple la reprise d'une série en pause ou
     l'épisode suivant d'une série en cours dont la date est déjà annoncée.
     """
-    tmdb_ids = _calendar_tmdb_ids(dataset)
+    movie_ids, show_ids = _calendar_tmdb_ids(dataset)
     output: list[dict[str, Any]] = []
-    for index in range(0, len(tmdb_ids), 200):
-        if index // 200 >= max_batches:
-            break
-        chunk = tmdb_ids[index:index + 200]
+    for kind, chunk in (("movie", movie_ids[:200]), ("show", show_ids[:200])):
+        if not chunk:
+            continue
         try:
-            items = provider.media_info_batch(chunk)
+            items = provider.media_info_batch(
+                movie_ids=chunk if kind == "movie" else [],
+                show_ids=chunk if kind == "show" else [],
+            )
         except Exception:
-            break
+            continue
         for item in items:
             if not isinstance(item, dict):
                 continue
             ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
             if not ids.get("tmdb"):
                 continue
+            batch_type = str(item.get("_mdblist_batch_type") or "")
             mediatype = str(
-                item.get("mediatype") or item.get("media_type") or item.get("type") or ""
+                item.get("mediatype") or item.get("media_type") or item.get("type") or batch_type or ""
             ).casefold()
             is_movie = "movie" in mediatype or "film" in mediatype
             if is_movie:
@@ -2675,10 +2703,9 @@ def render_detailed_stats_page(dataset: dict[str, Any]) -> None:
     )
     heat_html = stats_mod.heatmap_html(filtered)
     if heat_html:
-        try:
-            st.html(heat_html)
-        except Exception:
-            st.markdown(heat_html, unsafe_allow_html=True)
+        # Markdown unsafe : les info-bulles natives (title) fonctionnent comme
+        # dans l'ancienne application.
+        st.markdown(heat_html, unsafe_allow_html=True)
         nb_jours_actifs = int((daily > 0).sum())
         st.caption(
             f"📅 du {filtered['date_dt'].min().date():%d/%m/%Y} au {filtered['date_dt'].max().date():%d/%m/%Y} · "
@@ -3000,6 +3027,175 @@ def page_dashboard() -> None:
             st.caption(text)
 
 
+def render_annual_page() -> None:
+    """Rendez-vous annuel (Wrapped) — même logique et même rendu que la page
+    de l'ancienne application Trakt Smart Lists."""
+    st.markdown('<div class="page-title">🎬 Rendez-vous annuel</div>', unsafe_allow_html=True)
+    st.caption(
+        "Ton récapitulatif annuel façon Wrapped. Sélectionne une année pour revivre ton année de visionnage."
+    )
+    dataset = _dataset()
+    if not dataset:
+        st.markdown(
+            '<div class="accent-callout"><strong>DONNÉES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    rows = normalize_history(dataset, timezone_name="Europe/Paris")
+    if not rows:
+        st.caption("Aucun visionnage n’est disponible pour le moment.")
+        return
+    df = stats_mod.build_frame(rows)
+    if df.empty:
+        st.caption("Aucune donnée datée pour le rendez-vous annuel.")
+        return
+
+    annees = sorted({d.year for d in df["date_dt"]}, reverse=True)
+    if not annees:
+        st.caption("Aucune année disponible.")
+        return
+    annee = st.selectbox("📅 Choisis une année", annees, index=0, key="wrapped_year")
+
+    d = wrapped_mod.compute_wrapped(dataset, int(annee))
+    if not d:
+        st.info("Aucune donnée pour cette année.")
+        return
+
+    # Hero card.
+    st.markdown(
+        f"""
+        <div style="background: linear-gradient(135deg, rgba(0,163,146,0.35) 0%, rgba(0,82,75,0.6) 100%);
+                    border:1px solid rgba(0,163,146,0.5); border-radius:24px; padding:32px;
+                    text-align:center; margin:20px 0;">
+            <div style="font-size:1em; color:#CEDC00; text-transform:uppercase; letter-spacing:3px; font-weight:700;">
+                TON ANNÉE {annee}</div>
+            <div style="font-size:3.2em; font-weight:900; color:#fff; margin:10px 0;">
+                {wrapped_mod.format_duree_fr(int(round(d['total_h'] * 60)))}</div>
+            <div style="font-size:1.1em; color:#9DC5BF;">de visionnage cette année</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("🎬 Films uniques", d["films"])
+    c2.metric("📺 Séries suivies", d["series"])
+    c3.metric("🎞️ Épisodes", d["episodes"])
+    c4.metric("⭐ Note moyenne", f"{d['note_moy']:.1f}/10" if d["note_moy"] else "—")
+
+    c5, c6 = st.columns(2)
+    if d["jour_peak"] is not None:
+        c5.metric("🏆 Record en 1 jour", f"{d['nb_peak']} visionnages", delta=d["jour_peak"].strftime("%d/%m"))
+    else:
+        c5.metric("🏆 Record en 1 jour", "—")
+    c6.metric("📅 Ton plus gros mois", wrapped_mod.MOIS_NOMS[d["mois_peak"] - 1] if d["mois_peak"] else "—")
+
+    # Top films.
+    st.divider()
+    st.markdown(f"### 🎬 Tes films les plus vus en {annee}")
+    if d["top_films"]:
+        for i, (titre, n) in enumerate(d["top_films"], 1):
+            st.markdown(f"**#{i} — {escape(str(titre))}**  ·  {n} visionnage{'s' if n > 1 else ''}")
+    else:
+        st.caption("Aucun film vu cette année.")
+
+    # Top séries.
+    st.divider()
+    st.markdown(f"### 📺 Tes séries les plus suivies en {annee}")
+    if d["top_series"]:
+        for i, (titre, n) in enumerate(d["top_series"], 1):
+            st.markdown(f"**#{i} — {escape(str(titre))}**  ·  {n} épisodes")
+    else:
+        st.caption("Aucune série vue cette année.")
+
+    # Top genres.
+    st.divider()
+    st.markdown(f"### 🎭 Tes genres préférés en {annee}")
+    if d["top_genres"]:
+        cols = st.columns(min(5, len(d["top_genres"])))
+        for i, (genre, n) in enumerate(d["top_genres"]):
+            cols[i].metric(genre, n)
+    else:
+        st.caption("Aucun genre identifié cette année.")
+
+    # Heures par mois.
+    st.divider()
+    st.markdown(f"### 📊 Heures de visionnage par mois — {annee}")
+    heures = d["heures_mois"]
+    if heures.sum() > 0:
+        monthly = {
+            "title": {
+                "text": f"Heures par mois en {annee}",
+                "textStyle": {"color": "#F0FAF8"},
+                "left": "center",
+            },
+            "tooltip": {"trigger": "axis", "formatter": "{b} : {c}h"},
+            "backgroundColor": "transparent",
+            "textStyle": {"color": "#F0FAF8"},
+            "xAxis": {
+                "type": "category",
+                "data": wrapped_mod.MOIS_COURTS,
+                "axisLabel": {"color": "#9DC5BF", "interval": 0},
+            },
+            "yAxis": {
+                "type": "value",
+                "name": "Heures",
+                "axisLabel": {"color": "#9DC5BF"},
+                "splitLine": {"lineStyle": {"color": "rgba(18,90,84,0.4)"}},
+            },
+            "series": [
+                {
+                    "data": [float(value) for value in heures],
+                    "type": "bar",
+                    "itemStyle": {"color": "#CEDC00", "borderRadius": [4, 4, 0, 0]},
+                }
+            ],
+        }
+        _render_echarts(monthly, height="350px")
+    else:
+        st.caption("Aucune heure de visionnage relevée cette année.")
+
+    # Image Wrapped partageable.
+    st.divider()
+    st.markdown("### 🖼️ Ton image Wrapped à partager")
+    st.caption("Un récap visuel de ton année, façon Spotify Wrapped, prêt à partager sur Insta, X ou Reddit ✨")
+    if st.button("✨ Générer mon image Wrapped", key="btn_wrapped_png", type="primary"):
+        with st.spinner("Création de ton image..."):
+            data_img = {
+                "annee": annee,
+                "total": wrapped_mod.format_duree_fr(int(round(d["total_h"] * 60))),
+                "films": d["films"],
+                "series": d["series"],
+                "episodes": d["episodes"],
+                "note_moy": str(round(d["note_moy"], 1)).replace(".", ",") if d["note_moy"] else "?",
+                "top_films": d["top_films"],
+                "top_series": d["top_series"],
+                "top_genres": d["top_genres"],
+                "record_txt": (
+                    f"{d['nb_peak']} vues le {d['jour_peak'].strftime('%d/%m')}"
+                    if d["jour_peak"] is not None
+                    else "—"
+                ),
+                "date_gen": datetime.now(PARIS_TZ).strftime("%d/%m/%Y"),
+            }
+            st.session_state["_wrapped_png"] = wrapped_mod.generer_image_wrapped(data_img)
+            st.session_state["_wrapped_png_annee"] = annee
+    if st.session_state.get("_wrapped_png") and st.session_state.get("_wrapped_png_annee") == annee:
+        c_img = st.columns([1, 2, 1])[1]
+        with c_img:
+            st.image(st.session_state["_wrapped_png"], width=420)
+            st.download_button(
+                "💾 Télécharger le PNG",
+                data=st.session_state["_wrapped_png"],
+                file_name=f"wrapped_{annee}.png",
+                mime="image/png",
+                key="download_wrapped_png",
+                type="primary",
+            )
+
+
 def placeholder(page: str) -> None:
     st.markdown(f'<div class="page-title">{page}</div>', unsafe_allow_html=True)
     st.markdown(
@@ -3043,6 +3239,8 @@ elif page == "📅 Calendrier des sorties":
     render_calendar_page()
 elif page == "📊 Statistiques":
     render_basic_stats_page()
+elif page == "🎬 Rendez-vous annuel":
+    render_annual_page()
 else:
     placeholder(page)
 

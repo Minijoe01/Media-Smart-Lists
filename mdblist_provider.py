@@ -157,24 +157,43 @@ class MDBListProvider:
         unique = {item["slug"]: item for item in output}
         return sorted(unique.values(), key=lambda item: item["title"].casefold())
 
-    def media_info_batch(self, tmdb_ids: list[int]) -> list[dict[str, Any]]:
-        """Complète jusqu'à 200 médias en un seul appel groupé MDBList."""
-        unique = []
-        seen = set()
-        for value in tmdb_ids:
-            try:
-                media_id = int(value)
-            except (TypeError, ValueError):
+    def media_info_batch(
+        self,
+        movie_ids: list[int] | None = None,
+        show_ids: list[int] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Complète jusqu'à 200 médias par type en un seul appel groupé MDBList.
+
+        L'API MDBList expose le batch sous la forme POST /tmdb/movie et
+        POST /tmdb/show (les identifiants sont des chaînes). Les identifiants
+        d'un autre type sont simplement ignorés par le serveur.
+        """
+        output: list[dict[str, Any]] = []
+        for media_type, values in (("movie", movie_ids), ("show", show_ids)):
+            unique: list[str] = []
+            seen: set[int] = set()
+            for raw in values or []:
+                try:
+                    media_id = int(raw)
+                except (TypeError, ValueError):
+                    continue
+                if media_id > 0 and media_id not in seen:
+                    seen.add(media_id)
+                    unique.append(str(media_id))
+            if not unique:
                 continue
-            if media_id > 0 and media_id not in seen:
-                seen.add(media_id)
-                unique.append(media_id)
-        if not unique:
-            return []
-        if len(unique) > 200:
-            raise ValueError("Le batch MDBList accepte au maximum 200 identifiants")
-        response = self._post("/tmdb/any/", {"ids": unique})
-        return [item for item in response if isinstance(item, dict)] if isinstance(response, list) else []
+            if len(unique) > 200:
+                unique = unique[:200]
+            response = self._post(
+                f"/tmdb/{media_type}",
+                {"ids": unique, "append_to_response": "genres,description"},
+            )
+            if isinstance(response, list):
+                for item in response:
+                    if isinstance(item, dict):
+                        item.setdefault("_mdblist_batch_type", media_type)
+                        output.append(item)
+        return output
 
     def dropped(self) -> dict[str, Any]:
         return self._paged_dict(
@@ -208,17 +227,27 @@ class MDBListProvider:
         end: str,
         include_favorite_cast: bool = True,
     ) -> list[dict[str, Any]]:
-        """Événements personnels sur une période de 120 jours maximum."""
-        response = self._get(
-            "/calendar/events",
-            {
-                "start": start,
-                "end": end,
-                "limit": 1000,
-                "append_to_response": "description",
-                "favorite_cast": "true" if include_favorite_cast else "false",
-            },
-        )
+        """Événements personnels sur une période de 120 jours maximum.
+
+        Si le paramètre `favorite_cast` est refusé (ancienne/autre version de
+        l'API), un second appel sans ce paramètre est tenté.
+        """
+        params: dict[str, Any] = {
+            "start": start,
+            "end": end,
+            "limit": 1000,
+            "append_to_response": "description",
+        }
+        if include_favorite_cast:
+            params["favorite_cast"] = "true"
+        try:
+            response = self._get("/calendar/events", params)
+        except MDBListReadError:
+            if include_favorite_cast:
+                params.pop("favorite_cast", None)
+                response = self._get("/calendar/events", params)
+            else:
+                raise
         if isinstance(response, list):
             return [item for item in response if isinstance(item, dict)]
         if not isinstance(response, dict):

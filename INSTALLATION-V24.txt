@@ -1,0 +1,83 @@
+================================================================
+MEDIA SMART LISTS — V24
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V24
+----------------------
+1. CALENDRIER RÉPARÉ : l'appel groupé MDBList était erroné (endpoint
+   inexistant). Il utilise maintenant les bons endpoints (/tmdb/movie
+   et /tmdb/show). Vos films à sortir, vos séries et leurs prochains
+   épisodes annoncés (Silo, etc.) doivent enfin apparaître, y compris
+   fin 2026 / 2027.
+2. GRAPHIQUES PROPRES : plus d'ascenseurs, mois triés
+   chronologiquement, info-bulles avec unités explicites (heures,
+   contenus, %), heatmap avec info-bulles au survol, barres de
+   progression toujours aux couleurs du thème.
+3. PAGE « RENDEZ-VOUS ANNUEL » restaurée : récap annuel façon Wrapped
+   avec image PNG partageable (copie de l'ancienne app Trakt).
+
+LES FICHIERS À ENVOYER (3 modifiés, 3 nouveaux)
+-----------------------------------------------
+À REMPLACER (version complète V24) :
+  • app.py
+  • mdblist_provider.py
+  • stats_engine.py
+
+À AJOUTER (nouveaux fichiers) :
+  • wrapped_engine.py
+  • ETAPE-24.md
+  • INSTALLATION-V24.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER :
+  • calendar_engine.py  → gardez votre version actuelle (V23).
+  • history_engine.py   → gardez votre version actuelle (V23).
+  • Tous les autres fichiers restent inchangés.
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser dans la zone de dépôt CES 6 FICHIERS
+UNIQUEMENT :
+    app.py
+    mdblist_provider.py
+    stats_engine.py
+    wrapped_engine.py
+    ETAPE-24.md
+    INSTALLATION-V24.txt
+GitHub vous proposera de remplacer les fichiers déjà existants
+(app.py, mdblist_provider.py, stats_engine.py) : acceptez.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    fix: correct media batch endpoint, tidy charts, restore annual wrapped page
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io, votre application :
+    « Manage app » → ⋮ → « Reboot », puis « Clear cache ».
+L'application redémarre avec la V24.
+
+POUR VÉRIFIER LE CALENDRIER
+---------------------------
+1. Ouvrez la page « 📅 Calendrier des sorties ».
+2. Choisissez un horizon long (6 mois, 1 an ou 1 an et demi).
+3. Cliquez « Charger mon calendrier » (le bouton indique le nombre
+   d'appels : 1 + les lots groupés).
+4. Vous devriez voir vos films à venir, vos séries en cours avec leur
+   prochain épisode annoncé, et les premières diffusions annoncées.
+   Filtres « Tous », « Films », « Séries », « Épisodes » pour explorer.
+
+NOTE
+----
+Les dates affichées dépendent de ce que MDBList/TMDB connaissent :
+une série dont la date de reprise n'est pas encore annoncée n'apparaît
+pas (personne ne peut la connaître). Dès que la date est publiée, elle
+apparaîtra au prochain chargement.
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+================================================================
