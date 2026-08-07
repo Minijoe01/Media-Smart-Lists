@@ -135,11 +135,19 @@ def _added_days(item: dict[str, Any], now: datetime) -> int | None:
         return None
 
 
-def auditable_sources(dataset: dict[str, Any]) -> list[dict[str, Any]]:
-    """Sources réelles seulement : aucun agrégat artificiel."""
+def auditable_sources(
+    dataset: dict[str, Any],
+    include_aggregates: bool = False,
+) -> list[dict[str, Any]]:
+    """Sources auditables, avec agrégats optionnels pour les aperçus combinés.
+
+    Les calculs de doublons appellent cette fonction sans agrégats afin qu'une
+    vue combinée ne soit jamais comptée comme un conteneur réel supplémentaire.
+    """
     return [
         source for source in dataset.get("sources") or []
-        if isinstance(source, dict) and source.get("kind") != "aggregate"
+        if isinstance(source, dict)
+        and (include_aggregates or source.get("kind") != "aggregate")
     ]
 
 
@@ -223,7 +231,10 @@ def audit_source(
 ) -> list[dict[str, Any]]:
     now = now or datetime.now(timezone.utc)
     source = next(
-        (value for value in auditable_sources(dataset) if value.get("key") == source_key),
+        (
+            value for value in auditable_sources(dataset, include_aggregates=True)
+            if value.get("key") == source_key
+        ),
         None,
     )
     if not source:

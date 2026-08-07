@@ -29,6 +29,14 @@ from list_audit_engine import (
 )
 from mdblist_provider import MDBListProvider
 from normalized_model import NORMALIZED_SCHEMA_VERSION, dedupe, normalize_provider_dataset
+from playback_engine import (
+    DEFAULT_PLAYBACK_SORT,
+    PLAYBACK_PROGRESS_OPTIONS,
+    PLAYBACK_SORT_OPTIONS,
+    filter_playback_rows,
+    finishable_tonight,
+    normalize_playback,
+)
 from progress_engine import (
     DEFAULT_PROGRESS_SORT,
     PROGRESS_SORT_OPTIONS,
@@ -41,7 +49,7 @@ from recommendation_engine import PRESET_NAMES, build_profile, preset_matches, s
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.10.0-alpha"
+APP_VERSION = "0.11.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -1438,10 +1446,139 @@ def render_progress_page() -> None:
             )
 
 
+def render_ghost_page() -> None:
+    st.markdown('<div class="page-title">👻 Progression Fantôme</div>', unsafe_allow_html=True)
+    dataset = _dataset()
+    if not dataset:
+        st.markdown(
+            '<div class="accent-callout"><strong>DONNÉES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    playback_items = (_sections().get("playback") or [])
+    rows = normalize_playback(playback_items)
+    known_remaining = sum(int(row.get("remaining_minutes") or 0) for row in rows)
+    metrics = st.columns(4)
+    metrics[0].metric("Progressions", len(rows))
+    metrics[1].metric("Films", sum(row.get("type") == "Film" for row in rows))
+    metrics[2].metric("Épisodes", sum(row.get("type") == "Épisode" for row in rows))
+    metrics[3].metric("Temps restant connu", _format_minutes(known_remaining) if known_remaining else "—")
+
+    st.markdown(
+        '<div class="accent-callout"><strong>PLAYBACK DÉJÀ CHARGÉ · 0 APPEL</strong> · '
+        'Cette page analyse les reprises MDBList présentes dans le dataset de session. '
+        'Aucune progression n’est supprimée à cette étape.</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not rows:
+        st.markdown(
+            '<div class="accent-callout"><strong>✓ AUCUNE PROGRESSION FANTÔME</strong> · '
+            'Aucun film ou épisode n’est actuellement enregistré pour une reprise.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    tonight = finishable_tonight(rows, limit=3)
+    if tonight:
+        st.markdown("### ⚡ Tu peux finir ça ce soir")
+        st.caption("Du temps restant connu le plus court au plus long.")
+        tonight_cols = st.columns(len(tonight))
+        for column, row in zip(tonight_cols, tonight):
+            with column:
+                label = row.get("episode_label") or row.get("type")
+                st.markdown(f"**{escape(str(row.get('title') or 'Titre'))}**")
+                st.caption(
+                    f"{escape(str(label))} · reste environ "
+                    f"{_format_minutes(int(row.get('remaining_minutes') or 0))} · "
+                    f"{float(row.get('progress') or 0):.1f}% vu"
+                )
+
+    st.divider()
+    type_col, progress_col, sort_col, limit_col = st.columns([0.18, 0.24, 0.40, 0.18])
+    media_filter = type_col.selectbox(
+        "Type",
+        ["Tous", "Films", "Épisodes"],
+        key="ghost_type",
+    )
+    progress_filter = progress_col.selectbox(
+        "Progression",
+        PLAYBACK_PROGRESS_OPTIONS,
+        key="ghost_progress",
+    )
+    sort_mode = sort_col.selectbox(
+        "Trier par",
+        PLAYBACK_SORT_OPTIONS,
+        index=PLAYBACK_SORT_OPTIONS.index(DEFAULT_PLAYBACK_SORT),
+        key="ghost_sort",
+    )
+    display_choice = limit_col.selectbox(
+        "Afficher",
+        [30, 60, "Toutes"],
+        key="ghost_limit",
+    )
+    search = st.text_input(
+        "Recherche locale",
+        key="ghost_search",
+        placeholder="Film, série ou épisode…",
+    )
+    visible = filter_playback_rows(
+        rows,
+        media_filter=media_filter,
+        progress_filter=progress_filter,
+        search=search,
+        sort_mode=sort_mode,
+    )
+    display_limit = len(visible) if display_choice == "Toutes" else int(display_choice)
+    st.caption(f"{len(visible)} progression(s) correspondent aux filtres.")
+
+    for row in visible[:display_limit]:
+        poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
+        image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+        title = escape(str(row.get("title") or "Titre inconnu"))
+        year = f" ({int(row['year'])})" if row.get("year") else ""
+        episode_label = escape(str(row.get("episode_label") or ""))
+        progress = float(row.get("progress") or 0)
+        runtime = int(row.get("runtime") or 0)
+        remaining = int(row.get("remaining_minutes") or 0)
+        updated = _format_date(row.get("updated_at"))
+        details = [f"{progress:.1f}% visionné"]
+        if runtime:
+            details.append(f"durée {_format_minutes(runtime)}")
+            details.append(f"reste environ {_format_minutes(remaining)}")
+        else:
+            details.append("temps restant inconnu")
+        if updated:
+            details.append(f"dernière activité {updated}")
+        if row.get("is_manual"):
+            details.append("progression manuelle")
+        episode_html = f'<small>▶️ {episode_label}</small>' if episode_label else ""
+        st.markdown(
+            f'<div class="media-list-card upnext-card">{image_html}'
+            f'<div class="media-list-content" style="width:100%;">'
+            f'<strong>{escape(str(row.get("type") or "Lecture"))} — {title}{year}</strong>'
+            f'{episode_html}<small>{escape(" · ".join(details))}</small>'
+            f'<div class="progress-bar-container"><div class="progress-bar-fill" '
+            f'style="width:{max(0,min(progress,100))}%;"></div></div>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    if len(visible) > display_limit:
+        st.caption(f"{len(visible) - display_limit} progression(s) supplémentaire(s) masquée(s).")
+    if not visible:
+        st.caption("Aucune progression ne correspond à ces filtres.")
+    st.caption(
+        "Lecture seule : la future suppression MDBList conservera cet aperçu et exigera une confirmation explicite."
+    )
+
+
 def render_static_lists_page() -> None:
     st.markdown('<div class="page-title">🧹 Nettoyage des listes</div>', unsafe_allow_html=True)
     dataset = _dataset()
-    sources = auditable_sources(dataset)
+    sources = auditable_sources(dataset, include_aggregates=True)
     if not dataset or not sources:
         st.markdown(
             '<div class="accent-callout"><strong>LISTES NON CHARGÉES</strong> · '
@@ -1476,19 +1613,29 @@ def render_static_lists_page() -> None:
         key="audit_sort",
     )
 
-    issue_col, mode_col = st.columns([0.68, 0.32])
-    selected_issues = issue_col.multiselect(
+    selected_issues = st.multiselect(
         "Signaux à rechercher",
         ISSUE_OPTIONS,
         key="audit_issues",
-        placeholder="Aucun = afficher tout",
+        placeholder="Aucun signal sélectionné = afficher tous les contenus",
     )
-    match_mode = mode_col.selectbox(
-        "Combiner les signaux",
-        ["Au moins un", "Tous les signaux"],
-        key="audit_match_mode",
-        disabled=len(selected_issues) < 2,
-    )
+    if len(selected_issues) >= 2:
+        match_mode = st.radio(
+            "Comment combiner les signaux sélectionnés ?",
+            ["Au moins un", "Tous les signaux"],
+            horizontal=True,
+            key="audit_match_mode",
+            help=(
+                "Au moins un : le contenu correspond à n’importe lequel des signaux. "
+                "Tous les signaux : le contenu doit correspondre à chacun d’eux."
+            ),
+        )
+    else:
+        match_mode = "Au moins un"
+        if selected_issues:
+            st.caption("Un seul signal sélectionné : aucune combinaison n’est nécessaire.")
+        else:
+            st.caption("Aucun signal sélectionné : tous les contenus du conteneur sont affichés.")
     search = st.text_input(
         "Recherche locale",
         key="audit_search",
@@ -1515,6 +1662,11 @@ def render_static_lists_page() -> None:
         st.caption(
             "ℹ️ Cette liste est dynamique : les chevauchements sont informatifs. "
             "MDBList régénère son contenu à partir de ses propres règles."
+        )
+    elif selected_source.get("kind") == "aggregate":
+        st.caption(
+            "ℹ️ Vue combinée : l’audit fusionne et déduplique les conteneurs sélectionnés. "
+            "Cette vue n’est pas elle-même une liste modifiable."
         )
 
     st.markdown(f"### Aperçu ({len(filtered)})")
@@ -1764,6 +1916,8 @@ if page == "🏠 Tableau de bord":
     page_dashboard()
 elif page == "▶️ En cours de lecture":
     render_progress_page()
+elif page == "👻 Progression Fantôme":
+    render_ghost_page()
 elif page == "🧹 Nettoyage des listes":
     render_static_lists_page()
 elif page == "🔍 Recherche de doublons":
