@@ -794,7 +794,11 @@ def _score(item: dict) -> str:
 
 
 def _format_minutes(minutes: int) -> str:
-    """Durée compacte et lisible, de quelques minutes à plusieurs années."""
+    """Durée compacte et lisible, de quelques minutes à plusieurs années.
+
+    Sous 24 h : format court « 2h35 ». Au-delà, les heures et minutes sont
+    conservées pour rester précis : « 7 mois 15 j, 2 h 35 min ».
+    """
     minutes = max(int(round(minutes or 0)), 0)
     if minutes < 60:
         return f"{minutes} min"
@@ -804,21 +808,32 @@ def _format_minutes(minutes: int) -> str:
         return f"{hours}h{minute_rest:02d}" if minute_rest else f"{hours}h"
 
     days, hour_rest = divmod(hours, 24)
-    if days < 30:
-        return f"{days} j {hour_rest} h" if hour_rest else f"{days} j"
-
-    if days < 365:
-        months, day_rest = divmod(days, 30)
-        return f"{months} mois {day_rest} j" if day_rest else f"{months} mois"
-
     years, day_after_years = divmod(days, 365)
     months, day_rest = divmod(day_after_years, 30)
-    year_text = f"{years} an" if years == 1 else f"{years} ans"
+
+    big = []
+    if years:
+        big.append(f"{years} an" if years == 1 else f"{years} ans")
     if months:
-        return f"{year_text} {months} mois"
+        big.append(f"{months} mois")
     if day_rest:
-        return f"{year_text} {day_rest} j"
-    return year_text
+        big.append(f"{day_rest} j")
+
+    tail = None
+    if hour_rest and minute_rest:
+        tail = f"{hour_rest} h {minute_rest} min"
+    elif hour_rest:
+        tail = f"{hour_rest} h"
+    elif minute_rest:
+        tail = f"{minute_rest} min"
+
+    if not big and tail:
+        return tail
+    if big and tail:
+        if len(big) >= 2:
+            return " ".join(big) + ", " + tail
+        return big[0] + ", " + tail
+    return " ".join(big) if big else "0 min"
 
 
 def _format_date(value: object) -> str:
@@ -2070,26 +2085,45 @@ CALENDAR_CACHE_KEY = "_mdblist_calendar_cache"
 PARIS_TZ = ZoneInfo("Europe/Paris")
 
 
+CALENDAR_API_MAX_DAYS = 120  # Limite documentée de l'endpoint /calendar/events MDBList.
+
+
+def _calendar_call_count(horizon_days: int) -> int:
+    """Nombre d'appels MDBList nécessaires pour couvrir l'horizon demandé."""
+    horizon = max(1, int(horizon_days))
+    return max(1, -(-horizon // CALENDAR_API_MAX_DAYS))
+
+
 def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[bool, str]:
     valid, message = mdb_oauth.ensure_valid_session(cookies)
     if not valid:
         return False, message or "Session MDBList indisponible."
     start_date = datetime.now(PARIS_TZ).date()
-    end_date = start_date + timedelta(days=max(1, min(int(horizon_days), 120)))
+    horizon = max(1, min(int(horizon_days), 545))
+    end_date = start_date + timedelta(days=horizon)
     provider = MDBListProvider(mdb_oauth.access_token())
     mode = "mdblist"
+    events: list[dict[str, Any]] = []
     try:
-        events = provider.calendar_events(
-            start_date.isoformat(),
-            end_date.isoformat(),
-            include_favorite_cast=include_favorite_cast,
-        )
+        # L'endpoint MDBList limite chaque appel à 120 jours : les horizons plus
+        # longs sont découpés en tranches successives puis fusionnés.
+        calls = _calendar_call_count(horizon)
+        for index in range(calls):
+            segment_start = start_date + timedelta(days=index * CALENDAR_API_MAX_DAYS)
+            segment_end = min(end_date, segment_start + timedelta(days=CALENDAR_API_MAX_DAYS))
+            segment = provider.calendar_events(
+                segment_start.isoformat(),
+                segment_end.isoformat(),
+                include_favorite_cast=include_favorite_cast,
+            )
+            events.extend(segment)
     except Exception:
         events = []
         mode = "local"
 
     # Si l'endpoint calendrier est indisponible ou vide, les dates déjà chargées
-    # (Up Next et listes) permettent tout de même un calendrier de secours.
+    # (Up Next et listes) permettent tout de même un calendrier de secours,
+    # sans limite de 120 jours puisque aucune requête supplémentaire n'est faite.
     if not events:
         events = build_local_calendar_events(_dataset(), start_date, end_date)
         mode = "local"
@@ -2099,7 +2133,7 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
         "fetched_at": time.time(),
         "start": start_date.isoformat(),
         "end": end_date.isoformat(),
-        "horizon": int(horizon_days),
+        "horizon": horizon,
         "favorite_cast": bool(include_favorite_cast),
         "request_count": provider.request_count,
         "mode": mode,
@@ -2138,14 +2172,24 @@ def render_calendar_page() -> None:
 
     st.caption(
         "Films, premières de séries et prochains épisodes liés à votre compte MDBList. "
-        "Un horizon complet est chargé en une seule requête puis filtré localement."
+        "Un horizon complet est chargé (segments de 120 jours maximum) puis filtré localement."
     )
-    horizon_col, cast_col, button_col = st.columns([0.25, 0.35, 0.40])
+    horizon_col, cast_col, button_col = st.columns([0.30, 0.32, 0.38])
     horizon = horizon_col.selectbox(
         "Horizon",
-        [7, 14, 30, 60, 90, 120],
+        [7, 14, 30, 60, 90, 120, 180, 365, 545],
         index=2,
-        format_func=lambda value: f"{value} jours",
+        format_func=lambda value: {
+            7: "7 jours",
+            14: "14 jours",
+            30: "30 jours",
+            60: "60 jours",
+            90: "90 jours",
+            120: "120 jours",
+            180: "6 mois",
+            365: "1 an",
+            545: "1 an et demi (jusqu'à fin 2027)",
+        }.get(value, f"{value} jours"),
         key="calendar_horizon",
     )
     include_cast = cast_col.toggle(
@@ -2162,7 +2206,9 @@ def render_calendar_page() -> None:
         and cache.get("favorite_cast") == include_cast
         and cache.get("start") == today_iso
     )
-    button_label = "Actualiser mon calendrier · 1 appel" if cache_matches else "Charger mon calendrier · 1 appel"
+    call_count = _calendar_call_count(horizon)
+    call_text = "1 appel" if call_count == 1 else f"{call_count} appels"
+    button_label = f"Actualiser mon calendrier · {call_text}" if cache_matches else f"Charger mon calendrier · {call_text}"
     with button_col:
         if st.button(button_label, type="primary", key="load_calendar"):
             with st.spinner("Préparation de votre calendrier…"):
@@ -2194,8 +2240,9 @@ def render_calendar_page() -> None:
     checked = datetime.fromtimestamp(float(cache.get("fetched_at") or time.time()), PARIS_TZ).strftime("%d/%m à %H:%M")
     if cache.get("mode") == "local":
         st.caption(
-            f"Calendrier de secours construit le {checked} depuis les dates déjà disponibles. "
-            "Le service calendrier MDBList n’a pas répondu, mais les filtres et exports restent utilisables."
+            f"Calendrier de secours construit le {checked} depuis les dates déjà disponibles "
+            f"(Up Next et vos listes) sur tout l'horizon choisi. "
+            "Le service calendrier MDBList n'a pas répondu, mais les filtres et exports restent utilisables."
         )
     else:
         st.caption(f"Calendrier MDBList actualisé le {checked} · les filtres ci-dessous préservent votre quota.")

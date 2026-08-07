@@ -61,16 +61,34 @@ def _first_date(*containers: dict[str, Any]) -> datetime | None:
         "released_at",
         "released_digital",
         "digital_release_date",
+        "theatrical_date",
+        "premiere_date",
+        "digital_date",
+        "dvd_date",
+        "dvd_release_date",
+        "physical_release_date",
+        "bluray_date",
         "next_air_date",
+        "first_air_date",
         "starts_at",
         "start",
         "_calendar_date",
     )
     for container in containers:
+        if not isinstance(container, dict):
+            continue
         for key in keys:
             parsed = _parse_datetime(container.get(key))
             if parsed:
                 return parsed
+        # Dates portées par un sous-objet (épisode à venir d'une série).
+        for outer in ("next_episode_to_air", "last_episode_to_air", "next_episode"):
+            child = container.get(outer)
+            if isinstance(child, dict):
+                for key in ("air_date", "first_aired", "release_date", "date"):
+                    parsed = _parse_datetime(child.get(key))
+                    if parsed:
+                        return parsed
     return None
 
 
@@ -124,12 +142,55 @@ def _ids(*containers: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+def _date_candidate(*containers: dict[str, Any]) -> Any:
+    """Première date trouvée parmi de nombreux champs, y compris sous-objets."""
+    keys = (
+        "release_date",
+        "released",
+        "released_at",
+        "released_digital",
+        "digital_release_date",
+        "theatrical_date",
+        "premiere_date",
+        "digital_date",
+        "dvd_date",
+        "dvd_release_date",
+        "physical_release_date",
+        "bluray_date",
+        "first_air_date",
+        "next_air_date",
+        "air_date",
+        "first_aired",
+        "date",
+    )
+    for container in containers:
+        if not isinstance(container, dict):
+            continue
+        for key in keys:
+            value = container.get(key)
+            if value:
+                return value
+        for outer in ("next_episode_to_air", "last_episode_to_air", "next_episode"):
+            child = container.get(outer)
+            if isinstance(child, dict):
+                for key in ("air_date", "first_aired", "release_date", "date"):
+                    value = child.get(key)
+                    if value:
+                        return value
+    return None
+
+
 def build_local_calendar_events(
     dataset: dict[str, Any],
     start_date: date,
     end_date: date,
 ) -> list[dict[str, Any]]:
-    """Calendrier de secours depuis les dates déjà présentes dans le dataset."""
+    """Calendrier de secours depuis les dates déjà présentes dans le dataset.
+
+    Le service calendrier MDBList n'est pas utilisé ici : seules les données
+    déjà chargées (Up Next, watchlist, listes) sont exploitées, ce qui permet
+    de couvrir des horizons longs sans coût API supplémentaire.
+    """
     output: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -154,20 +215,41 @@ def build_local_calendar_events(
         if not isinstance(row, dict):
             continue
         show = _dict(row.get("show"))
+        # 1) Prochain épisode déjà planifié (Up Next).
         episode = _dict(row.get("next_episode"))
-        value = episode.get("air_date") or episode.get("first_aired")
-        add(
-            {
-                "event_type": "episode",
-                "first_aired": value,
-                "show": show,
-                "episode": episode,
-                "source": "Vos séries en cours",
-            },
-            "episode",
-            show,
-            value,
-        )
+        value = _date_candidate(episode, row)
+        if value:
+            add(
+                {
+                    "event_type": "episode",
+                    "first_aired": value,
+                    "show": show,
+                    "episode": episode,
+                    "source": "Vos séries en cours",
+                },
+                "episode",
+                show,
+                value,
+            )
+        # 2) Épisode futur annoncé par la série (ex. reprise d'une série en pause).
+        for outer in ("next_episode_to_air", "last_episode_to_air"):
+            future = show.get(outer)
+            if not isinstance(future, dict):
+                continue
+            future_value = _date_candidate(future)
+            if future_value:
+                add(
+                    {
+                        "event_type": "episode",
+                        "first_aired": future_value,
+                        "show": show,
+                        "episode": future,
+                        "source": "Vos séries en cours",
+                    },
+                    "episode",
+                    show,
+                    future_value,
+                )
 
     for source in dataset.get("sources") or []:
         if not isinstance(source, dict) or source.get("kind") == "aggregate":
@@ -176,12 +258,9 @@ def build_local_calendar_events(
         for movie in source.get("movies") or []:
             if not isinstance(movie, dict):
                 continue
-            value = (
-                movie.get("release_date")
-                or movie.get("released")
-                or movie.get("released_digital")
-                or movie.get("digital_release_date")
-            )
+            value = _date_candidate(movie)
+            if not value:
+                continue
             add(
                 {"type": "movie", "release_date": value, "movie": movie, "source": source_name},
                 "movie",
@@ -191,7 +270,34 @@ def build_local_calendar_events(
         for show in source.get("shows") or []:
             if not isinstance(show, dict):
                 continue
-            value = show.get("release_date") or show.get("released") or show.get("first_air_date") or show.get("next_air_date")
+            # Un épisode futur annoncé prime sur la simple date de la série.
+            future_episode = None
+            future_value = None
+            for outer in ("next_episode_to_air", "last_episode_to_air"):
+                child = show.get(outer)
+                if not isinstance(child, dict):
+                    continue
+                candidate = _date_candidate(child)
+                if candidate:
+                    future_episode, future_value = child, candidate
+                    break
+            if future_episode is not None:
+                add(
+                    {
+                        "event_type": "episode",
+                        "first_aired": future_value,
+                        "show": show,
+                        "episode": future_episode,
+                        "source": source_name,
+                    },
+                    "episode",
+                    show,
+                    future_value,
+                )
+                continue
+            value = _date_candidate(show)
+            if not value:
+                continue
             add(
                 {"type": "show", "date": value, "show": show, "source": source_name},
                 "show",

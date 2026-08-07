@@ -1,0 +1,43 @@
+================================================================
+MEDIA SMART LISTS — V22
+Mode d'emploi pour remettre le site en ligne
+================================================================
+
+CE QUE CONTIENT LA V22
+----------------------
+1. Durée réelle des épisodes corrigée (ex. « Connasse » : 2 min par
+   épisode au lieu de 2 h 22).
+2. Temps global précis : « 7 mois 15 j, 2 h 35 min ».
+3. Calendrier : horizons longs (jusqu'à 1 an et demi, donc fin 2026 et
+   2027), épisodes futurs des séries en pause, films et séries des listes
+   avec leurs dates de sortie futures.
+
+CE QU'IL FAUT FAIRE (3 étapes)
+------------------------------
+ÉTAPE 1 — Extraire le zip sur votre ordinateur.
+
+ÉTAPE 2 — Envoyer les fichiers sur GitHub
+    a) Ouvrez https://github.com/Minijoe01/Media-Smart-Lists
+    b) Cliquez sur « Add file » puis « Upload files ».
+    c) Faites glisser TOUS les fichiers et dossiers extraits du zip dans
+       la zone de dépôt.
+    d) Remplissez le champ « Commit changes », par exemple :
+           feat: real episode runtimes, precise durations and long-range calendar
+    e) Cliquez sur « Commit changes ».
+
+    IMPORTANT : ne mettez JAMAIS le fichier .streamlit/secrets.toml sur
+    GitHub. Vos vraies clés restent dans Streamlit > Settings > Secrets.
+
+ÉTAPE 3 — Redémarrer l'application Streamlit
+    a) Ouvrez https://share.streamlit.io/ puis votre application
+       media-smart-lists.
+    b) Cliquez sur « Manage app » (en bas à droite), puis dans le menu
+       ⋮ cliquez sur « Reboot » puis « Clear cache ».
+    c) L'application redémarre avec la V22.
+
+NOTE
+----
+Ce fichier (DEPLOIEMENT-V22-MODE-D-EMPLOI.txt) peut être supprimé de
+GitHub après le déploiement, il n'est pas utile au fonctionnement de
+l'application.
+================================================================

@@ -87,6 +87,14 @@ def _runtime(*containers: dict[str, Any], default: int = 0) -> int:
     return default
 
 
+def _coerce_minutes(value: Any) -> int | None:
+    """Convertit une durée en minutes, ou None si absente/invalide."""
+    try:
+        return int(round(float(value or 0)))
+    except (TypeError, ValueError):
+        return None
+
+
 def _episode_count(show: dict[str, Any]) -> int:
     for key in (
         "total_aired_episodes",
@@ -95,6 +103,8 @@ def _episode_count(show: dict[str, Any]) -> int:
         "total_episodes",
         "episode_count",
         "number_of_episodes",
+        "number_episodes",
+        "num_episodes",
     ):
         try:
             value = int(show.get(key) or 0)
@@ -102,6 +112,16 @@ def _episode_count(show: dict[str, Any]) -> int:
                 return value
         except (TypeError, ValueError):
             pass
+    # Certaines réponses exposent un objet « episodes » au lieu d'un entier.
+    episodes = show.get("episodes")
+    if isinstance(episodes, dict):
+        for key in ("count", "total", "aired"):
+            try:
+                value = int(episodes.get(key) or 0)
+                if value > 0:
+                    return value
+            except (TypeError, ValueError):
+                pass
     return 0
 
 
@@ -109,42 +129,42 @@ def _episode_runtime(
     episode: dict[str, Any],
     show: dict[str, Any],
     row: dict[str, Any],
+    episode_count: int = 0,
 ) -> int:
-    """Évite de confondre durée d'un épisode et durée cumulée de toute la série."""
+    """Évite de confondre durée d'un épisode et durée cumulée de la série.
+
+    Les formats courts (ex. « Connasse » : 71 épisodes d'environ 1 min) sont
+    acceptés dès 1 minute. Une durée au-delà de 90 min n'est pas crédible pour
+    un épisode classique : on la traite comme une durée cumulée de la série
+    (divisée par le nombre d'épisodes) ou comme des secondes à convertir.
+    """
+    # 1. Durée explicite au niveau de l'épisode (1 à 90 min).
     for container in (episode, row):
         for key in ("runtime", "episode_runtime", "duration"):
-            try:
-                value = int(round(float(container.get(key) or 0)))
-            except (TypeError, ValueError):
-                continue
-            if 5 <= value <= 300:
+            value = _coerce_minutes(container.get(key))
+            if value is not None and 1 <= value <= 90:
                 return value
 
+    # 2. Durée explicite par épisode au niveau de la série.
     for key in ("episode_runtime", "runtime_per_episode", "average_runtime"):
-        try:
-            value = int(round(float(show.get(key) or 0)))
-        except (TypeError, ValueError):
-            continue
-        if 5 <= value <= 300:
+        value = _coerce_minutes(show.get(key))
+        if value is not None and 1 <= value <= 90:
             return value
 
-    try:
-        show_runtime = int(round(float(show.get("runtime") or 0)))
-    except (TypeError, ValueError):
-        show_runtime = 0
-    if 5 <= show_runtime <= 300:
+    # 3. Runtime de la série s'il ressemble déjà à une durée d'épisode.
+    show_runtime = _coerce_minutes(show.get("runtime"))
+    if show_runtime is not None and 1 <= show_runtime <= 90:
         return show_runtime
 
-    # Certaines réponses MDBList exposent le runtime cumulé de la série.
-    count = _episode_count(show)
-    if show_runtime > 300 and count:
-        average = int(round(show_runtime / count))
-        if 5 <= average <= 300:
-            return average
-
-    # Autre format rencontré : durée exprimée en secondes.
-    if show_runtime > 300 and 5 <= show_runtime / 60 <= 300:
-        return int(round(show_runtime / 60))
+    # 4. Durée cumulée de la série ou durée en secondes.
+    if show_runtime is not None and show_runtime > 90:
+        candidates: list[int] = []
+        if episode_count > 0:
+            candidates.append(int(round(show_runtime / episode_count)))
+        candidates.append(int(round(show_runtime / 60)))
+        for candidate in candidates:
+            if 1 <= candidate <= 90:
+                return candidate
 
     genres = {genre.casefold() for genre in _genres(show)}
     if genres & {"animation", "anime"}:
@@ -228,6 +248,17 @@ def normalize_history(
                 return show
         return reference
 
+    # Épisodes vus par série (utilisés si la métadonnée ne fournit pas de compte).
+    show_watched_count: dict[str, set[tuple[int, int]]] = {}
+    for row in watched.get("episodes") or []:
+        if not isinstance(row, dict):
+            continue
+        episode = _dict(row.get("episode")) or row
+        show_ref = _dict(episode.get("show")) or _dict(row.get("show"))
+        show = find_show(show_ref)
+        season, number = _episode_numbers(episode)
+        show_watched_count.setdefault(_identity("show", show), set()).add((season, number))
+
     movie_ratings: dict[str, float] = {}
     show_ratings: dict[str, float] = {}
     episode_ratings: dict[str, float] = {}
@@ -293,7 +324,12 @@ def normalize_history(
             episode_label += f" · {episode_title}"
         identity = _identity("episode", episode)
         show_identity = _identity("show", show)
-        runtime = _episode_runtime(episode, show, row)
+        # Nombre d'épisodes connu pour la série : aide à détecter une durée
+        # cumulée (ex. format court) au lieu d'une durée par épisode.
+        episode_count = _episode_count(show)
+        if episode_count <= 0:
+            episode_count = len(show_watched_count.get(show_identity) or ())
+        runtime = _episode_runtime(episode, show, row, episode_count=episode_count)
         plays = _plays(row)
         output.append(
             {
