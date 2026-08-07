@@ -9,14 +9,35 @@ from __future__ import annotations
 import os
 import random
 import time
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from html import escape
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 from streamlit_cookies_controller import CookieController
 
 import mdblist_oauth as mdb_oauth
+from calendar_engine import (
+    CALENDAR_SORT_OPTIONS,
+    CALENDAR_TIMING_OPTIONS,
+    CALENDAR_TYPE_OPTIONS,
+    filter_calendar_events,
+    group_calendar_by_day,
+    normalize_calendar_events,
+    rows_to_csv as calendar_rows_to_csv,
+    rows_to_ics,
+)
+from history_engine import (
+    HISTORY_PERIOD_OPTIONS,
+    HISTORY_SORT_OPTIONS,
+    available_history_genres,
+    filter_history,
+    genre_minutes,
+    normalize_history,
+    rows_to_csv as history_rows_to_csv,
+    rows_to_json as history_rows_to_json,
+)
 from list_audit_engine import (
     ISSUE_OPTIONS,
     SORT_OPTIONS as AUDIT_SORT_OPTIONS,
@@ -51,7 +72,7 @@ from recommendation_engine import PRESET_NAMES, build_profile, preset_matches, s
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.13.0-alpha"
+APP_VERSION = "0.14.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -560,6 +581,7 @@ def _render_connected_mdblist() -> None:
                 "_source_genre_cache",
                 "_mdblist_now_playing_live",
                 "_mdblist_playback_poster_cache",
+                "_mdblist_calendar_cache",
             ):
                 st.session_state.pop(key, None)
             st.session_state["pending_source"] = "mdblist"
@@ -1928,9 +1950,216 @@ def render_static_lists_page() -> None:
     )
 
 
+CALENDAR_CACHE_KEY = "_mdblist_calendar_cache"
+PARIS_TZ = ZoneInfo("Europe/Paris")
+
+
+def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[bool, str]:
+    valid, message = mdb_oauth.ensure_valid_session(cookies)
+    if not valid:
+        return False, message or "Session MDBList indisponible."
+    start_date = datetime.now(PARIS_TZ).date()
+    end_date = start_date + timedelta(days=max(1, min(int(horizon_days), 120)))
+    try:
+        provider = MDBListProvider(mdb_oauth.access_token())
+        events = provider.calendar_events(
+            start_date.isoformat(),
+            end_date.isoformat(),
+            include_favorite_cast=include_favorite_cast,
+        )
+    except Exception:
+        return False, "MDBList n’a pas pu charger le calendrier pour le moment."
+    st.session_state[CALENDAR_CACHE_KEY] = {
+        "events": events,
+        "fetched_at": time.time(),
+        "start": start_date.isoformat(),
+        "end": end_date.isoformat(),
+        "horizon": int(horizon_days),
+        "favorite_cast": bool(include_favorite_cast),
+        "request_count": provider.request_count,
+    }
+    account = mdb_oauth.account_summary()
+    if provider.rate_limit_remaining is not None and account:
+        account["rate_limit_remaining"] = provider.rate_limit_remaining
+        st.session_state[mdb_oauth.ACCOUNT_KEY] = account
+        mdb_oauth.persist_cookie(cookies)
+    return True, f"{len(events)} événement(s) reçu(s)."
+
+
+def _calendar_day_title(day: date | None) -> str:
+    if day is None:
+        return "Date à confirmer"
+    today = datetime.now(PARIS_TZ).date()
+    names = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"]
+    if day == today:
+        return f"Aujourd’hui · {day.strftime('%d/%m/%Y')}"
+    if day == today + timedelta(days=1):
+        return f"Demain · {day.strftime('%d/%m/%Y')}"
+    return f"{names[day.weekday()]} {day.strftime('%d/%m/%Y')}"
+
+
+def render_calendar_page() -> None:
+    st.markdown('<div class="page-title">📅 Calendrier des sorties</div>', unsafe_allow_html=True)
+    if not mdb_oauth.is_connected():
+        st.markdown(
+            '<div class="accent-callout"><strong>CONNEXION NÉCESSAIRE</strong> · '
+            'Connectez MDBList depuis le Tableau de bord pour consulter votre calendrier personnel.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    st.caption(
+        "Films, premières de séries et prochains épisodes liés à votre compte MDBList. "
+        "Un horizon complet est chargé en une seule requête puis filtré localement."
+    )
+    horizon_col, cast_col, button_col = st.columns([0.25, 0.35, 0.40])
+    horizon = horizon_col.selectbox(
+        "Horizon",
+        [7, 14, 30, 60, 90, 120],
+        index=2,
+        format_func=lambda value: f"{value} jours",
+        key="calendar_horizon",
+    )
+    include_cast = cast_col.toggle(
+        "Inclure les personnes favorites",
+        value=True,
+        key="calendar_favorite_cast",
+        help="Inclut les sorties liées aux acteurs et membres d’équipe marqués comme favoris dans MDBList.",
+    )
+    cache = st.session_state.get(CALENDAR_CACHE_KEY)
+    today_iso = datetime.now(PARIS_TZ).date().isoformat()
+    cache_matches = bool(
+        isinstance(cache, dict)
+        and cache.get("horizon") == horizon
+        and cache.get("favorite_cast") == include_cast
+        and cache.get("start") == today_iso
+    )
+    button_label = "Actualiser mon calendrier · 1 appel" if cache_matches else "Charger mon calendrier · 1 appel"
+    with button_col:
+        if st.button(button_label, type="primary", key="load_calendar"):
+            with st.spinner("Préparation de votre calendrier…"):
+                ok, message = _refresh_calendar(horizon, include_cast)
+            st.caption(("✓ " if ok else "⚠️ ") + message)
+            cache = st.session_state.get(CALENDAR_CACHE_KEY)
+            cache_matches = bool(ok)
+
+    if not cache_matches or not isinstance(cache, dict):
+        st.markdown(
+            '<div class="accent-callout"><strong>CALENDRIER À CHARGER</strong> · '
+            'Choisissez votre horizon puis utilisez le bouton ci-dessus. Le résultat sera mémorisé pour la session.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    rows = normalize_calendar_events(cache.get("events") or [], now=datetime.now(PARIS_TZ))
+    rows = enrich_playback_posters(rows, _dataset())
+    rows = _apply_playback_poster_cache(rows)
+    dated = [row for row in rows if row.get("datetime")]
+    metrics = st.columns(4)
+    metrics[0].metric("Événements", len(rows))
+    metrics[1].metric("Films", sum(row.get("type") == "Film" for row in rows))
+    metrics[2].metric("Épisodes", sum(row.get("type") == "Épisode" for row in rows))
+    metrics[3].metric(
+        "Prochaine date",
+        min(row["datetime"] for row in dated).strftime("%d/%m") if dated else "—",
+    )
+    checked = datetime.fromtimestamp(float(cache.get("fetched_at") or time.time()), PARIS_TZ).strftime("%d/%m à %H:%M")
+    st.caption(f"Calendrier actualisé le {checked} · les filtres ci-dessous préservent votre quota MDBList.")
+
+    filter_col, timing_col, sort_col, limit_col = st.columns([0.18, 0.27, 0.37, 0.18])
+    type_filter = filter_col.selectbox("Type", CALENDAR_TYPE_OPTIONS, key="calendar_type")
+    timing_filter = timing_col.selectbox("Période", CALENDAR_TIMING_OPTIONS, key="calendar_timing")
+    sort_mode = sort_col.selectbox("Trier par", CALENDAR_SORT_OPTIONS, key="calendar_sort")
+    display_choice = limit_col.selectbox("Afficher", [50, 100, "Tout"], key="calendar_limit")
+    search = st.text_input("Recherche", key="calendar_search", placeholder="Film, série ou épisode…")
+    visible = filter_calendar_events(rows, type_filter, timing_filter, search, sort_mode)
+
+    missing_with_tmdb = [
+        row for row in visible
+        if not row.get("poster") and isinstance(row.get("ids"), dict) and row["ids"].get("tmdb") is not None
+    ]
+    if missing_with_tmdb:
+        if st.button(
+            f"Compléter {min(len(missing_with_tmdb), 200)} poster(s) · 1 appel groupé",
+            type="primary",
+            key="complete_calendar_posters",
+        ):
+            with st.spinner("Récupération groupée des posters…"):
+                ok, message = _refresh_missing_playback_posters(visible)
+            st.caption(("✓ " if ok else "⚠️ ") + message)
+            if ok:
+                visible = _apply_playback_poster_cache(visible)
+
+    st.markdown(f"### Votre calendrier ({len(visible)})")
+    display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
+    remaining = display_limit
+    for day, group in group_calendar_by_day(visible):
+        if remaining <= 0:
+            break
+        shown = group[:remaining]
+        if not shown:
+            continue
+        st.markdown(f"#### {_calendar_day_title(day)} ({len(group)})")
+        columns = st.columns(2)
+        for index, row in enumerate(shown):
+            with columns[index % 2]:
+                poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
+                image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+                title = escape(str(row.get("title") or "Titre inconnu"))
+                year = f" ({int(row['year'])})" if row.get("year") else ""
+                episode = escape(str(row.get("episode_label") or ""))
+                event_datetime = row.get("datetime")
+                time_text = event_datetime.strftime("%H:%M") if event_datetime and any((event_datetime.hour, event_datetime.minute)) else ""
+                meta = []
+                if time_text:
+                    meta.append(f"🕒 {time_text}")
+                if row.get("genres"):
+                    meta.append("🎭 " + " · ".join(row["genres"]))
+                if row.get("source") and row.get("source") != "Calendrier MDBList":
+                    meta.append(str(row["source"]))
+                episode_html = f'<small>▶️ {episode}</small>' if episode else ""
+                meta_html = f'<small>{escape(" · ".join(meta))}</small>' if meta else ""
+                st.markdown(
+                    f'<div class="media-list-card poster-card">{image_html}'
+                    f'<div class="media-list-content" style="width:100%;">'
+                    f'<span class="source-badge">{escape(str(row.get("type") or "SORTIE").upper())}</span><br>'
+                    f'<strong>{title}{year}</strong>{episode_html}{meta_html}'
+                    f'</div></div>',
+                    unsafe_allow_html=True,
+                )
+        remaining -= len(shown)
+
+    rendered = min(len(visible), display_limit)
+    if not visible:
+        st.caption("Aucune sortie ne correspond à ces filtres.")
+    elif len(visible) > rendered:
+        st.caption(f"{len(visible) - rendered} événement(s) supplémentaire(s) masqué(s).")
+
+    csv_col, ics_col = st.columns(2)
+    with csv_col:
+        st.download_button(
+            "⬇️ Télécharger le calendrier CSV",
+            data="\ufeff" + calendar_rows_to_csv(visible),
+            file_name="media-smart-lists-calendrier.csv",
+            mime="text/csv",
+            type="primary",
+            key="download_calendar_csv",
+        )
+    with ics_col:
+        st.download_button(
+            "📲 Ajouter à mon agenda (.ics)",
+            data=rows_to_ics(visible),
+            file_name="media-smart-lists-calendrier.ics",
+            mime="text/calendar",
+            type="primary",
+            key="download_calendar_ics",
+        )
+
+
 def render_basic_stats_page() -> None:
     st.markdown('<div class="page-title">📊 Statistiques</div>', unsafe_allow_html=True)
-    if not _dataset():
+    dataset = _dataset()
+    if not dataset:
         st.markdown(
             '<div class="accent-callout"><strong>STATISTIQUES NON CHARGÉES</strong> · '
             'Charge MDBList depuis le Tableau de bord.</div>',
@@ -1938,10 +2167,141 @@ def render_basic_stats_page() -> None:
         )
         return
     render_dataset_overview()
-    st.markdown(
-        '<div class="accent-callout"><strong>PREMIÈRE BASE MDBLIST</strong> · '
-        'Les graphiques, filtres temporels et statistiques legacy seront reconnectés progressivement.</div>',
-        unsafe_allow_html=True,
+
+    st.divider()
+    st.markdown("### 📜 Historique des vues")
+    st.caption(
+        "Films et épisodes connus de MDBList, avec filtres temporels, genres, durées et notes personnelles. "
+        "Toute l’analyse ci-dessous utilise les données déjà chargées."
+    )
+    rows = normalize_history(dataset, timezone_name="Europe/Paris")
+    if not rows:
+        st.caption("Aucun visionnage n’est disponible dans le dataset actuel.")
+        return
+
+    dated_values = [row["watched_at"].date() for row in rows if row.get("watched_at")]
+    earliest = min(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
+    latest = max(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
+    period_col, type_col, genre_col, sort_col = st.columns([0.25, 0.18, 0.25, 0.32])
+    period = period_col.selectbox("Période", HISTORY_PERIOD_OPTIONS, key="history_period")
+    media_filter = type_col.selectbox("Type", ["Tous", "Films", "Épisodes"], key="history_type")
+    genre_filter = genre_col.selectbox(
+        "Genre",
+        ["Tous les genres", *available_history_genres(rows)],
+        key="history_genre",
+    )
+    sort_mode = sort_col.selectbox("Trier par", HISTORY_SORT_OPTIONS, key="history_sort")
+
+    custom_start = custom_end = None
+    if period == "Période personnalisée":
+        start_col, end_col = st.columns(2)
+        custom_start = start_col.date_input(
+            "Du",
+            value=max(earliest, latest - timedelta(days=30)),
+            min_value=earliest,
+            max_value=latest,
+            key="history_start",
+        )
+        custom_end = end_col.date_input(
+            "Au",
+            value=latest,
+            min_value=earliest,
+            max_value=latest,
+            key="history_end",
+        )
+        if custom_start > custom_end:
+            custom_start, custom_end = custom_end, custom_start
+
+    search_col, limit_col = st.columns([0.75, 0.25])
+    search = search_col.text_input(
+        "Recherche",
+        key="history_search",
+        placeholder="Film, série ou épisode…",
+    )
+    display_choice = limit_col.selectbox(
+        "Afficher",
+        [100, 500, 1000, "Tout"],
+        key="history_limit",
+    )
+    visible = filter_history(
+        rows,
+        period=period,
+        media_filter=media_filter,
+        genre_filter=genre_filter,
+        search=search,
+        sort_mode=sort_mode,
+        start_date=custom_start,
+        end_date=custom_end,
+        now=datetime.now(PARIS_TZ),
+    )
+
+    total_plays = sum(int(row.get("plays") or 1) for row in visible)
+    total_minutes = sum(int(row.get("total_minutes") or 0) for row in visible)
+    metrics = st.columns(4)
+    metrics[0].metric("Entrées", len(visible))
+    metrics[1].metric("Lectures connues", total_plays)
+    metrics[2].metric("Films", sum(row.get("type") == "Film" for row in visible))
+    metrics[3].metric("Temps estimé", _format_minutes(total_minutes) if total_minutes else "—")
+
+    top_genres = genre_minutes(visible)[:6]
+    if top_genres:
+        st.markdown("#### Vos genres les plus regardés")
+        total_genre_minutes = sum(minutes for _, minutes in top_genres) or 1
+        genre_columns = st.columns(2)
+        for index, (genre, minutes) in enumerate(top_genres):
+            with genre_columns[index % 2]:
+                fraction = minutes / total_genre_minutes
+                st.markdown(f"**{escape(genre)}** · {_format_minutes(minutes)}")
+                st.progress(min(fraction, 1.0))
+
+    display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
+    table = []
+    for row in visible[:display_limit]:
+        watched_at = row.get("watched_at")
+        table.append(
+            {
+                "Date": watched_at.strftime("%d/%m/%Y %H:%M") if watched_at else "—",
+                "Type": row.get("type"),
+                "Titre": row.get("title"),
+                "Épisode": row.get("episode_label") or "—",
+                "Année": row.get("year") or "—",
+                "Genres": " · ".join(row.get("genres") or []) or "—",
+                "Durée": _format_minutes(int(row.get("runtime") or 0)),
+                "Lectures": row.get("plays") or 1,
+                "Ma note": f"{row['personal_rating']:.1f}/10" if row.get("personal_rating") else "—",
+            }
+        )
+    st.markdown(f"#### Détail des visionnages ({len(visible)})")
+    if table:
+        st.dataframe(table, use_container_width=True, hide_index=True)
+    else:
+        st.caption("Aucun visionnage ne correspond à ces filtres.")
+    if len(visible) > display_limit:
+        st.caption(f"{len(visible) - display_limit} entrée(s) supplémentaire(s) masquée(s).")
+
+    csv_col, json_col = st.columns(2)
+    with csv_col:
+        st.download_button(
+            "⬇️ Télécharger l’historique CSV",
+            data="\ufeff" + history_rows_to_csv(visible),
+            file_name="media-smart-lists-historique.csv",
+            mime="text/csv",
+            type="primary",
+            key="download_history_csv",
+        )
+    with json_col:
+        st.download_button(
+            "⬇️ Télécharger l’historique JSON",
+            data=history_rows_to_json(visible),
+            file_name="media-smart-lists-historique.json",
+            mime="application/json",
+            type="primary",
+            key="download_history_json",
+        )
+
+    st.caption(
+        "MDBList fournit principalement la dernière date connue par film ou épisode. "
+        "Les événements de revisionnage détaillés seront disponibles avec le futur import ZIP Trakt."
     )
 
 
@@ -2051,6 +2411,8 @@ elif page == "🧹 Nettoyage des listes":
     render_static_lists_page()
 elif page == "🎯 Que regarder ?":
     render_watchlist_page()
+elif page == "📅 Calendrier des sorties":
+    render_calendar_page()
 elif page == "📊 Statistiques":
     render_basic_stats_page()
 else:

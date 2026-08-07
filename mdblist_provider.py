@@ -12,7 +12,7 @@ import requests
 
 
 API_BASE = "https://api.mdblist.com"
-USER_AGENT = "Media-Smart-Lists/0.13"
+USER_AGENT = "Media-Smart-Lists/0.14"
 TIMEOUT = 35
 PAGE_LIMIT = 5000
 
@@ -201,6 +201,58 @@ class MDBListProvider:
             values = response.get("items") or response.get("now_playing") or []
             return [item for item in values if isinstance(item, dict)]
         return []
+
+    def calendar_events(
+        self,
+        start: str,
+        end: str,
+        include_favorite_cast: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Événements personnels sur une période de 120 jours maximum."""
+        response = self._get(
+            "/calendar/events",
+            {
+                "start": start,
+                "end": end,
+                "limit": 1000,
+                "append_to_response": "description",
+                "favorite_cast": "true" if include_favorite_cast else "false",
+            },
+        )
+        if isinstance(response, list):
+            return [item for item in response if isinstance(item, dict)]
+        if not isinstance(response, dict):
+            return []
+        # Tolère les réponses directes, regroupées par type, par date, ou sous `events`.
+        output = []
+
+        def collect(value: Any, bucket: str = "") -> None:
+            if isinstance(value, list):
+                for child in value:
+                    collect(child, bucket)
+                return
+            if not isinstance(value, dict):
+                return
+            looks_like_event = any(
+                key in value
+                for key in (
+                    "movie", "show", "episode", "media", "event_type",
+                    "air_date", "release_date", "first_aired", "date",
+                )
+            )
+            if looks_like_event:
+                item = dict(value)
+                if bucket:
+                    item.setdefault("_calendar_bucket", bucket)
+                    if len(bucket) >= 10 and bucket[4:5] == "-" and bucket[7:8] == "-":
+                        item.setdefault("_calendar_date", bucket[:10])
+                output.append(item)
+                return
+            for key, child in value.items():
+                collect(child, str(key))
+
+        collect(response)
+        return output
 
     def upnext(self) -> list[dict[str, Any]]:
         all_items: list[dict[str, Any]] = []
