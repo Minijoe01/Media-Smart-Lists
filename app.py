@@ -22,6 +22,7 @@ import json
 import pandas as pd
 
 import mdblist_oauth as mdb_oauth
+import achievements_engine as achievements_mod
 import stats_engine as stats_mod
 import wrapped_engine as wrapped_mod
 from calendar_engine import (
@@ -456,7 +457,53 @@ st.markdown(
         background: linear-gradient(135deg, #00B8A5, #006058) !important;
     }
 
-    /* Barres de progression : toujours aux couleurs du thème. */
+    /* Badges Succès — même style que l'ancienne application. */
+    .badge-obtenu {
+        background: linear-gradient(135deg, rgba(0,163,146,0.25) 0%, rgba(0,82,75,0.45) 100%) !important;
+        border: 1px solid rgba(0,163,146,0.5) !important;
+        backdrop-filter: blur(14px);
+        border-radius: 16px;
+        padding: 20px 16px;
+        text-align: center;
+        box-shadow: none !important;
+        transition: transform 0.25s ease;
+        margin-bottom: 12px;
+    }
+    .badge-obtenu:hover { transform: translateY(-4px); }
+    .badge-obtenu .emoji { font-size: 2.5em; margin-bottom: 8px; }
+    .badge-obtenu .titre { font-size: 1.05em; font-weight: 700; color: #F0FAF8; margin-bottom: 6px; }
+    .badge-obtenu .desc { font-size: 0.82em; color: #9DC5BF; line-height: 1.4; }
+    .badge-lock {
+        background: rgba(4, 25, 22, 0.55) !important;
+        border: 1px solid rgba(60, 80, 76, 0.4) !important;
+        backdrop-filter: blur(10px);
+        border-radius: 16px;
+        padding: 18px 14px;
+        text-align: center;
+        opacity: 0.65;
+        filter: grayscale(0.7);
+        transition: all 0.25s ease;
+        margin-bottom: 12px;
+    }
+    .badge-lock:hover { opacity: 0.9; filter: grayscale(0.2); transform: translateY(-2px); }
+    .badge-lock .emoji { font-size: 2.2em; margin-bottom: 8px; filter: grayscale(1); opacity: 0.7; }
+    .badge-lock .titre { font-size: 1em; font-weight: 600; color: #7EA8A0; margin-bottom: 6px; }
+    .badge-lock .desc { font-size: 0.8em; color: #6B928C; line-height: 1.4; }
+    .badge-lock .prog-badge {
+        height: 6px;
+        background: rgba(0,0,0,0.3);
+        border-radius: 3px;
+        margin-top: 10px;
+        overflow: hidden;
+    }
+    .badge-lock .prog-badge-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #00524B, #00A392);
+        border-radius: 3px;
+    }
+
+    /* Barres de progression : remplissage vert → citron, fond vert translucide
+       (comme les barres des cartes « En cours de lecture »). */
     div[data-testid="stProgress"] [role="progressbar"] > div > div,
     div[data-testid="stProgress"] [role="progressbar"] > div > div > div {
         background: linear-gradient(90deg, var(--am-green), var(--am-lime)) !important;
@@ -464,7 +511,8 @@ st.markdown(
     }
     div[data-testid="stProgress"] [role="progressbar"] > div,
     div[data-testid="stProgress"] > div > div > div {
-        background: rgba(255, 255, 255, 0.08) !important;
+        background: rgba(0, 163, 146, 0.22) !important;
+        border: 1px solid rgba(0, 163, 146, 0.28) !important;
         border-radius: 999px;
     }
 
@@ -1624,8 +1672,7 @@ def _apply_playback_poster_cache(rows: list[dict]) -> list[dict]:
 
 
 def _refresh_missing_playback_posters(rows: list[dict]) -> tuple[bool, str]:
-    movie_ids: list[int] = []
-    show_ids: list[int] = []
+    tmdb_ids: list[int] = []
     for row in rows:
         ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
         value = ids.get("tmdb")
@@ -1634,19 +1681,17 @@ def _refresh_missing_playback_posters(rows: list[dict]) -> tuple[bool, str]:
                 media_id = int(value)
             except (TypeError, ValueError):
                 continue
-            target = movie_ids if str(row.get("media_kind") or row.get("kind") or "") == "movie" else show_ids
-            if media_id > 0 and media_id not in target:
-                target.append(media_id)
-    movie_ids = movie_ids[:200]
-    show_ids = show_ids[:200]
-    if not movie_ids and not show_ids:
+            if media_id > 0 and media_id not in tmdb_ids:
+                tmdb_ids.append(media_id)
+    tmdb_ids = tmdb_ids[:200]
+    if not tmdb_ids:
         return False, "Aucun identifiant TMDb disponible pour compléter ces posters."
     valid, message = mdb_oauth.ensure_valid_session(cookies)
     if not valid:
         return False, message or "Session MDBList indisponible."
     try:
         provider = MDBListProvider(mdb_oauth.access_token())
-        metadata = provider.media_info_batch(movie_ids=movie_ids, show_ids=show_ids)
+        metadata = provider.media_info_batch(tmdb_ids=tmdb_ids)
     except Exception:
         return False, "MDBList n’a pas pu compléter les posters pour le moment."
     cache = st.session_state.get(PLAYBACK_POSTER_CACHE_KEY)
@@ -2168,62 +2213,125 @@ def _calendar_call_count(horizon_days: int) -> int:
 
 
 def _calendar_batch_count() -> int:
-    """Nombre d'appels groupés (1 par type, 200 identifiants max) pour enrichir."""
-    movie_ids, show_ids = _calendar_tmdb_ids(_dataset())
-    count = (1 if movie_ids else 0) + (1 if show_ids else 0)
+    """Nombre d'appels groupés (tmdb + imdb, 200 identifiants max) pour enrichir."""
+    info = _calendar_media_ids(_dataset())
+    count = 0
+    if info["tmdb_ids"]:
+        count += 1
+    if info["imdb_ids"]:
+        count += 1
     return min(3, count)
 
 
-def _calendar_tmdb_ids(dataset: dict[str, Any]) -> tuple[list[int], list[int]]:
-    """Identifiants TMDb des contenus personnels, séparés films / séries,
-    par ordre de priorité (séries en cours d'abord, puis Watchlist, listes)."""
-    movie_ids: list[int] = []
-    show_ids: list[int] = []
-    seen_movie: set[int] = set()
-    seen_show: set[int] = set()
+def _extract_media_ids(media: Any) -> tuple[int | None, str | None]:
+    """Extrait (id_tmdb, id_imdb) d'un objet média MDBList, quel que soit le format.
+
+    MDBList expose les identifiants sous plusieurs formes :
+    - bloc nested `ids` : {"tmdb": 123, "imdb": "tt…", "mdblist": "m…"}
+    - champs à plat : `tmdb_id`, `tmdbid`, `imdb_id`
+    - `id` à plat : pour un média, l'id MDBList EST l'id TMDb (ex. id 917496 = tmdb 917496)
+    - item imbriqué : {"movie": {...}} ou {"show": {...}}
+    """
+    if not isinstance(media, dict):
+        return None, None
+    # Désimbrication des contenus listés sous "movie"/"show".
+    for nested in ("movie", "show", "media"):
+        child = media.get(nested)
+        if isinstance(child, dict):
+            return _extract_media_ids(child)
+    ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+
+    tmdb: int | None = None
+    imdb: str | None = None
+    for key in ("tmdb", "tmdbid", "tmdb_id"):
+        if ids.get(key) is not None:
+            try:
+                tmdb = int(ids[key])
+                break
+            except (TypeError, ValueError):
+                pass
+    if tmdb is None:
+        for key in ("tmdb_id", "tmdbid"):
+            if media.get(key) is not None:
+                try:
+                    tmdb = int(media[key])
+                    break
+                except (TypeError, ValueError):
+                    pass
+    if tmdb is None:
+        raw_id = media.get("id")
+        try:
+            candidate = int(raw_id)
+            if candidate > 0:
+                tmdb = candidate
+        except (TypeError, ValueError):
+            pass
+
+    for key in ("imdb", "imdb_id"):
+        if ids.get(key):
+            imdb = str(ids[key]).strip()
+            break
+    if imdb is None:
+        raw_imdb = media.get("imdb_id") or media.get("imdb")
+        if raw_imdb:
+            imdb = str(raw_imdb).strip()
+    if imdb and not imdb.startswith("tt"):
+        imdb = ""
+    return tmdb, imdb
+
+
+def _calendar_media_ids(dataset: dict[str, Any]) -> dict[str, Any]:
+    """Identifiants des contenus personnels, par ordre de priorité
+    (séries en cours d'abord, puis Watchlist, puis listes), avec compteurs
+    pour les diagnostics affichés dans l'interface."""
+    tmdb_ids: list[int] = []
+    imdb_ids: list[str] = []
+    seen_tmdb: set[int] = set()
+    seen_imdb: set[str] = set()
+    scanned = 0
     sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
 
-    def push(bucket: list[int], seen: set[int], value: Any) -> None:
-        try:
-            media_id = int(value)
-        except (TypeError, ValueError):
-            return
-        if media_id > 0 and media_id not in seen:
-            seen.add(media_id)
-            bucket.append(media_id)
-
-    def scan(media: Any, kind: str) -> None:
+    def scan(media: Any) -> None:
+        nonlocal scanned
         if not isinstance(media, dict):
             return
-        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
-        push(movie_ids if kind == "movie" else show_ids,
-             seen_movie if kind == "movie" else seen_show,
-             ids.get("tmdb"))
+        scanned += 1
+        tmdb, imdb = _extract_media_ids(media)
+        if tmdb is not None and tmdb > 0 and tmdb not in seen_tmdb:
+            seen_tmdb.add(tmdb)
+            tmdb_ids.append(tmdb)
+        if imdb and imdb not in seen_imdb:
+            seen_imdb.add(imdb)
+            imdb_ids.append(imdb)
 
     for row in sections.get("upnext") or []:
         if isinstance(row, dict):
-            scan(row.get("show"), "show")
+            scan(row.get("show"))
     watchlist = sections.get("watchlist") or {}
     for movie in watchlist.get("movies") or []:
-        scan(movie, "movie")
+        scan(movie)
     for show in watchlist.get("shows") or []:
-        scan(show, "show")
+        scan(show)
     for item in sections.get("user_lists") or []:
         if not isinstance(item, dict):
             continue
         for movie in item.get("movies") or []:
-            scan(movie, "movie")
+            scan(movie)
         for show in item.get("shows") or []:
-            scan(show, "show")
+            scan(show)
     # Secours : les sources normalisées du dataset.
     for source in dataset.get("sources") or []:
         if not isinstance(source, dict) or source.get("kind") == "aggregate":
             continue
         for movie in source.get("movies") or []:
-            scan(movie, "movie")
+            scan(movie)
         for show in source.get("shows") or []:
-            scan(show, "show")
-    return movie_ids, show_ids
+            scan(show)
+    return {
+        "tmdb_ids": tmdb_ids,
+        "imdb_ids": imdb_ids,
+        "scanned": scanned,
+    }
 
 
 def _parse_date_only(value: Any) -> date | None:
@@ -2239,109 +2347,99 @@ def _parse_date_only(value: Any) -> date | None:
         return None
 
 
+def _event_date_value(event: dict[str, Any]) -> Any:
+    return event.get("first_aired") or event.get("release_date") or event.get("date")
+
+
 def _enrich_calendar_metadata(
     provider: MDBListProvider,
     dataset: dict[str, Any],
     start_date: date,
     end_date: date,
-    max_batches: int = 3,
-) -> list[dict[str, Any]]:
-    """Complète le calendrier avec les vraies dates futures (films à sortir,
-    prochains épisodes des séries en cours, premières de séries) obtenues par
-    appels groupés TMDb/MDBList sur les contenus personnels.
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Complète le calendrier avec les dates futures connues de MDBList/TMDb
+    (films à sortir, premières de séries) via les appels groupés officiels
+    POST /tmdb/any et POST /imdb/any.
 
-    C'est ce qui permet de voir par exemple la reprise d'une série en pause ou
-    l'épisode suivant d'une série en cours dont la date est déjà annoncée.
+    Retourne (événements, diagnostics) : les diagnostics permettent d'afficher
+    dans l'interface pourquoi certains contenus n'apparaissent pas.
     """
-    movie_ids, show_ids = _calendar_tmdb_ids(dataset)
+    info = _calendar_media_ids(dataset)
+    diag: dict[str, Any] = {
+        "contenus_scannés": info["scanned"],
+        "ids_tmdb": len(info["tmdb_ids"]),
+        "ids_imdb": len(info["imdb_ids"]),
+        "items_reçus": 0,
+        "événements_candidats": 0,
+        "erreurs": [],
+    }
     output: list[dict[str, Any]] = []
-    for kind, chunk in (("movie", movie_ids[:200]), ("show", show_ids[:200])):
-        if not chunk:
-            continue
+
+    items: list[dict[str, Any]] = []
+    if info["tmdb_ids"]:
         try:
-            items = provider.media_info_batch(
-                movie_ids=chunk if kind == "movie" else [],
-                show_ids=chunk if kind == "show" else [],
-            )
-        except Exception:
+            items.extend(provider.media_info_batch(tmdb_ids=info["tmdb_ids"][:200]))
+        except Exception as exc:
+            diag["erreurs"].append(f"lot TMDb : {exc}")
+    if info["imdb_ids"]:
+        try:
+            items.extend(provider.media_info_batch(imdb_ids=info["imdb_ids"][:200]))
+        except Exception as exc:
+            diag["erreurs"].append(f"lot IMDb : {exc}")
+    diag["items_reçus"] = len(items)
+
+    for item in items:
+        if not isinstance(item, dict):
             continue
-        for item in items:
-            if not isinstance(item, dict):
+        mediatype = str(
+            item.get("mediatype") or item.get("media_type") or item.get("type") or ""
+        ).casefold()
+        is_movie = "movie" in mediatype or "film" in mediatype
+        if is_movie:
+            value = None
+            for key in (
+                "release_date", "released", "released_at", "theatrical_date",
+                "premiere_date", "released_digital", "digital_release_date",
+                "digital_date", "dvd_date", "dvd_release_date",
+                "physical_release_date", "bluray_date",
+            ):
+                if item.get(key):
+                    value = item[key]
+                    break
+            if value is None:
                 continue
-            ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-            if not ids.get("tmdb"):
+            parsed = _parse_date_only(value)
+            if parsed is None or not (start_date <= parsed <= end_date):
                 continue
-            batch_type = str(item.get("_mdblist_batch_type") or "")
-            mediatype = str(
-                item.get("mediatype") or item.get("media_type") or item.get("type") or batch_type or ""
-            ).casefold()
-            is_movie = "movie" in mediatype or "film" in mediatype
-            if is_movie:
-                value = None
-                for key in (
-                    "release_date", "released", "released_at", "theatrical_date",
-                    "premiere_date", "released_digital", "digital_release_date",
-                    "digital_date", "dvd_date", "dvd_release_date",
-                    "physical_release_date", "bluray_date",
-                ):
-                    if item.get(key):
-                        value = item[key]
-                        break
-                if value is not None:
-                    output.append(
-                        {
-                            "type": "movie",
-                            "release_date": value,
-                            "movie": item,
-                            "source": "Vos listes — date à venir",
-                        }
-                    )
+            diag["événements_candidats"] += 1
+            output.append(
+                {
+                    "type": "movie",
+                    "release_date": value,
+                    "movie": item,
+                    "source": "Vos listes — date à venir",
+                }
+            )
+        else:
+            # Séries : MDBList expose la date de première diffusion (`released`).
+            # L'épisode suivant d'une série en cours vient de l'Up Next (déjà
+            # fusionné dans le calendrier de secours) lorsque MDBList le connaît.
+            value = None
+            for key in ("first_air_date", "premiere_date", "next_air_date", "released"):
+                if item.get(key):
+                    value = item[key]
+                    break
+            if value is None:
                 continue
-            # Séries : l'épisode futur annoncé prime, sinon la date de première.
-            future = None
-            for outer in ("next_episode_to_air", "last_episode_to_air"):
-                child = item.get(outer)
-                if isinstance(child, dict):
-                    value = None
-                    for key in ("air_date", "first_aired", "release_date", "date"):
-                        if child.get(key):
-                            value = child[key]
-                            break
-                    if value is not None:
-                        future = (child, value)
-                        break
-            if future is not None:
-                child, value = future
-                output.append(
-                    {
-                        "event_type": "episode",
-                        "first_aired": value,
-                        "show": item,
-                        "episode": child,
-                        "source": "Vos séries en cours",
-                    }
-                )
-            else:
-                value = None
-                for key in ("first_air_date", "next_air_date", "premiere_date", "released"):
-                    if item.get(key):
-                        value = item[key]
-                        break
-                if value is not None:
-                    output.append(
-                        {"type": "show", "date": value, "show": item, "source": "Vos listes — date à venir"}
-                    )
-    # Ne conserver que les événements dans l'horizon demandé.
-    return [
-        event
-        for event in output
-        if _parse_date_only(
-            event.get("first_aired") or event.get("release_date") or event.get("date")
-        ) is not None
-        and start_date <= _parse_date_only(
-            event.get("first_aired") or event.get("release_date") or event.get("date")
-        ) <= end_date
-    ]
+            parsed = _parse_date_only(value)
+            if parsed is None or not (start_date <= parsed <= end_date):
+                continue
+            diag["événements_candidats"] += 1
+            output.append(
+                {"type": "show", "date": value, "show": item, "source": "Vos listes — date à venir"}
+            )
+
+    return output, diag
 
 
 def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[bool, str]:
@@ -2375,13 +2473,14 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
     # Les dates déjà chargées (Up Next et listes) alimentent un calendrier de
     # secours, sans limite de 120 jours puisque aucune requête supplémentaire.
     local_events = build_local_calendar_events(dataset, start_date, end_date)
-    # Enrichissement par appels groupés : vraies dates futures des films et
-    # prochains épisodes annoncés des séries (ex. reprise d'une série en pause).
+    # Enrichissement par appels groupés officiels : dates futures des films et
+    # premières de séries présents dans vos listes et votre Watchlist.
     enriched: list[dict[str, Any]] = []
+    enrich_diag: dict[str, Any] = {}
     try:
-        enriched = _enrich_calendar_metadata(provider, dataset, start_date, end_date)
-    except Exception:
-        enriched = []
+        enriched, enrich_diag = _enrich_calendar_metadata(provider, dataset, start_date, end_date)
+    except Exception as exc:
+        enrich_diag = {"erreurs": [f"enrichissement : {exc}"]}
 
     all_events = events + local_events + enriched
     if events:
@@ -2403,6 +2502,7 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
             "local": len(local_events),
             "enriched": len(enriched),
         },
+        "enrich_diag": enrich_diag,
     }
     account = mdb_oauth.account_summary()
     if provider.rate_limit_remaining is not None and account:
@@ -2531,6 +2631,30 @@ def render_calendar_page() -> None:
             f"Calendrier MDBList actualisé le {checked}{extra_text} · "
             "les filtres ci-dessous préservent votre quota."
         )
+
+    enrich_diag = cache.get("enrich_diag") or {}
+    if isinstance(enrich_diag, dict) and enrich_diag:
+        with st.expander("🔍 Pourquoi ce calendrier contient-il ce qu'il contient ?"):
+            st.caption(
+                "Détail de l'enrichissement : les contenus de vos listes sont interrogés par lots "
+                "pour trouver leurs dates de sortie à venir."
+            )
+            if enrich_diag.get("erreurs"):
+                for error in enrich_diag["erreurs"]:
+                    st.markdown(f"⚠️ {escape(str(error))}")
+            rows_diag = [
+                ("Contenus scannés dans vos données", enrich_diag.get("contenus_scannés")),
+                ("Identifiants TMDb trouvés", enrich_diag.get("ids_tmdb")),
+                ("Identifiants IMDb trouvés", enrich_diag.get("ids_imdb")),
+                ("Fiches reçues de MDBList", enrich_diag.get("items_reçus")),
+                ("Dates à venir dans l'horizon", enrich_diag.get("événements_candidats")),
+            ]
+            for label, value in rows_diag:
+                st.markdown(f"**{label}** : {value if value is not None else '—'}")
+            st.caption(
+                "Une série en pause dont la date de reprise n'est pas encore annoncée publiquement "
+                "n'apparaît pas : la date n'existe nulle part. Elle apparaîtra dès sa publication."
+            )
 
     filter_col, timing_col, sort_col, limit_col = st.columns([0.18, 0.27, 0.37, 0.18])
     type_filter = filter_col.selectbox("Type", CALENDAR_TYPE_OPTIONS, key="calendar_type")
@@ -3027,6 +3151,81 @@ def page_dashboard() -> None:
             st.caption(text)
 
 
+def render_achievements_page() -> None:
+    """Succès (badges) — mêmes badges et même présentation que l'ancienne
+    application Trakt Smart Lists, branchés sur le modèle normalisé."""
+    st.markdown('<div class="page-title">🏆 Succès</div>', unsafe_allow_html=True)
+    st.caption(
+        "Tes badges de grand fan de cinéma et de séries. Tu débloques des badges "
+        "automatiquement au fil de ton visionnage."
+    )
+    dataset = _dataset()
+    if not dataset:
+        st.markdown(
+            '<div class="accent-callout"><strong>DONNÉES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    rows = normalize_history(dataset, timezone_name="Europe/Paris")
+    if not rows:
+        st.caption("Aucun visionnage n’est disponible pour le moment.")
+        return
+    df = stats_mod.build_frame(rows)
+    if df.empty:
+        st.caption("Aucune donnée datée pour les succès.")
+        return
+
+    result = achievements_mod.compute_achievements(df)
+    obtenus = result["obtenus"]
+    locks = result["locks"]
+
+    st.markdown(f"#### 🎖️ Badges obtenus ({result['obtenu_count']}/{result['total']})")
+    if obtenus:
+        cols = st.columns(min(4, len(obtenus)))
+        for i, (_badge_id, emoji, titre, desc, _cond, _prog) in enumerate(obtenus):
+            with cols[i % 4]:
+                st.markdown(
+                    f"""
+                    <div class="badge-obtenu">
+                        <div class="emoji">{emoji}</div>
+                        <div class="titre">{escape(str(titre))}</div>
+                        <div class="desc">{escape(str(desc))}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+    else:
+        st.markdown(
+            """
+            <div style="background: rgba(8,55,50,0.45); border:1px solid rgba(255,255,255,0.07);
+                        border-radius:14px; padding:18px; color:#F0FAF8; text-align:center;">
+            Continue de regarder des contenus pour gagner tes premiers badges !
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    if locks:
+        st.divider()
+        st.markdown(f"#### 🔒 Prochains badges à décrocher ({len(locks)})")
+        st.caption("Voici les badges que tu n'as pas encore, triés avec les plus proches en premier.")
+        cols = st.columns(min(4, len(locks)))
+        for i, (_badge_id, emoji, titre, desc, _cond, prog) in enumerate(locks):
+            with cols[i % 4]:
+                st.markdown(
+                    f"""
+                    <div class="badge-lock">
+                        <div class="emoji">{emoji}</div>
+                        <div class="titre">{escape(str(titre))}</div>
+                        <div class="desc">{escape(str(desc))}</div>
+                        <div class="prog-badge"><div class="prog-badge-fill" style="width:{round(prog, 1)}%"></div></div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+
 def render_annual_page() -> None:
     """Rendez-vous annuel (Wrapped) — même logique et même rendu que la page
     de l'ancienne application Trakt Smart Lists."""
@@ -3241,6 +3440,8 @@ elif page == "📊 Statistiques":
     render_basic_stats_page()
 elif page == "🎬 Rendez-vous annuel":
     render_annual_page()
+elif page == "🏆 Succès":
+    render_achievements_page()
 else:
     placeholder(page)
 

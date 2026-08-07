@@ -216,15 +216,19 @@ def monthly_options(df: pd.DataFrame) -> dict[str, Any]:
     df = df.copy()
     df["an_mois"] = df["date_dt"].dt.year * 100 + df["date_dt"].dt.month
     df["mois"] = df["date_dt"].dt.strftime("%m-%Y")
-    grouped = df.groupby(["an_mois", "mois"])["duree"].sum().round(1).reset_index()
-    grouped = grouped.sort_values("an_mois")
-    hours = grouped["duree"]
+    # Tri explicitement chronologique : (année, mois) numérique, jamais alphabétique.
+    series_by_key: dict[int, tuple[str, float]] = {}
+    for (an_mois, mois), duree in df.groupby(["an_mois", "mois"])["duree"].sum().round(1).items():
+        series_by_key[int(an_mois)] = (str(mois), float(duree))
+    ordered = [series_by_key[key] for key in sorted(series_by_key)]
+    labels = [label for label, _ in ordered]
+    values = [value for _, value in ordered]
     option = _base_text_style()
     option["title"] = {"text": "Heures par mois", "textStyle": {"color": COL_TEXT}}
-    option["xAxis"] = {"type": "category", "data": list(grouped["mois"]), "axisLabel": {"color": COL_MUTED}}
+    option["xAxis"] = {"type": "category", "data": labels, "axisLabel": {"color": COL_MUTED}}
     option["series"] = [
         {
-            "data": list(hours),
+            "data": values,
             "type": "line",
             "smooth": True,
             "lineStyle": {"color": COL_LIME, "width": 3},

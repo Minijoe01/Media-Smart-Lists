@@ -159,40 +159,47 @@ class MDBListProvider:
 
     def media_info_batch(
         self,
-        movie_ids: list[int] | None = None,
-        show_ids: list[int] | None = None,
+        tmdb_ids: list[int] | None = None,
+        imdb_ids: list[str] | None = None,
     ) -> list[dict[str, Any]]:
-        """Complète jusqu'à 200 médias par type en un seul appel groupé MDBList.
+        """Complète jusqu'à 200 médias par appel groupé MDBList.
 
-        L'API MDBList expose le batch sous la forme POST /tmdb/movie et
-        POST /tmdb/show (les identifiants sont des chaînes). Les identifiants
-        d'un autre type sont simplement ignorés par le serveur.
+        Endpoints officiels : POST /tmdb/any et POST /imdb/any, avec
+        `{"ids": ["123", …]}` (identifiants en chaînes). Le type `any` accepte
+        films et séries mélangés. Chaque appel est limité à 200 identifiants.
         """
         output: list[dict[str, Any]] = []
-        for media_type, values in (("movie", movie_ids), ("show", show_ids)):
+        for provider_name, values in (("tmdb", tmdb_ids), ("imdb", imdb_ids)):
             unique: list[str] = []
-            seen: set[int] = set()
+            seen: set[str] = set()
             for raw in values or []:
-                try:
-                    media_id = int(raw)
-                except (TypeError, ValueError):
+                value = str(raw).strip()
+                if provider_name == "tmdb":
+                    try:
+                        value = str(int(value))
+                    except (TypeError, ValueError):
+                        continue
+                if not value or value in seen:
                     continue
-                if media_id > 0 and media_id not in seen:
-                    seen.add(media_id)
-                    unique.append(str(media_id))
+                seen.add(value)
+                unique.append(value)
             if not unique:
                 continue
-            if len(unique) > 200:
-                unique = unique[:200]
-            response = self._post(
-                f"/tmdb/{media_type}",
-                {"ids": unique, "append_to_response": "genres,description"},
-            )
+            unique = unique[:200]
+            try:
+                response = self._post(
+                    f"/{provider_name}/any",
+                    {"ids": unique, "append_to_response": "genres,description"},
+                )
+            except MDBListReadError:
+                # Certaines versions de l'API refusent append_to_response sur
+                # le batch : on retente sans.
+                try:
+                    response = self._post(f"/{provider_name}/any", {"ids": unique})
+                except MDBListReadError:
+                    continue
             if isinstance(response, list):
-                for item in response:
-                    if isinstance(item, dict):
-                        item.setdefault("_mdblist_batch_type", media_type)
-                        output.append(item)
+                output.extend(item for item in response if isinstance(item, dict))
         return output
 
     def dropped(self) -> dict[str, Any]:
