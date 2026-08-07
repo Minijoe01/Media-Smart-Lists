@@ -1,237 +1,262 @@
-"""Lecture fournisseur-neutre des données MDBList.
-
-Aucune écriture. Les réponses restent uniquement dans st.session_state via app.py.
-"""
+"""Modèle commun Media Smart Lists, indépendant du fournisseur d'origine."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
 
-import requests
+
+NORMALIZED_SCHEMA_VERSION = 4
 
 
-API_BASE = "https://api.mdblist.com"
-USER_AGENT = "Media-Smart-Lists/0.8"
-TIMEOUT = 35
-PAGE_LIMIT = 5000
+def media_type(item: dict[str, Any]) -> str:
+    value = str(item.get("mediatype") or item.get("type") or "").lower()
+    if value in {"movie", "movies"}:
+        return "movie"
+    if value in {"show", "tv", "series", "tvshow"}:
+        return "show"
+    if isinstance(item.get("movie"), dict):
+        return "movie"
+    if isinstance(item.get("show"), dict):
+        return "show"
+    return value or "unknown"
 
 
-class MDBListReadError(RuntimeError):
-    pass
+def media_key(item: dict[str, Any]) -> str:
+    kind = media_type(item)
+    ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+    for key in ("tmdb", "imdb", "tvdb", "trakt", "mdblist"):
+        value = ids.get(key)
+        if value not in (None, "", 0, "0"):
+            return f"{kind}:{key}:{value}"
+    value = item.get("id") or item.get("imdb_id")
+    if value not in (None, "", 0, "0"):
+        return f"{kind}:id:{value}"
+    return f"{kind}:title:{item.get('title')}:{item.get('release_year') or item.get('year')}"
 
 
-class MDBListProvider:
-    def __init__(self, access_token: str):
-        if not access_token:
-            raise ValueError("Access token MDBList absent")
-        self.headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Accept": "application/json",
-            "User-Agent": USER_AGENT,
-        }
-        self.request_count = 0
-        self.rate_limit_remaining: int | None = None
+def dedupe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if isinstance(item, dict):
+            output.setdefault(media_key(item), item)
+    return list(output.values())
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        try:
-            response = requests.get(
-                f"{API_BASE}{path}",
-                params=params or {},
-                headers=self.headers,
-                timeout=TIMEOUT,
+
+def _source(
+    key: str,
+    label: str,
+    name: str,
+    kind: str,
+    source_type: str,
+    movies: list[dict[str, Any]],
+    shows: list[dict[str, Any]],
+    list_id: int | None = None,
+    members: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "key": key,
+        "label": label,
+        "name": name,
+        "kind": kind,
+        "type": source_type,
+        "id": list_id,
+        "members": members or [key],
+        "movies": dedupe(movies),
+        "shows": dedupe(shows),
+    }
+
+
+def build_sources(sections: dict[str, Any]) -> list[dict[str, Any]]:
+    watchlist = sections.get("watchlist") or {}
+    user_lists = sections.get("user_lists") or []
+    sources = [
+        _source(
+            "watchlist",
+            "Watchlist MDBList",
+            "Watchlist MDBList",
+            "watchlist",
+            "native",
+            list(watchlist.get("movies") or []),
+            list(watchlist.get("shows") or []),
+        )
+    ]
+
+    static_keys: list[str] = []
+    dynamic_keys: list[str] = []
+    personal_keys: list[str] = []
+    for item in user_lists:
+        if not isinstance(item, dict) or item.get("id") is None:
+            continue
+        list_id = int(item["id"])
+        list_type = "dynamic" if item.get("type") == "dynamic" else "static"
+        key = f"list:{list_id}"
+        name = str(item.get("name") or "Liste MDBList")
+        label = f"{name} · {'Dynamique' if list_type == 'dynamic' else 'Statique'}"
+        sources.append(
+            _source(
+                key,
+                label,
+                name,
+                "list",
+                list_type,
+                list(item.get("movies") or []),
+                list(item.get("shows") or []),
+                list_id=list_id,
             )
-        except requests.RequestException as exc:
-            raise MDBListReadError(f"Réseau indisponible pour {path}") from exc
-        self.request_count += 1
-        remaining = response.headers.get("X-RateLimit-Remaining") or response.headers.get("X-Rate-Limit-Remaining")
-        if remaining and str(remaining).isdigit():
-            self.rate_limit_remaining = int(remaining)
-        if response.status_code == 401:
-            raise MDBListReadError("Session MDBList expirée ou révoquée")
-        if response.status_code >= 400:
-            raise MDBListReadError(f"MDBList a répondu HTTP {response.status_code} pour {path}")
-        try:
-            return response.json()
-        except ValueError as exc:
-            raise MDBListReadError(f"Réponse JSON invalide pour {path}") from exc
-
-    def _paged_dict(
-        self,
-        path: str,
-        keys: tuple[str, ...],
-        extra_params: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        merged = {key: [] for key in keys}
-        offset = 0
-        pages = 0
-        last_pagination: dict[str, Any] = {}
-        while True:
-            params = {"limit": PAGE_LIMIT, "offset": offset}
-            params.update(extra_params or {})
-            response = self._get(path, params)
-            if not isinstance(response, dict):
-                raise MDBListReadError(f"Format paginé inattendu pour {path}")
-            pages += 1
-            for key in keys:
-                values = response.get(key) or []
-                if isinstance(values, list):
-                    merged[key].extend(values)
-            pagination = response.get("pagination") or {}
-            last_pagination = pagination if isinstance(pagination, dict) else {}
-            if not last_pagination.get("has_more"):
-                break
-            offset += PAGE_LIMIT
-            if pages >= 100:
-                raise MDBListReadError(f"Pagination anormalement longue pour {path}")
-        merged["pagination"] = last_pagination
-        merged["pages"] = pages
-        return merged
-
-    def watched(self) -> dict[str, Any]:
-        return self._paged_dict(
-            "/sync/watched",
-            ("movies", "shows", "seasons", "episodes"),
-            {"append_to_response": "genres,ratings"},
         )
+        personal_keys.append(key)
+        (dynamic_keys if list_type == "dynamic" else static_keys).append(key)
 
-    def ratings(self) -> dict[str, Any]:
-        return self._paged_dict(
-            "/sync/ratings",
-            ("movies", "shows", "seasons", "episodes"),
-        )
+    source_index = {source["key"]: source for source in sources}
 
-    def watchlist(self, filter_genre: str | None = None) -> dict[str, Any]:
-        params: dict[str, Any] = {
-            "append_to_response": "genres,poster,description,ratings",
-            "unified": "false",
-        }
-        if filter_genre:
-            params["filter_genre"] = filter_genre
-        return self._paged_dict(
-            "/watchlist/items",
-            ("movies", "shows"),
-            params,
-        )
-
-    def genres(self) -> list[dict[str, str]]:
-        response = self._get("/genres")
-        values = response if isinstance(response, list) else (
-            response.get("genres") if isinstance(response, dict) else []
-        )
-        output: list[dict[str, str]] = []
-        for value in values or []:
-            if isinstance(value, str):
-                slug = value.strip().lower()
-                title = value.strip().title()
-            elif isinstance(value, dict):
-                slug = str(value.get("slug") or value.get("name") or "").strip().lower()
-                title = str(value.get("title") or value.get("name") or slug).strip().title()
-            else:
-                continue
-            if slug:
-                output.append({"slug": slug, "title": title or slug.title()})
-        unique = {item["slug"]: item for item in output}
-        return sorted(unique.values(), key=lambda item: item["title"].casefold())
-
-    def dropped(self) -> dict[str, Any]:
-        return self._paged_dict(
-            "/sync/dropped",
-            ("shows",),
-        )
-
-    def playback(self) -> list[dict[str, Any]]:
-        response = self._get("/sync/playback")
-        if isinstance(response, list):
-            return response
-        if isinstance(response, dict):
-            values = response.get("items") or response.get("playback") or []
-            return values if isinstance(values, list) else []
-        return []
-
-    def upnext(self) -> list[dict[str, Any]]:
-        all_items: list[dict[str, Any]] = []
-        offset = 0
-        while True:
-            response = self._get("/upnext", {"limit": 100, "offset": offset})
-            if not isinstance(response, dict):
-                break
-            values = response.get("items") or []
-            if isinstance(values, list):
-                all_items.extend(values)
-            if not response.get("has_more"):
-                break
-            offset += 100
-            if offset >= 10000:
-                break
-        return all_items
-
-    def list_items(self, list_id: int, filter_genre: str | None = None) -> dict[str, Any]:
-        params: dict[str, Any] = {
-            "append_to_response": "genres,poster,description,ratings",
-            "unified": "false",
-        }
-        if filter_genre:
-            params["filter_genre"] = filter_genre
-        return self._paged_dict(
-            f"/lists/{list_id}/items",
-            ("movies", "shows"),
-            params,
-        )
-
-    def user_lists(self) -> list[dict[str, Any]]:
-        """Charge les listes personnelles statiques ET dynamiques."""
-        response = self._get("/lists/user", {"unified": "false"})
-        if not isinstance(response, list):
-            raise MDBListReadError("Format des listes utilisateur inattendu")
-        personal = [item for item in response if isinstance(item, dict)]
-        output: list[dict[str, Any]] = []
-        for metadata in personal:
-            list_id = metadata.get("id")
-            if list_id is None:
-                continue
-            items = self.list_items(int(list_id))
-            list_type = "dynamic" if (
-                metadata.get("type") == "dynamic" or metadata.get("dynamic") is True
-            ) else "static"
-            output.append(
-                {
-                    "id": int(list_id),
-                    "name": metadata.get("name") or "Liste MDBList",
-                    "private": metadata.get("private"),
-                    "type": list_type,
-                    "movies": items["movies"],
-                    "shows": items["shows"],
-                    "pages": items["pages"],
-                }
+    def aggregate(key: str, label: str, members: list[str], source_type: str) -> None:
+        movies = []
+        shows = []
+        for member in members:
+            source = source_index.get(member) or {}
+            movies.extend(source.get("movies") or [])
+            shows.extend(source.get("shows") or [])
+        sources.append(
+            _source(
+                key,
+                label,
+                label,
+                "aggregate",
+                source_type,
+                movies,
+                shows,
+                members=members,
             )
-        return output
-
-    def load_dataset(self) -> dict[str, Any]:
-        sections: dict[str, Any] = {}
-        errors: list[dict[str, str]] = []
-        loaders = (
-            ("watched", self.watched),
-            ("watchlist", self.watchlist),
-            ("genres", self.genres),
-            ("user_lists", self.user_lists),
-            ("ratings", self.ratings),
-            ("playback", self.playback),
-            ("upnext", self.upnext),
-            ("dropped", self.dropped),
         )
-        for name, loader in loaders:
-            try:
-                sections[name] = loader()
-            except MDBListReadError as exc:
-                errors.append({"section": name, "error": str(exc)})
-                sections[name] = [] if name in {"genres", "user_lists", "playback", "upnext"} else {}
-        return {
-            "provider": "mdblist",
-            "mode": "realtime",
-            "loaded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-            "sections": sections,
-            "errors": errors,
-            "request_count": self.request_count,
-            "rate_limit_remaining": self.rate_limit_remaining,
-        }
+
+    if static_keys:
+        aggregate("aggregate:static", "Toutes les listes statiques", static_keys, "aggregate_static")
+    if dynamic_keys:
+        aggregate("aggregate:dynamic", "Toutes les listes dynamiques", dynamic_keys, "aggregate_dynamic")
+    if personal_keys:
+        aggregate("aggregate:personal", "Toutes les listes personnelles", personal_keys, "aggregate_personal")
+        aggregate("aggregate:all", "Tout : Watchlist + toutes les listes", ["watchlist", *personal_keys], "aggregate_all")
+
+    return sources
+
+
+def _id_keys(item: dict[str, Any]) -> set[str]:
+    """Clés d'identité permettant de rapprocher deux représentations d'une série."""
+    ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+    output = set()
+    for provider in ("mdblist", "tmdb", "tvdb", "imdb", "trakt"):
+        value = ids.get(provider)
+        if value not in (None, "", 0, "0"):
+            output.add(f"{provider}:{value}")
+    return output
+
+
+def _genre_names(item: dict[str, Any]) -> list[str]:
+    values = item.get("genres") or []
+    output = set()
+    for value in values:
+        if isinstance(value, dict):
+            value = value.get("name") or value.get("title") or value.get("slug")
+        if value:
+            output.add(str(value).strip().title())
+    return sorted(output, key=str.casefold)
+
+
+def _last_air_date(item: dict[str, Any]) -> str | None:
+    """Date exacte du dernier épisode disponible lorsqu'elle existe dans les données."""
+    for key in ("last_air_date", "last_aired_at", "last_episode_air_date", "latest_air_date"):
+        if item.get(key):
+            return str(item[key])
+    nested = item.get("last_episode_to_air")
+    if isinstance(nested, dict) and (nested.get("air_date") or nested.get("aired_at")):
+        return str(nested.get("air_date") or nested.get("aired_at"))
+    return None
+
+
+def build_progress(sections: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalise Up Next et réutilise localement les métadonnées déjà chargées.
+
+    `/upnext` donne l'ordre de dernier visionnage, la progression et l'épisode à
+    voir. `/sync/watched`, déjà présent dans le même dataset, apporte notamment
+    les genres. Leur rapprochement ne déclenche donc aucune requête API.
+    """
+    metadata_by_id: dict[str, dict[str, Any]] = {}
+    watched_at_by_id: dict[str, str] = {}
+    watched_section = sections.get("watched") or {}
+    for row in watched_section.get("shows") or []:
+        if not isinstance(row, dict):
+            continue
+        metadata = row.get("show") if isinstance(row.get("show"), dict) else row
+        if not isinstance(metadata, dict):
+            continue
+        for identity in _id_keys(metadata):
+            metadata_by_id[identity] = metadata
+            if row.get("last_watched_at"):
+                watched_at_by_id[identity] = str(row["last_watched_at"])
+
+    output = []
+    for item in sections.get("upnext") or []:
+        if not isinstance(item, dict):
+            continue
+        upnext_show = item.get("show") if isinstance(item.get("show"), dict) else {}
+        history_show: dict[str, Any] = {}
+        history_watched_at: str | None = None
+        for identity in _id_keys(upnext_show):
+            if identity in metadata_by_id:
+                history_show = metadata_by_id[identity]
+                history_watched_at = watched_at_by_id.get(identity) or history_watched_at
+                break
+
+        # Les champs spécifiques Up Next (poster, titre, etc.) restent prioritaires,
+        # tandis que l'historique complète genres, runtime et statut s'ils manquent.
+        show = {**history_show, **upnext_show}
+        history_ids = history_show.get("ids") if isinstance(history_show.get("ids"), dict) else {}
+        upnext_ids = upnext_show.get("ids") if isinstance(upnext_show.get("ids"), dict) else {}
+        if history_ids or upnext_ids:
+            show["ids"] = {**history_ids, **upnext_ids}
+
+        episode = item.get("next_episode") if isinstance(item.get("next_episode"), dict) else {}
+        progress = item.get("progress") if isinstance(item.get("progress"), dict) else {}
+        try:
+            watched = int(progress.get("watched_episode_count") or 0)
+            total = int(progress.get("total_episode_count") or 0)
+        except (TypeError, ValueError):
+            watched, total = 0, 0
+        remaining = max(total - watched, 0)
+        try:
+            runtime = int(episode.get("runtime") or show.get("runtime") or 45)
+        except (TypeError, ValueError):
+            runtime = 45
+        percent = round(watched / total * 100, 1) if total else 0.0
+
+        exact_last_air = _last_air_date(item) or _last_air_date(show) or _last_air_date(progress)
+        next_episode_air = episode.get("air_date") or episode.get("aired_at")
+        latest_available_at = exact_last_air or next_episode_air
+        output.append(
+            {
+                "show": show,
+                "next_episode": episode,
+                "watched_episodes": watched,
+                "total_episodes": total,
+                "remaining_episodes": remaining,
+                "runtime": runtime,
+                "watched_minutes": watched * runtime,
+                "remaining_minutes": remaining * runtime,
+                "percent": percent,
+                "genres": _genre_names(show),
+                "last_watched_at": item.get("last_watched_at") or history_watched_at,
+                "latest_available_at": latest_available_at,
+                "latest_available_is_fallback": bool(latest_available_at and not exact_last_air),
+            }
+        )
+    return output
+
+
+def normalize_provider_dataset(raw: dict[str, Any]) -> dict[str, Any]:
+    sections = raw.get("sections") if isinstance(raw.get("sections"), dict) else {}
+    return {
+        **raw,
+        "schema_version": NORMALIZED_SCHEMA_VERSION,
+        "sources": build_sources(sections),
+        "progress": build_progress(sections),
+    }

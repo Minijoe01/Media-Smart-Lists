@@ -1,159 +1,36 @@
-"""Modèle commun Media Smart Lists, indépendant du fournisseur d'origine."""
+"""Filtres et tris locaux de la progression, indépendants du fournisseur.
+
+Ce module ne réalise volontairement aucun appel réseau. Il travaille uniquement
+sur les lignes normalisées déjà présentes dans le dataset de session.
+"""
 
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Iterable
 
 
-NORMALIZED_SCHEMA_VERSION = 4
+DEFAULT_PROGRESS_SORT = "🕘 Dernier visionnage — récent d’abord"
+
+PROGRESS_SORT_OPTIONS = [
+    DEFAULT_PROGRESS_SORT,
+    "🕘 Dernier visionnage — ancien d’abord",
+    "📈 Progression — plus avancée",
+    "📉 Progression — moins avancée",
+    "⏳ Temps restant — le plus court",
+    "⏳ Temps restant — le plus long",
+    "👀 Temps déjà vu — le plus élevé",
+    "👀 Temps déjà vu — le plus faible",
+    "🆕 Nouveauté — épisode disponible le plus récent",
+    "🗓️ Nouveauté — épisode disponible le plus ancien",
+    "🔤 Titre — A à Z",
+    "🔤 Titre — Z à A",
+]
 
 
-def media_type(item: dict[str, Any]) -> str:
-    value = str(item.get("mediatype") or item.get("type") or "").lower()
-    if value in {"movie", "movies"}:
-        return "movie"
-    if value in {"show", "tv", "series", "tvshow"}:
-        return "show"
-    if isinstance(item.get("movie"), dict):
-        return "movie"
-    if isinstance(item.get("show"), dict):
-        return "show"
-    return value or "unknown"
-
-
-def media_key(item: dict[str, Any]) -> str:
-    kind = media_type(item)
-    ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-    for key in ("tmdb", "imdb", "tvdb", "trakt", "mdblist"):
-        value = ids.get(key)
-        if value not in (None, "", 0, "0"):
-            return f"{kind}:{key}:{value}"
-    value = item.get("id") or item.get("imdb_id")
-    if value not in (None, "", 0, "0"):
-        return f"{kind}:id:{value}"
-    return f"{kind}:title:{item.get('title')}:{item.get('release_year') or item.get('year')}"
-
-
-def dedupe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    output: dict[str, dict[str, Any]] = {}
-    for item in items:
-        if isinstance(item, dict):
-            output.setdefault(media_key(item), item)
-    return list(output.values())
-
-
-def _source(
-    key: str,
-    label: str,
-    name: str,
-    kind: str,
-    source_type: str,
-    movies: list[dict[str, Any]],
-    shows: list[dict[str, Any]],
-    list_id: int | None = None,
-    members: list[str] | None = None,
-) -> dict[str, Any]:
-    return {
-        "key": key,
-        "label": label,
-        "name": name,
-        "kind": kind,
-        "type": source_type,
-        "id": list_id,
-        "members": members or [key],
-        "movies": dedupe(movies),
-        "shows": dedupe(shows),
-    }
-
-
-def build_sources(sections: dict[str, Any]) -> list[dict[str, Any]]:
-    watchlist = sections.get("watchlist") or {}
-    user_lists = sections.get("user_lists") or []
-    sources = [
-        _source(
-            "watchlist",
-            "Watchlist MDBList",
-            "Watchlist MDBList",
-            "watchlist",
-            "native",
-            list(watchlist.get("movies") or []),
-            list(watchlist.get("shows") or []),
-        )
-    ]
-
-    static_keys: list[str] = []
-    dynamic_keys: list[str] = []
-    personal_keys: list[str] = []
-    for item in user_lists:
-        if not isinstance(item, dict) or item.get("id") is None:
-            continue
-        list_id = int(item["id"])
-        list_type = "dynamic" if item.get("type") == "dynamic" else "static"
-        key = f"list:{list_id}"
-        name = str(item.get("name") or "Liste MDBList")
-        label = f"{name} · {'Dynamique' if list_type == 'dynamic' else 'Statique'}"
-        sources.append(
-            _source(
-                key,
-                label,
-                name,
-                "list",
-                list_type,
-                list(item.get("movies") or []),
-                list(item.get("shows") or []),
-                list_id=list_id,
-            )
-        )
-        personal_keys.append(key)
-        (dynamic_keys if list_type == "dynamic" else static_keys).append(key)
-
-    source_index = {source["key"]: source for source in sources}
-
-    def aggregate(key: str, label: str, members: list[str], source_type: str) -> None:
-        movies = []
-        shows = []
-        for member in members:
-            source = source_index.get(member) or {}
-            movies.extend(source.get("movies") or [])
-            shows.extend(source.get("shows") or [])
-        sources.append(
-            _source(
-                key,
-                label,
-                label,
-                "aggregate",
-                source_type,
-                movies,
-                shows,
-                members=members,
-            )
-        )
-
-    if static_keys:
-        aggregate("aggregate:static", "Toutes les listes statiques", static_keys, "aggregate_static")
-    if dynamic_keys:
-        aggregate("aggregate:dynamic", "Toutes les listes dynamiques", dynamic_keys, "aggregate_dynamic")
-    if personal_keys:
-        aggregate("aggregate:personal", "Toutes les listes personnelles", personal_keys, "aggregate_personal")
-        aggregate("aggregate:all", "Tout : Watchlist + toutes les listes", ["watchlist", *personal_keys], "aggregate_all")
-
-    return sources
-
-
-def _id_keys(item: dict[str, Any]) -> set[str]:
-    """Clés d'identité permettant de rapprocher deux représentations d'une série."""
-    ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-    output = set()
-    for provider in ("mdblist", "tmdb", "tvdb", "imdb", "trakt"):
-        value = ids.get(provider)
-        if value not in (None, "", 0, "0"):
-            output.add(f"{provider}:{value}")
-    return output
-
-
-def _genre_names(item: dict[str, Any]) -> list[str]:
-    values = item.get("genres") or []
-    output = set()
+def _genres_from_media(media: dict[str, Any]) -> list[str]:
+    values = media.get("genres") or []
+    output: set[str] = set()
     for value in values:
         if isinstance(value, dict):
             value = value.get("name") or value.get("title") or value.get("slug")
@@ -162,101 +39,129 @@ def _genre_names(item: dict[str, Any]) -> list[str]:
     return sorted(output, key=str.casefold)
 
 
-def _last_air_date(item: dict[str, Any]) -> str | None:
-    """Date exacte du dernier épisode disponible lorsqu'elle existe dans les données."""
-    for key in ("last_air_date", "last_aired_at", "last_episode_air_date", "latest_air_date"):
-        if item.get(key):
-            return str(item[key])
-    nested = item.get("last_episode_to_air")
-    if isinstance(nested, dict) and (nested.get("air_date") or nested.get("aired_at")):
-        return str(nested.get("air_date") or nested.get("aired_at"))
-    return None
+def progress_genres(row: dict[str, Any]) -> list[str]:
+    """Retourne les genres normalisés d'une ligne En cours."""
+    values = row.get("genres")
+    if isinstance(values, list) and values:
+        return _genres_from_media({"genres": values})
+    show = row.get("show") if isinstance(row.get("show"), dict) else {}
+    return _genres_from_media(show)
 
 
-def build_progress(sections: dict[str, Any]) -> list[dict[str, Any]]:
-    """Normalise Up Next et réutilise localement les métadonnées déjà chargées.
+def available_progress_genres(rows: Iterable[dict[str, Any]]) -> list[str]:
+    values: set[str] = set()
+    for row in rows:
+        if isinstance(row, dict):
+            values.update(progress_genres(row))
+    return sorted(values, key=str.casefold)
 
-    `/upnext` donne l'ordre de dernier visionnage, la progression et l'épisode à
-    voir. `/sync/watched`, déjà présent dans le même dataset, apporte notamment
-    les genres. Leur rapprochement ne déclenche donc aucune requête API.
-    """
-    metadata_by_id: dict[str, dict[str, Any]] = {}
-    watched_at_by_id: dict[str, str] = {}
-    watched_section = sections.get("watched") or {}
-    for row in watched_section.get("shows") or []:
+
+def _title(row: dict[str, Any]) -> str:
+    show = row.get("show") if isinstance(row.get("show"), dict) else {}
+    return str(show.get("title") or show.get("name") or "").strip()
+
+
+def _timestamp(value: Any) -> float | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        text = str(value).strip().replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).timestamp()
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _last_watched_timestamp(row: dict[str, Any]) -> float | None:
+    show = row.get("show") if isinstance(row.get("show"), dict) else {}
+    return _timestamp(
+        row.get("last_watched_at")
+        or row.get("watched_at")
+        or show.get("last_watched_at")
+        or show.get("watched_at")
+    )
+
+
+def _latest_available_timestamp(row: dict[str, Any]) -> float | None:
+    show = row.get("show") if isinstance(row.get("show"), dict) else {}
+    episode = row.get("next_episode") if isinstance(row.get("next_episode"), dict) else {}
+    last_episode = show.get("last_episode_to_air") if isinstance(show.get("last_episode_to_air"), dict) else {}
+    return _timestamp(
+        row.get("latest_available_at")
+        or row.get("last_air_date")
+        or show.get("last_air_date")
+        or show.get("last_aired_at")
+        or show.get("last_episode_air_date")
+        or last_episode.get("air_date")
+        or episode.get("air_date")
+        or episode.get("aired_at")
+    )
+
+
+def filter_progress_rows(
+    rows: Iterable[dict[str, Any]],
+    genre: str = "Tous les genres",
+    search: str = "",
+) -> list[dict[str, Any]]:
+    """Filtre localement par genre et titre, sans requête distante."""
+    query = str(search or "").strip().casefold()
+    output = []
+    for row in rows:
         if not isinstance(row, dict):
             continue
-        metadata = row.get("show") if isinstance(row.get("show"), dict) else row
-        if not isinstance(metadata, dict):
+        if query and query not in _title(row).casefold():
             continue
-        for identity in _id_keys(metadata):
-            metadata_by_id[identity] = metadata
-            if row.get("last_watched_at"):
-                watched_at_by_id[identity] = str(row["last_watched_at"])
-
-    output = []
-    for item in sections.get("upnext") or []:
-        if not isinstance(item, dict):
+        if genre and genre != "Tous les genres" and genre not in progress_genres(row):
             continue
-        upnext_show = item.get("show") if isinstance(item.get("show"), dict) else {}
-        history_show: dict[str, Any] = {}
-        history_watched_at: str | None = None
-        for identity in _id_keys(upnext_show):
-            if identity in metadata_by_id:
-                history_show = metadata_by_id[identity]
-                history_watched_at = watched_at_by_id.get(identity) or history_watched_at
-                break
-
-        # Les champs spécifiques Up Next (poster, titre, etc.) restent prioritaires,
-        # tandis que l'historique complète genres, runtime et statut s'ils manquent.
-        show = {**history_show, **upnext_show}
-        history_ids = history_show.get("ids") if isinstance(history_show.get("ids"), dict) else {}
-        upnext_ids = upnext_show.get("ids") if isinstance(upnext_show.get("ids"), dict) else {}
-        if history_ids or upnext_ids:
-            show["ids"] = {**history_ids, **upnext_ids}
-
-        episode = item.get("next_episode") if isinstance(item.get("next_episode"), dict) else {}
-        progress = item.get("progress") if isinstance(item.get("progress"), dict) else {}
-        try:
-            watched = int(progress.get("watched_episode_count") or 0)
-            total = int(progress.get("total_episode_count") or 0)
-        except (TypeError, ValueError):
-            watched, total = 0, 0
-        remaining = max(total - watched, 0)
-        try:
-            runtime = int(episode.get("runtime") or show.get("runtime") or 45)
-        except (TypeError, ValueError):
-            runtime = 45
-        percent = round(watched / total * 100, 1) if total else 0.0
-
-        exact_last_air = _last_air_date(item) or _last_air_date(show) or _last_air_date(progress)
-        next_episode_air = episode.get("air_date") or episode.get("aired_at")
-        latest_available_at = exact_last_air or next_episode_air
-        output.append(
-            {
-                "show": show,
-                "next_episode": episode,
-                "watched_episodes": watched,
-                "total_episodes": total,
-                "remaining_episodes": remaining,
-                "runtime": runtime,
-                "watched_minutes": watched * runtime,
-                "remaining_minutes": remaining * runtime,
-                "percent": percent,
-                "genres": _genre_names(show),
-                "last_watched_at": item.get("last_watched_at") or history_watched_at,
-                "latest_available_at": latest_available_at,
-                "latest_available_is_fallback": bool(latest_available_at and not exact_last_air),
-            }
-        )
+        output.append(row)
     return output
 
 
-def normalize_provider_dataset(raw: dict[str, Any]) -> dict[str, Any]:
-    sections = raw.get("sections") if isinstance(raw.get("sections"), dict) else {}
-    return {
-        **raw,
-        "schema_version": NORMALIZED_SCHEMA_VERSION,
-        "sources": build_sources(sections),
-        "progress": build_progress(sections),
-    }
+def _sort_numeric(
+    rows: list[dict[str, Any]],
+    getter,
+    descending: bool,
+) -> list[dict[str, Any]]:
+    """Trie une valeur numérique en laissant toujours les métadonnées absentes à la fin."""
+    indexed = list(enumerate(rows))
+
+    def key(pair: tuple[int, dict[str, Any]]) -> tuple[bool, float, int]:
+        index, row = pair
+        value = getter(row)
+        missing = value is None
+        number = float(value or 0)
+        return missing, (-number if descending else number), index
+
+    return [row for _, row in sorted(indexed, key=key)]
+
+
+def sort_progress_rows(rows: Iterable[dict[str, Any]], mode: str) -> list[dict[str, Any]]:
+    """Trie les lignes localement. Le mode par défaut reproduit l'ordre Up Next MDBList."""
+    values = [row for row in rows if isinstance(row, dict)]
+    if mode == "🕘 Dernier visionnage — ancien d’abord":
+        return _sort_numeric(values, _last_watched_timestamp, descending=False)
+    if mode == "📈 Progression — plus avancée":
+        return _sort_numeric(values, lambda row: row.get("percent"), descending=True)
+    if mode == "📉 Progression — moins avancée":
+        return _sort_numeric(values, lambda row: row.get("percent"), descending=False)
+    if mode == "⏳ Temps restant — le plus court":
+        return _sort_numeric(values, lambda row: row.get("remaining_minutes"), descending=False)
+    if mode == "⏳ Temps restant — le plus long":
+        return _sort_numeric(values, lambda row: row.get("remaining_minutes"), descending=True)
+    if mode == "👀 Temps déjà vu — le plus élevé":
+        return _sort_numeric(values, lambda row: row.get("watched_minutes"), descending=True)
+    if mode == "👀 Temps déjà vu — le plus faible":
+        return _sort_numeric(values, lambda row: row.get("watched_minutes"), descending=False)
+    if mode == "🆕 Nouveauté — épisode disponible le plus récent":
+        return _sort_numeric(values, _latest_available_timestamp, descending=True)
+    if mode == "🗓️ Nouveauté — épisode disponible le plus ancien":
+        return _sort_numeric(values, _latest_available_timestamp, descending=False)
+    if mode == "🔤 Titre — A à Z":
+        return sorted(values, key=lambda row: _title(row).casefold())
+    if mode == "🔤 Titre — Z à A":
+        return sorted(values, key=lambda row: _title(row).casefold(), reverse=True)
+    return _sort_numeric(values, _last_watched_timestamp, descending=True)

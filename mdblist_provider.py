@@ -1,437 +1,237 @@
-"""OAuth Device Code MDBList avec persistance chiffrée côté navigateur.
+"""Lecture fournisseur-neutre des données MDBList.
 
-Le navigateur ne reçoit jamais les tokens en clair. Il conserve seulement
-un blob Fernet chiffré et authentifié. La session active utilise st.session_state ;
-le blob contient aussi un access token non expiré et un résumé pour le retour instantané.
+Aucune écriture. Les réponses restent uniquement dans st.session_state via app.py.
 """
 
 from __future__ import annotations
 
-import io
-import json
-import time
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Any
 
-import qrcode
 import requests
-import streamlit as st
-from cryptography.fernet import Fernet, InvalidToken
 
 
 API_BASE = "https://api.mdblist.com"
-DEVICE_AUTH_URL = f"{API_BASE}/oauth/device-authorization/"
-TOKEN_URL = f"{API_BASE}/oauth/token/"
-REVOKE_URL = f"{API_BASE}/oauth/revoke_token/"
-DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
-COOKIE_NAME = "media_smart_lists_mdblist_oauth_v1"
-COOKIE_DAYS = 365
-REQUEST_TIMEOUT = 20
-USER_AGENT = "Media-Smart-Lists/0.7"
-
-ACCESS_KEY = "_mdblist_access_token"
-REFRESH_KEY = "_mdblist_refresh_token"
-EXPIRES_KEY = "_mdblist_expires_at"
-ACCOUNT_KEY = "_mdblist_account"
-LISTS_KEY = "_mdblist_lists_summary"
-FLOW_KEY = "_mdblist_device_flow"
-RESTORE_ATTEMPT_KEY = "_mdblist_restore_attempt_at"
+USER_AGENT = "Media-Smart-Lists/0.8"
+TIMEOUT = 35
+PAGE_LIMIT = 5000
 
 
-def _secret(name: str) -> str:
-    try:
-        return str(st.secrets.get(name, "") or "").strip()
-    except Exception:
-        return ""
+class MDBListReadError(RuntimeError):
+    pass
 
 
-def configured() -> tuple[bool, str]:
-    if not _secret("MDBLIST_CLIENT_ID"):
-        return False, "MDBLIST_CLIENT_ID est absent des Secrets Streamlit."
-    key = _secret("TOKEN_ENCRYPTION_KEY")
-    if not key:
-        return False, "TOKEN_ENCRYPTION_KEY est absent des Secrets Streamlit."
-    try:
-        Fernet(key.encode("utf-8"))
-    except Exception:
-        return False, "TOKEN_ENCRYPTION_KEY n'est pas une clé Fernet valide."
-    return True, ""
-
-
-def _client_id() -> str:
-    return _secret("MDBLIST_CLIENT_ID")
-
-
-def _fernet() -> Fernet:
-    return Fernet(_secret("TOKEN_ENCRYPTION_KEY").encode("utf-8"))
-
-
-def _safe_json(response: requests.Response) -> dict[str, Any]:
-    try:
-        data = response.json()
-    except ValueError:
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def _current_cookie_bundle() -> dict[str, Any]:
-    """Bundle chiffré v2 : tokens + résumé non sensible pour affichage instantané."""
-    return {
-        "version": 2,
-        "access_token": str(st.session_state.get(ACCESS_KEY) or ""),
-        "refresh_token": str(st.session_state.get(REFRESH_KEY) or ""),
-        "expires_at": int(st.session_state.get(EXPIRES_KEY) or 0),
-        "account": account_summary(),
-        "lists": lists_summary(),
-    }
-
-
-def _encrypt_bundle(bundle: dict[str, Any]) -> str:
-    payload = json.dumps(bundle, separators=(",", ":")).encode("utf-8")
-    return _fernet().encrypt(payload).decode("ascii")
-
-
-def _decrypt_bundle(value: str) -> dict[str, Any]:
-    try:
-        payload = _fernet().decrypt(value.encode("ascii"))
-        data = json.loads(payload.decode("utf-8"))
-    except (InvalidToken, ValueError, TypeError, json.JSONDecodeError):
-        return {}
-    if not isinstance(data, dict):
-        return {}
-    # Compatibilité avec le cookie v1 déjà installé : refresh token seul.
-    if data.get("version") == 1:
-        return {
-            "version": 1,
-            "refresh_token": str(data.get("refresh_token") or ""),
+class MDBListProvider:
+    def __init__(self, access_token: str):
+        if not access_token:
+            raise ValueError("Access token MDBList absent")
+        self.headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+            "User-Agent": USER_AGENT,
         }
-    if data.get("version") != 2:
-        return {}
-    return data
+        self.request_count = 0
+        self.rate_limit_remaining: int | None = None
 
-
-def _restore_bundle_to_session(bundle: dict[str, Any]) -> None:
-    access = str(bundle.get("access_token") or "")
-    refresh_token = str(bundle.get("refresh_token") or "")
-    if access:
-        st.session_state[ACCESS_KEY] = access
-    if refresh_token:
-        st.session_state[REFRESH_KEY] = refresh_token
-    try:
-        expires_at = int(bundle.get("expires_at") or 0)
-    except (TypeError, ValueError):
-        expires_at = 0
-    if expires_at:
-        st.session_state[EXPIRES_KEY] = expires_at
-    if isinstance(bundle.get("account"), dict) and bundle["account"]:
-        st.session_state[ACCOUNT_KEY] = bundle["account"]
-    if isinstance(bundle.get("lists"), dict) and bundle["lists"]:
-        st.session_state[LISTS_KEY] = bundle["lists"]
-
-
-def _clear_session() -> None:
-    for key in (
-        ACCESS_KEY,
-        REFRESH_KEY,
-        EXPIRES_KEY,
-        ACCOUNT_KEY,
-        LISTS_KEY,
-        FLOW_KEY,
-        RESTORE_ATTEMPT_KEY,
-        "mdb_api_key_entry",
-        "_mdblist_api_key",
-    ):
-        st.session_state.pop(key, None)
-
-
-def persist_cookie(cookies: Any) -> bool:
-    bundle = _current_cookie_bundle()
-    if not bundle.get("refresh_token"):
-        return False
-    try:
-        cookies.set(
-            COOKIE_NAME,
-            _encrypt_bundle(bundle),
-            expires=datetime.now() + timedelta(days=COOKIE_DAYS),
-        )
-        return True
-    except Exception:
-        return False
-
-
-def _remove_cookie(cookies: Any) -> None:
-    try:
-        cookies.remove(COOKIE_NAME)
-    except Exception:
-        pass
-
-
-def save_tokens(cookies: Any, token_data: dict[str, Any]) -> bool:
-    access_token = str(token_data.get("access_token") or "")
-    refresh_token = str(
-        token_data.get("refresh_token")
-        or st.session_state.get(REFRESH_KEY)
-        or ""
-    )
-    if not access_token:
-        return False
-    try:
-        expires_in = int(token_data.get("expires_in") or 2592000)
-    except (TypeError, ValueError):
-        expires_in = 2592000
-    st.session_state[ACCESS_KEY] = access_token
-    st.session_state[REFRESH_KEY] = refresh_token
-    st.session_state[EXPIRES_KEY] = int(time.time()) + max(expires_in, 60)
-    return persist_cookie(cookies)
-
-
-def is_connected() -> bool:
-    return bool(st.session_state.get(ACCESS_KEY))
-
-
-def access_token() -> str:
-    return str(st.session_state.get(ACCESS_KEY) or "")
-
-
-def start_device_flow() -> tuple[bool, str]:
-    ok, message = configured()
-    if not ok:
-        return False, message
-    try:
-        response = requests.post(
-            DEVICE_AUTH_URL,
-            data={"client_id": _client_id(), "scope": "write"},
-            headers={"Accept": "application/json", "User-Agent": USER_AGENT},
-            timeout=REQUEST_TIMEOUT,
-        )
-    except requests.RequestException:
-        return False, "Impossible de démarrer l'autorisation MDBList."
-    data = _safe_json(response)
-    if response.status_code not in (200, 201) or not data.get("device_code"):
-        return False, f"MDBList a refusé le démarrage OAuth (HTTP {response.status_code})."
-
-    user_code = str(data.get("user_code") or "")
-    verification_uri = str(data.get("verification_uri") or "https://mdblist.com/oauth/device/")
-    complete = str(
-        data.get("verification_uri_complete")
-        or f"{verification_uri}?user_code={user_code}"
-    )
-    try:
-        expires_in = int(data.get("expires_in") or 300)
-        interval = max(int(data.get("interval") or 5), 5)
-    except (TypeError, ValueError):
-        expires_in, interval = 300, 5
-
-    st.session_state[FLOW_KEY] = {
-        "device_code": str(data["device_code"]),
-        "user_code": user_code,
-        "verification_uri": verification_uri,
-        "verification_uri_complete": complete,
-        "expires_at": int(time.time()) + expires_in,
-        "interval": interval,
-    }
-    return True, "Autorisation MDBList démarrée."
-
-
-def current_flow() -> dict[str, Any]:
-    flow = st.session_state.get(FLOW_KEY)
-    return flow if isinstance(flow, dict) else {}
-
-
-def clear_flow() -> None:
-    st.session_state.pop(FLOW_KEY, None)
-
-
-def poll_device_once(flow: dict[str, Any]) -> tuple[str, dict[str, Any] | str]:
-    """Retourne success/pending/slow_down/expired/denied/error."""
-    try:
-        response = requests.post(
-            TOKEN_URL,
-            data={
-                "grant_type": DEVICE_GRANT_TYPE,
-                "device_code": flow.get("device_code"),
-                "client_id": _client_id(),
-            },
-            headers={"Accept": "application/json", "User-Agent": USER_AGENT},
-            timeout=REQUEST_TIMEOUT,
-        )
-    except requests.RequestException:
-        return "pending", "Réseau temporairement indisponible."
-    data = _safe_json(response)
-    if response.status_code == 200 and data.get("access_token"):
-        return "success", data
-    error = str(data.get("error") or "")
-    if error == "authorization_pending":
-        return "pending", "En attente de confirmation…"
-    if error == "slow_down":
-        return "slow_down", "MDBList demande de ralentir la vérification."
-    if error == "expired_token":
-        return "expired", "Le code de connexion a expiré."
-    if error == "access_denied":
-        return "denied", "L'autorisation a été refusée."
-    return "error", f"Autorisation MDBList impossible (HTTP {response.status_code})."
-
-
-def refresh(cookies: Any, refresh_token: str) -> tuple[bool, str, bool]:
-    """Retourne succès, message, erreur terminale."""
-    if not refresh_token:
-        return False, "Refresh token absent.", True
-    try:
-        response = requests.post(
-            TOKEN_URL,
-            data={
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "client_id": _client_id(),
-            },
-            headers={"Accept": "application/json", "User-Agent": USER_AGENT},
-            timeout=REQUEST_TIMEOUT,
-        )
-    except requests.RequestException:
-        return False, "MDBList est temporairement injoignable.", False
-    data = _safe_json(response)
-    if response.status_code == 200 and data.get("access_token"):
-        if save_tokens(cookies, data):
-            return True, "Connexion MDBList restaurée.", False
-        return True, "Connexion restaurée, mais le cookie n'a pas pu être renouvelé.", False
-    error = str(data.get("error") or "")
-    terminal = error in {"invalid_grant", "expired_token", "access_denied"}
-    return False, "La reconnexion MDBList a échoué.", terminal
-
-
-def ensure_valid_session(cookies: Any) -> tuple[bool, str]:
-    ok, config_message = configured()
-    if not ok:
-        return False, config_message
-
-    token = access_token()
-    expires_at = int(st.session_state.get(EXPIRES_KEY) or 0)
-    if token and (not expires_at or time.time() < expires_at - 300):
-        return True, ""
-
-    refresh_token = str(st.session_state.get(REFRESH_KEY) or "")
-    if not refresh_token:
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         try:
-            encrypted_cookie = str(cookies.get(COOKIE_NAME) or "")
-        except Exception:
-            encrypted_cookie = ""
-        if encrypted_cookie:
-            bundle = _decrypt_bundle(encrypted_cookie)
-            if not bundle:
-                _remove_cookie(cookies)
-                return False, "La connexion mémorisée est illisible et a été supprimée."
-            _restore_bundle_to_session(bundle)
-            token = access_token()
-            expires_at = int(st.session_state.get(EXPIRES_KEY) or 0)
-            # Chemin rapide : aucun appel réseau tant que l'access token est valide.
-            if token and expires_at and time.time() < expires_at - 300:
-                return True, "Connexion MDBList restaurée instantanément."
-            refresh_token = str(st.session_state.get(REFRESH_KEY) or "")
-
-    if not refresh_token:
-        return False, ""
-
-    last_attempt = float(st.session_state.get(RESTORE_ATTEMPT_KEY) or 0)
-    if time.time() - last_attempt < 20:
-        return False, ""
-    st.session_state[RESTORE_ATTEMPT_KEY] = time.time()
-    restored, message, terminal = refresh(cookies, refresh_token)
-    if restored:
-        st.session_state.pop(RESTORE_ATTEMPT_KEY, None)
-        return True, message
-    if terminal:
-        _remove_cookie(cookies)
-        _clear_session()
-    return False, message
-
-
-def load_account_summary(cookies: Any | None = None) -> tuple[bool, str]:
-    token = access_token()
-    if not token:
-        return False, "Access token MDBList absent."
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-        "User-Agent": USER_AGENT,
-    }
-    try:
-        user_response = requests.get(f"{API_BASE}/user", headers=headers, timeout=REQUEST_TIMEOUT)
-        lists_response = requests.get(
-            f"{API_BASE}/lists/user",
-            params={"unified": "false"},
-            headers=headers,
-            timeout=REQUEST_TIMEOUT,
-        )
-    except requests.RequestException:
-        return False, "Lecture du compte MDBList temporairement impossible."
-    if user_response.status_code != 200 or lists_response.status_code != 200:
-        return False, "Le compte MDBList est connecté, mais ses informations sont indisponibles."
-    account = _safe_json(user_response)
-    try:
-        lists = lists_response.json()
-    except ValueError:
-        lists = None
-    if not isinstance(account, dict) or not isinstance(lists, list):
-        return False, "Format de réponse MDBList inattendu."
-
-    static_count = sum(
-        1 for item in lists
-        if isinstance(item, dict)
-        and (item.get("type") == "static" or item.get("dynamic") is False)
-    )
-    dynamic_count = sum(
-        1 for item in lists
-        if isinstance(item, dict)
-        and (item.get("type") == "dynamic" or item.get("dynamic") is True)
-    )
-    st.session_state[ACCOUNT_KEY] = {
-        "username": account.get("username") or account.get("name") or "Compte MDBList",
-        "plan": account.get("plan") or "Inconnu",
-        "rate_limit": account.get("rate_limit"),
-        "rate_limit_remaining": account.get("rate_limit_remaining"),
-        "list_limit": (account.get("limits") or {}).get("lists"),
-    }
-    st.session_state[LISTS_KEY] = {
-        "total": len(lists),
-        "static": static_count,
-        "dynamic": dynamic_count,
-    }
-    if cookies is not None:
-        persist_cookie(cookies)
-    return True, "Compte MDBList chargé."
-
-
-def account_summary() -> dict[str, Any]:
-    data = st.session_state.get(ACCOUNT_KEY)
-    return data if isinstance(data, dict) else {}
-
-
-def lists_summary() -> dict[str, Any]:
-    data = st.session_state.get(LISTS_KEY)
-    return data if isinstance(data, dict) else {}
-
-
-def qr_png(url: str) -> bytes:
-    image = qrcode.make(url)
-    output = io.BytesIO()
-    image.save(output, format="PNG")
-    return output.getvalue()
-
-
-def disconnect(cookies: Any) -> None:
-    client_id = _client_id()
-    # Tente de révoquer les deux jetons ; aucune erreur réseau ne bloque le logout local.
-    for token in (access_token(), str(st.session_state.get(REFRESH_KEY) or "")):
-        if not token:
-            continue
-        try:
-            requests.post(
-                REVOKE_URL,
-                data={"token": token, "client_id": client_id},
-                headers={"User-Agent": USER_AGENT},
-                timeout=REQUEST_TIMEOUT,
+            response = requests.get(
+                f"{API_BASE}{path}",
+                params=params or {},
+                headers=self.headers,
+                timeout=TIMEOUT,
             )
-        except requests.RequestException:
-            pass
-    _remove_cookie(cookies)
-    _clear_session()
+        except requests.RequestException as exc:
+            raise MDBListReadError(f"Réseau indisponible pour {path}") from exc
+        self.request_count += 1
+        remaining = response.headers.get("X-RateLimit-Remaining") or response.headers.get("X-Rate-Limit-Remaining")
+        if remaining and str(remaining).isdigit():
+            self.rate_limit_remaining = int(remaining)
+        if response.status_code == 401:
+            raise MDBListReadError("Session MDBList expirée ou révoquée")
+        if response.status_code >= 400:
+            raise MDBListReadError(f"MDBList a répondu HTTP {response.status_code} pour {path}")
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise MDBListReadError(f"Réponse JSON invalide pour {path}") from exc
+
+    def _paged_dict(
+        self,
+        path: str,
+        keys: tuple[str, ...],
+        extra_params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        merged = {key: [] for key in keys}
+        offset = 0
+        pages = 0
+        last_pagination: dict[str, Any] = {}
+        while True:
+            params = {"limit": PAGE_LIMIT, "offset": offset}
+            params.update(extra_params or {})
+            response = self._get(path, params)
+            if not isinstance(response, dict):
+                raise MDBListReadError(f"Format paginé inattendu pour {path}")
+            pages += 1
+            for key in keys:
+                values = response.get(key) or []
+                if isinstance(values, list):
+                    merged[key].extend(values)
+            pagination = response.get("pagination") or {}
+            last_pagination = pagination if isinstance(pagination, dict) else {}
+            if not last_pagination.get("has_more"):
+                break
+            offset += PAGE_LIMIT
+            if pages >= 100:
+                raise MDBListReadError(f"Pagination anormalement longue pour {path}")
+        merged["pagination"] = last_pagination
+        merged["pages"] = pages
+        return merged
+
+    def watched(self) -> dict[str, Any]:
+        return self._paged_dict(
+            "/sync/watched",
+            ("movies", "shows", "seasons", "episodes"),
+            {"append_to_response": "genres,ratings"},
+        )
+
+    def ratings(self) -> dict[str, Any]:
+        return self._paged_dict(
+            "/sync/ratings",
+            ("movies", "shows", "seasons", "episodes"),
+        )
+
+    def watchlist(self, filter_genre: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "append_to_response": "genres,poster,description,ratings",
+            "unified": "false",
+        }
+        if filter_genre:
+            params["filter_genre"] = filter_genre
+        return self._paged_dict(
+            "/watchlist/items",
+            ("movies", "shows"),
+            params,
+        )
+
+    def genres(self) -> list[dict[str, str]]:
+        response = self._get("/genres")
+        values = response if isinstance(response, list) else (
+            response.get("genres") if isinstance(response, dict) else []
+        )
+        output: list[dict[str, str]] = []
+        for value in values or []:
+            if isinstance(value, str):
+                slug = value.strip().lower()
+                title = value.strip().title()
+            elif isinstance(value, dict):
+                slug = str(value.get("slug") or value.get("name") or "").strip().lower()
+                title = str(value.get("title") or value.get("name") or slug).strip().title()
+            else:
+                continue
+            if slug:
+                output.append({"slug": slug, "title": title or slug.title()})
+        unique = {item["slug"]: item for item in output}
+        return sorted(unique.values(), key=lambda item: item["title"].casefold())
+
+    def dropped(self) -> dict[str, Any]:
+        return self._paged_dict(
+            "/sync/dropped",
+            ("shows",),
+        )
+
+    def playback(self) -> list[dict[str, Any]]:
+        response = self._get("/sync/playback")
+        if isinstance(response, list):
+            return response
+        if isinstance(response, dict):
+            values = response.get("items") or response.get("playback") or []
+            return values if isinstance(values, list) else []
+        return []
+
+    def upnext(self) -> list[dict[str, Any]]:
+        all_items: list[dict[str, Any]] = []
+        offset = 0
+        while True:
+            response = self._get("/upnext", {"limit": 100, "offset": offset})
+            if not isinstance(response, dict):
+                break
+            values = response.get("items") or []
+            if isinstance(values, list):
+                all_items.extend(values)
+            if not response.get("has_more"):
+                break
+            offset += 100
+            if offset >= 10000:
+                break
+        return all_items
+
+    def list_items(self, list_id: int, filter_genre: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "append_to_response": "genres,poster,description,ratings",
+            "unified": "false",
+        }
+        if filter_genre:
+            params["filter_genre"] = filter_genre
+        return self._paged_dict(
+            f"/lists/{list_id}/items",
+            ("movies", "shows"),
+            params,
+        )
+
+    def user_lists(self) -> list[dict[str, Any]]:
+        """Charge les listes personnelles statiques ET dynamiques."""
+        response = self._get("/lists/user", {"unified": "false"})
+        if not isinstance(response, list):
+            raise MDBListReadError("Format des listes utilisateur inattendu")
+        personal = [item for item in response if isinstance(item, dict)]
+        output: list[dict[str, Any]] = []
+        for metadata in personal:
+            list_id = metadata.get("id")
+            if list_id is None:
+                continue
+            items = self.list_items(int(list_id))
+            list_type = "dynamic" if (
+                metadata.get("type") == "dynamic" or metadata.get("dynamic") is True
+            ) else "static"
+            output.append(
+                {
+                    "id": int(list_id),
+                    "name": metadata.get("name") or "Liste MDBList",
+                    "private": metadata.get("private"),
+                    "type": list_type,
+                    "movies": items["movies"],
+                    "shows": items["shows"],
+                    "pages": items["pages"],
+                }
+            )
+        return output
+
+    def load_dataset(self) -> dict[str, Any]:
+        sections: dict[str, Any] = {}
+        errors: list[dict[str, str]] = []
+        loaders = (
+            ("watched", self.watched),
+            ("watchlist", self.watchlist),
+            ("genres", self.genres),
+            ("user_lists", self.user_lists),
+            ("ratings", self.ratings),
+            ("playback", self.playback),
+            ("upnext", self.upnext),
+            ("dropped", self.dropped),
+        )
+        for name, loader in loaders:
+            try:
+                sections[name] = loader()
+            except MDBListReadError as exc:
+                errors.append({"section": name, "error": str(exc)})
+                sections[name] = [] if name in {"genres", "user_lists", "playback", "upnext"} else {}
+        return {
+            "provider": "mdblist",
+            "mode": "realtime",
+            "loaded_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "sections": sections,
+            "errors": errors,
+            "request_count": self.request_count,
+            "rate_limit_remaining": self.rate_limit_remaining,
+        }
