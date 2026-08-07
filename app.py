@@ -15,6 +15,7 @@ from streamlit_cookies_controller import CookieController
 
 import mdblist_oauth as mdb_oauth
 from mdblist_provider import MDBListProvider
+from normalized_model import NORMALIZED_SCHEMA_VERSION, dedupe, normalize_provider_dataset
 
 
 APP_NAME = "Media Smart Lists"
@@ -248,6 +249,20 @@ st.markdown(
     }
     .media-list-content {
         min-width: 0;
+    }
+    .progress-bar-container {
+        background: linear-gradient(90deg, var(--am-lime), var(--am-yellow));
+        border-radius: 8px;
+        height: 12px;
+        margin: .58rem 0;
+        overflow: hidden;
+        width: 100%;
+    }
+    .progress-bar-fill {
+        background: var(--am-green);
+        border-radius: 8px;
+        height: 100%;
+        transition: width .6s cubic-bezier(.4,0,.2,1);
     }
     .media-list-card strong {
         color: var(--am-text);
@@ -556,7 +571,14 @@ def render_mdblist_connector() -> None:
 
 def _dataset() -> dict:
     value = st.session_state.get("_normalized_dataset")
-    return value if isinstance(value, dict) else {}
+    if not isinstance(value, dict):
+        return {}
+    if value.get("schema_version") != NORMALIZED_SCHEMA_VERSION:
+        # Évite de conserver en mémoire le schéma d'une étape précédente après redéploiement.
+        st.session_state.pop("_normalized_dataset", None)
+        st.session_state.pop("_source_genre_cache", None)
+        return {}
+    return value
 
 
 def _sections() -> dict:
@@ -638,6 +660,15 @@ def _score(item: dict) -> str:
         return ""
 
 
+def _format_minutes(minutes: int) -> str:
+    minutes = max(int(minutes or 0), 0)
+    hours, rest = divmod(minutes, 60)
+    if hours >= 24:
+        days, hours = divmod(hours, 24)
+        return f"{days}j {hours}h" if hours else f"{days}j"
+    return f"{hours}h{rest:02d}" if hours else f"{rest} min"
+
+
 def _runtime_text(item: dict) -> str:
     if not isinstance(item, dict):
         return ""
@@ -648,7 +679,7 @@ def _runtime_text(item: dict) -> str:
         return ""
     if minutes <= 0:
         return ""
-    return f"{minutes // 60}h{minutes % 60:02d}" if minutes >= 60 else f"{minutes} min"
+    return _format_minutes(minutes)
 
 
 def _rating_text(item: dict) -> str:
@@ -681,7 +712,8 @@ def load_mdblist_dataset() -> None:
         return
     try:
         provider = MDBListProvider(mdb_oauth.access_token())
-        data = provider.load_dataset()
+        raw_data = provider.load_dataset()
+        data = normalize_provider_dataset(raw_data)
     except Exception:
         st.markdown(
             '<div class="accent-callout"><strong>LECTURE IMPOSSIBLE</strong> · '
@@ -752,34 +784,7 @@ def render_dataset_overview() -> None:
 def render_watchlist_page() -> None:
     st.markdown('<div class="page-title">🎯 Que regarder ?</div>', unsafe_allow_html=True)
     sections = _sections()
-    watchlist = sections.get("watchlist") or {}
-    user_lists = sections.get("user_lists") or []
-
-    sources = [{
-        "key": "watchlist",
-        "label": "Watchlist MDBList",
-        "kind": "watchlist",
-        "id": None,
-        "name": "Watchlist MDBList",
-        "type": "native",
-        "movies": list(watchlist.get("movies") or []),
-        "shows": list(watchlist.get("shows") or []),
-    }]
-    for item in user_lists:
-        if not isinstance(item, dict):
-            continue
-        list_type = str(item.get("type") or "static")
-        suffix = "Dynamique" if list_type == "dynamic" else "Statique"
-        sources.append({
-            "key": f"list:{item.get('id')}",
-            "label": f"{item.get('name') or 'Liste MDBList'} · {suffix}",
-            "kind": "list",
-            "id": item.get("id"),
-            "name": item.get("name") or "Liste MDBList",
-            "type": list_type,
-            "movies": list(item.get("movies") or []),
-            "shows": list(item.get("shows") or []),
-        })
+    sources = _dataset().get("sources") or []
 
     if not any(source["movies"] or source["shows"] for source in sources):
         st.markdown(
@@ -790,6 +795,7 @@ def render_watchlist_page() -> None:
         return
 
     source_by_label = {source["label"]: source for source in sources}
+    source_by_key = {source["key"]: source for source in sources}
     source_col, genre_col = st.columns(2)
     selected_label = source_col.selectbox("Source", list(source_by_label), key="qr_source")
     source = source_by_label[selected_label]
@@ -808,44 +814,53 @@ def render_watchlist_page() -> None:
     display_limit = limit_col.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
 
     items = list(source["movies"]) + list(source["shows"])
-    api_extra = False
+    api_calls_extra = 0
     if selected_genre != "Tous":
         slug = genre_by_title.get(selected_genre, selected_genre.lower())
-        cache_key = f"{source['key']}:{slug}"
         cache = st.session_state.setdefault("_source_genre_cache", {})
-        filtered_response = cache.get(cache_key)
-        if not isinstance(filtered_response, dict):
-            valid, message = mdb_oauth.ensure_valid_session(cookies)
-            if not valid:
-                st.markdown(
-                    f'<div class="accent-callout"><strong>SESSION INDISPONIBLE</strong> · '
-                    f'{escape(message or "Reconnecte MDBList.")}</div>',
-                    unsafe_allow_html=True,
-                )
-                return
-            try:
-                provider = MDBListProvider(mdb_oauth.access_token())
-                with st.spinner(f"Filtrage MDBList : {selected_genre}…"):
-                    if source["kind"] == "watchlist":
-                        filtered_response = provider.watchlist(slug)
-                    else:
-                        filtered_response = provider.list_items(int(source["id"]), slug)
-                cache[cache_key] = filtered_response
-                st.session_state["_source_genre_cache"] = cache
-                account = mdb_oauth.account_summary()
-                if provider.rate_limit_remaining is not None and account:
-                    account["rate_limit_remaining"] = provider.rate_limit_remaining
-                    st.session_state[mdb_oauth.ACCOUNT_KEY] = account
-                    mdb_oauth.persist_cookie(cookies)
-                api_extra = True
-            except Exception:
-                st.markdown(
-                    '<div class="accent-callout"><strong>FILTRE INDISPONIBLE</strong> · '
-                    'MDBList n’a pas pu filtrer cette source.</div>',
-                    unsafe_allow_html=True,
-                )
-                return
-        items = list(filtered_response.get("movies") or []) + list(filtered_response.get("shows") or [])
+        member_keys = source.get("members") or [source["key"]]
+        combined_movies = []
+        combined_shows = []
+        valid, message = mdb_oauth.ensure_valid_session(cookies)
+        if not valid:
+            st.markdown(
+                f'<div class="accent-callout"><strong>SESSION INDISPONIBLE</strong> · '
+                f'{escape(message or "Reconnecte MDBList.")}</div>',
+                unsafe_allow_html=True,
+            )
+            return
+        try:
+            provider = MDBListProvider(mdb_oauth.access_token())
+            with st.spinner(f"Filtrage MDBList : {selected_genre}…"):
+                for member_key in member_keys:
+                    member = source_by_key.get(member_key)
+                    if not member:
+                        continue
+                    cache_key = f"{member_key}:{slug}"
+                    response = cache.get(cache_key)
+                    if not isinstance(response, dict):
+                        if member["kind"] == "watchlist":
+                            response = provider.watchlist(slug)
+                        else:
+                            response = provider.list_items(int(member["id"]), slug)
+                        cache[cache_key] = response
+                        api_calls_extra += 1
+                    combined_movies.extend(response.get("movies") or [])
+                    combined_shows.extend(response.get("shows") or [])
+            st.session_state["_source_genre_cache"] = cache
+            account = mdb_oauth.account_summary()
+            if provider.rate_limit_remaining is not None and account:
+                account["rate_limit_remaining"] = provider.rate_limit_remaining
+                st.session_state[mdb_oauth.ACCOUNT_KEY] = account
+                mdb_oauth.persist_cookie(cookies)
+        except Exception:
+            st.markdown(
+                '<div class="accent-callout"><strong>FILTRE INDISPONIBLE</strong> · '
+                'MDBList n’a pas pu filtrer cette source.</div>',
+                unsafe_allow_html=True,
+            )
+            return
+        items = dedupe(combined_movies) + dedupe(combined_shows)
 
     filtered = []
     for item in items:
@@ -857,8 +872,8 @@ def render_watchlist_page() -> None:
         filtered.append(item)
 
     source_note = (
-        "1 requête MDBList, résultat mémorisé pour cette session"
-        if api_extra else
+        f"{api_calls_extra} requête(s) MDBList, résultat mémorisé pour cette session"
+        if api_calls_extra else
         ("résultat MDBList mémorisé pour cette session" if selected_genre != "Tous" else "aucun appel API supplémentaire")
     )
     st.markdown(
@@ -908,7 +923,7 @@ def render_progress_page() -> None:
     st.markdown('<div class="page-title">▶️ En cours de lecture</div>', unsafe_allow_html=True)
     sections = _sections()
     playback = sections.get("playback") or []
-    upnext = sections.get("upnext") or []
+    progress_rows = _dataset().get("progress") or []
     dropped = (sections.get("dropped") or {}).get("shows") or []
     if not _dataset():
         st.markdown(
@@ -919,26 +934,37 @@ def render_progress_page() -> None:
         return
     cols = st.columns(3)
     cols[0].metric("Points de reprise", len(playback))
-    cols[1].metric("Prochains épisodes", len(upnext))
+    cols[1].metric("Séries en cours", len(progress_rows))
     cols[2].metric("Séries abandonnées", len(dropped))
 
-    st.markdown("### Prochains épisodes")
-    if not upnext:
-        st.caption("Aucun épisode Up Next disponible.")
-    for item in upnext[:20]:
-        show = item.get("show") or {}
-        episode = item.get("next_episode") or {}
+    st.markdown("### Où en suis-je dans mes séries ?")
+    if not progress_rows:
+        st.caption("Aucune série Up Next disponible.")
+    for row in progress_rows[:30]:
+        show = row.get("show") or {}
+        episode = row.get("next_episode") or {}
         title = escape(str(show.get("title") or "Série"))
         season = episode.get("season")
         number = episode.get("episode")
         ep_title = escape(str(episode.get("title") or ""))
         poster = escape(_poster_url(show), quote=True)
         image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+        watched = int(row.get("watched_episodes") or 0)
+        total = int(row.get("total_episodes") or 0)
+        remaining = int(row.get("remaining_episodes") or 0)
+        percent = float(row.get("percent") or 0)
+        watched_time = _format_minutes(int(row.get("watched_minutes") or 0))
+        remaining_time = _format_minutes(int(row.get("remaining_minutes") or 0))
         st.markdown(
             f'<div class="media-list-card upnext-card">{image_html}'
-            f'<div class="media-list-content"><strong>{title}</strong>'
-            f'<span> · S{int(season or 0):02d}E{int(number or 0):02d}</span><br>'
-            f'<small>{ep_title}</small></div></div>',
+            f'<div class="media-list-content" style="width:100%;">'
+            f'<strong>{title}</strong>'
+            f'<small>{watched}/{total} épisode(s) vu(s) · environ {watched_time} de visionnage</small>'
+            f'<small>Il en reste {remaining} · environ {remaining_time} · progression {percent:.1f}%</small>'
+            f'<div class="progress-bar-container"><div class="progress-bar-fill" '
+            f'style="width:{max(0,min(percent,100))}%;"></div></div>'
+            f'<small>▶️ Prochain : S{int(season or 0):02d}E{int(number or 0):02d} · {ep_title}</small>'
+            f'</div></div>',
             unsafe_allow_html=True,
         )
 
@@ -947,7 +973,8 @@ def render_progress_page() -> None:
         st.caption("Statut MDBList Dropped — lecture seule dans cette étape.")
         for item in dropped[:30]:
             st.markdown(
-                f'<div class="media-list-card"><strong>{escape(_media_title(item))}</strong></div>',
+                f'<div class="media-list-card"><div class="media-list-content">'
+                f'<strong>{escape(_media_title(item))}</strong></div></div>',
                 unsafe_allow_html=True,
             )
 
