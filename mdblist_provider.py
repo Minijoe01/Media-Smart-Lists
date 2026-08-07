@@ -92,6 +92,7 @@ class MDBListProvider:
         return self._paged_dict(
             "/sync/watched",
             ("movies", "shows", "seasons", "episodes"),
+            {"append_to_response": "genres,ratings"},
         )
 
     def ratings(self) -> dict[str, Any]:

@@ -7,6 +7,7 @@ Aucun secret et aucun appel distant à ce stade.
 from __future__ import annotations
 
 import os
+import random
 import time
 from html import escape
 
@@ -16,6 +17,7 @@ from streamlit_cookies_controller import CookieController
 import mdblist_oauth as mdb_oauth
 from mdblist_provider import MDBListProvider
 from normalized_model import NORMALIZED_SCHEMA_VERSION, dedupe, normalize_provider_dataset
+from recommendation_engine import PRESET_NAMES, build_profile, preset_matches, score_item
 
 
 APP_NAME = "Media Smart Lists"
@@ -245,7 +247,36 @@ st.markdown(
         width: 100px;
     }
     .media-list-card.poster-card {
+        border-left: 4px solid var(--am-lime);
         min-height: 154px;
+    }
+    .score-badge {
+        background: linear-gradient(135deg, rgba(206,220,0,.18), rgba(0,163,146,.18));
+        border: 1px solid rgba(206,220,0,.48);
+        border-radius: 10px;
+        color: var(--am-lime);
+        display: inline-block;
+        font-size: .82rem;
+        font-weight: 800;
+        margin-top: .4rem;
+        padding: .28rem .5rem;
+    }
+    .reason-pill, .warning-pill {
+        border-radius: 999px;
+        display: inline-block;
+        font-size: .70rem;
+        margin: .25rem .25rem 0 0;
+        padding: .20rem .48rem;
+    }
+    .reason-pill {
+        background: rgba(0,163,146,.14);
+        border: 1px solid rgba(0,163,146,.35);
+        color: var(--am-text);
+    }
+    .warning-pill {
+        background: rgba(206,220,0,.10);
+        border: 1px solid rgba(206,220,0,.35);
+        color: var(--am-lime);
     }
     .media-list-content {
         min-width: 0;
@@ -766,7 +797,7 @@ def render_dataset_overview() -> None:
     first[0].metric("Films vus", len(watched.get("movies") or []))
     first[1].metric("Épisodes vus", len(watched.get("episodes") or []))
     first[2].metric(
-        "Watchlist",
+        "Contenus dans votre Watchlist",
         len(watchlist.get("movies") or []) + len(watchlist.get("shows") or []),
     )
     first[3].metric("Listes personnelles", len(lists))
@@ -781,11 +812,61 @@ def render_dataset_overview() -> None:
     second[3].metric("Up Next", len(sections.get("upnext") or []))
 
 
+def _reset_recommendation_filters() -> None:
+    defaults = {
+        "qr_search": "",
+        "qr_note_min": 0.0,
+        "qr_time": "Aucune limite",
+        "qr_status": "Tous les statuts",
+        "qr_sort": "✨ Pour moi (recommandé)",
+        "qr_preset": "Aucun preset",
+    }
+    for key, value in defaults.items():
+        st.session_state[key] = value
+    st.session_state.pop("_roulette_result", None)
+
+
+def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
+    item = row.get("item") or {}
+    title = escape(_media_title(item))
+    year = escape(_media_year(item))
+    poster = escape(_poster_url(item), quote=True)
+    image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+    metadata = []
+    if row.get("genres"):
+        metadata.append(" · ".join(row["genres"]))
+    if row.get("runtime"):
+        metadata.append(f"⏱️ {_format_minutes(row['runtime'])}")
+    if row.get("note") is not None:
+        metadata.append(f"⭐ {row['note']:.1f}/10")
+    metadata.append(str(row.get("source") or "MDBList"))
+    reasons = "".join(
+        f'<span class="reason-pill">{escape(reason)}</span>'
+        for reason in (row.get("reasons") or [])[:4]
+    )
+    warnings = "".join(
+        f'<span class="warning-pill">⚠️ {escape(warning)}</span>'
+        for warning in (row.get("warnings") or [])[:3]
+    )
+    roulette_badge = '<span class="source-badge">CHOIX DE LA ROULETTE</span><br>' if highlighted else ""
+    st.markdown(
+        f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
+        f'{roulette_badge}<strong>{row.get("type")} — {title}</strong>'
+        f'<span>{(" (" + year + ")") if year else ""}</span>'
+        f'<small>{escape(" · ".join(metadata))}</small>'
+        f'<span class="score-badge">Score personnel {int(round(row.get("score", 0)))}/100 · '
+        f'Friction {int(row.get("friction", 0))}/100</span>'
+        f'<div class="progress-bar-container"><div class="progress-bar-fill" '
+        f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
+        f'<div>{reasons}{warnings}</div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_watchlist_page() -> None:
     st.markdown('<div class="page-title">🎯 Que regarder ?</div>', unsafe_allow_html=True)
     sections = _sections()
     sources = _dataset().get("sources") or []
-
     if not any(source["movies"] or source["shows"] for source in sources):
         st.markdown(
             '<div class="accent-callout"><strong>LISTES NON CHARGÉES</strong> · '
@@ -794,9 +875,16 @@ def render_watchlist_page() -> None:
         )
         return
 
+    profile = build_profile(_dataset())
+    st.caption(
+        f"🧠 Score calculé localement sur {profile.get('history_count', 0)} visionnage(s) "
+        f"et {profile.get('ratings_count', 0)} note(s) personnelle(s) · 0 appel API pour le score, "
+        "les tris, presets et roulettes."
+    )
+
     source_by_label = {source["label"]: source for source in sources}
     source_by_key = {source["key"]: source for source in sources}
-    source_col, genre_col = st.columns(2)
+    source_col, genre_col, type_col = st.columns(3)
     selected_label = source_col.selectbox("Source", list(source_by_label), key="qr_source")
     source = source_by_label[selected_label]
 
@@ -808,10 +896,35 @@ def render_watchlist_page() -> None:
     }
     genre_titles = sorted([title for title in genre_by_title if title], key=str.casefold)
     selected_genre = genre_col.selectbox("Genre", ["Tous"] + genre_titles, key="watchlist_genre")
+    selected_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
 
-    type_col, limit_col = st.columns(2)
-    media_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
-    display_limit = limit_col.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
+    f1, f2, f3, f4 = st.columns(4)
+    search = f1.text_input("Recherche", key="qr_search", placeholder="Titre…")
+    note_min = f2.select_slider(
+        "Note minimum",
+        options=[0.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0],
+        key="qr_note_min",
+    )
+    time_filter = f3.selectbox(
+        "Temps max",
+        ["Aucune limite", "Moins d'1h30", "Moins de 2h", "Moins de 3h", "Soirée (< 10h)", "Week-end (< 24h)"],
+        key="qr_time",
+    )
+    status_filter = f4.selectbox(
+        "Statut",
+        ["Tous les statuts", "Séries terminées", "Séries en cours", "Séries annulées"],
+        key="qr_status",
+    )
+
+    p1, p2, p3 = st.columns([0.44, 0.34, 0.22])
+    preset = p1.selectbox("Preset rapide", PRESET_NAMES, key="qr_preset")
+    sort_mode = p2.selectbox(
+        "Trier par",
+        ["✨ Pour moi (recommandé)", "⭐ Meilleures notes", "⏱️ Plus rapide", "🆕 Nouveautés", "🚪 Zéro effort", "🙅 Points faibles"],
+        key="qr_sort",
+    )
+    display_limit = p3.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
+    st.button("Réinitialiser les filtres", on_click=_reset_recommendation_filters, key="reset_qr")
 
     items = list(source["movies"]) + list(source["shows"])
     api_calls_extra = 0
@@ -862,19 +975,74 @@ def render_watchlist_page() -> None:
             return
         items = dedupe(combined_movies) + dedupe(combined_shows)
 
+    scored = [
+        score_item(
+            item,
+            profile,
+            source_name=source["name"],
+            known_genre=(selected_genre if selected_genre != "Tous" else None),
+        )
+        for item in items
+    ]
+
+    def time_ok(row: dict) -> bool:
+        if time_filter == "Aucune limite":
+            return True
+        minutes = row.get("runtime") or 0
+        if row["type"] == "Série":
+            minutes *= row.get("total_episodes") or 1
+        limits = {
+            "Moins d'1h30": 90,
+            "Moins de 2h": 120,
+            "Moins de 3h": 180,
+            "Soirée (< 10h)": 600,
+            "Week-end (< 24h)": 1440,
+        }
+        return bool(minutes and minutes <= limits[time_filter])
+
     filtered = []
-    for item in items:
-        item_type = str(item.get("mediatype") or item.get("type") or "")
-        if media_type == "Films" and item_type not in {"movie", "movies"}:
+    for row in scored:
+        if selected_type == "Films" and row["type"] != "Film":
             continue
-        if media_type == "Séries" and item_type not in {"show", "tv", "series"}:
+        if selected_type == "Séries" and row["type"] != "Série":
             continue
-        filtered.append(item)
+        if search and search.casefold() not in _media_title(row["item"]).casefold():
+            continue
+        if note_min and (row.get("note") or 0) < note_min:
+            continue
+        if not time_ok(row):
+            continue
+        if status_filter != "Tous les statuts":
+            if row["type"] != "Série":
+                continue
+            status = row.get("status") or ""
+            if status_filter == "Séries terminées" and status != "ended":
+                continue
+            if status_filter == "Séries annulées" and status != "canceled":
+                continue
+            if status_filter == "Séries en cours" and status in {"ended", "canceled"}:
+                continue
+        if not preset_matches(preset, row, profile):
+            continue
+        filtered.append(row)
+
+    if sort_mode.startswith("✨"):
+        filtered.sort(key=lambda row: (-row["score"], -row["friction"]))
+    elif sort_mode.startswith("⭐"):
+        filtered.sort(key=lambda row: (-(row.get("note") or 0), -row["score"]))
+    elif sort_mode.startswith("⏱️"):
+        filtered.sort(key=lambda row: (row.get("runtime") or 10**9, -row["score"]))
+    elif sort_mode.startswith("🆕"):
+        filtered.sort(key=lambda row: -(row.get("year") or 0))
+    elif sort_mode.startswith("🚪"):
+        filtered.sort(key=lambda row: (-row["friction"], -row["score"]))
+    else:
+        filtered.sort(key=lambda row: (-len(row.get("warnings") or []), row["score"]))
 
     source_note = (
         f"{api_calls_extra} requête(s) MDBList, résultat mémorisé pour cette session"
         if api_calls_extra else
-        ("résultat MDBList mémorisé pour cette session" if selected_genre != "Tous" else "aucun appel API supplémentaire")
+        ("résultat MDBList mémorisé pour cette session" if selected_genre != "Tous" else "score et filtres locaux, aucun appel API supplémentaire")
     )
     st.markdown(
         f'<div class="accent-callout"><strong>{len(filtered)} RÉSULTAT(S)</strong> · '
@@ -882,39 +1050,31 @@ def render_watchlist_page() -> None:
         unsafe_allow_html=True,
     )
 
-    columns = st.columns(2)
-    for index, item in enumerate(filtered[:display_limit]):
-        title = escape(_media_title(item))
-        year = escape(_media_year(item))
-        item_genres = _genres(item)
-        info_parts = []
-        if item_genres:
-            info_parts.append(" · ".join(item_genres))
-        elif selected_genre != "Tous":
-            info_parts.append(selected_genre)
-        runtime = _runtime_text(item)
-        if runtime:
-            info_parts.append(f"⏱️ {runtime}")
-        rating = _rating_text(item)
-        if rating:
-            info_parts.append(f"⭐ {rating}")
-        score = _score(item)
-        if score:
-            info_parts.append(f"MDB Score {score}/100")
-        if not info_parts:
-            item_type = str(item.get("mediatype") or item.get("type") or "").lower()
-            info_parts.append("Film" if item_type == "movie" else "Série" if item_type == "show" else source["name"])
-        info_parts.append(source["name"])
+    roulette_col, discovery_col = st.columns(2)
+    with roulette_col:
+        if st.button("🎲 Roulette — choisir pour moi", type="primary", key="roulette_classic"):
+            if filtered:
+                st.session_state["_roulette_result"] = random.choices(
+                    filtered,
+                    weights=[max(row["score"], 1) for row in filtered],
+                    k=1,
+                )[0]
+    with discovery_col:
+        if st.button("🧭 Roulette découverte", type="primary", key="roulette_discovery"):
+            discovery = [row for row in filtered if preset_matches("🧭 Hors de ta zone de confort", row, profile)]
+            if discovery:
+                st.session_state["_roulette_result"] = random.choice(discovery)
 
-        poster = escape(_poster_url(item), quote=True)
-        image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+    roulette = st.session_state.get("_roulette_result")
+    if roulette and any(row["key"] == roulette.get("key") for row in filtered):
+        st.markdown("### Le hasard a choisi")
+        _render_recommendation_card(roulette, highlighted=True)
+
+    st.markdown("### Résultats")
+    columns = st.columns(2)
+    for index, row in enumerate(filtered[:display_limit]):
         with columns[index % 2]:
-            st.markdown(
-                f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content">'
-                f'<strong>{title}</strong><span>{(" (" + year + ")") if year else ""}</span>'
-                f'<small>{escape(" · ".join(info_parts))}</small></div></div>',
-                unsafe_allow_html=True,
-            )
+            _render_recommendation_card(row)
     if len(filtered) > display_limit:
         st.caption(f"{len(filtered) - display_limit} résultat(s) supplémentaire(s) masqué(s).")
 
