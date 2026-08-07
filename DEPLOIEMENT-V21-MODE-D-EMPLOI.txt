@@ -1,0 +1,59 @@
+================================================================
+MEDIA SMART LISTS — V21 CORRIGÉE
+Mode d'emploi pour remettre le site en ligne
+================================================================
+
+POURQUOI L'ERREUR EST APPARUE
+----------------------------
+Au déploiement V20 -> V21, l'application a affiché :
+
+    ImportError: cannot import name 'build_local_calendar_events'
+    File "app.py", line 21, in <module>
+        from calendar_engine import (...)
+
+Cela s'est produit parce que app.py (version V21, qui utilise la
+nouvelle fonction "build_local_calendar_events") a été envoyé sur
+GitHub AVANT que calendar_engine.py (version V21, qui contient cette
+fonction) soit bien en place. Le site Streamlit a redémarré entre les
+deux, et s'est retrouvé avec des fichiers mélangés V20 + V21.
+
+LA CORRECTION
+-------------
+Ce zip contient l'ensemble COMPLET et COHÉRENT des fichiers de la V21.
+Tout a été testé : l'application démarre et les 10 pages fonctionnent.
+
+CE QU'IL FAUT FAIRE (3 étapes)
+------------------------------
+ÉTAPE 1 — Extraire le zip sur votre ordinateur
+    Vous obtenez un dossier avec tous les fichiers du projet
+    (app.py, calendar_engine.py, history_engine.py, static/, etc.)
+
+ÉTAPE 2 — Envoyer les fichiers sur GitHub
+    a) Ouvrez https://github.com/Minijoe01/Media-Smart-Lists
+    b) Cliquez sur « Add file » (ou « Ajouter un fichier ») puis
+       « Upload files ».
+    c) Faites glisser TOUS les fichiers et dossiers extraits du zip
+       dans la zone de dépôt (les dossiers .streamlit, static, fonts,
+       docs, .devcontainer doivent être recréés automatiquement).
+    d) Remplissez le champ « Commit changes » par exemple :
+           fix: V21 complete and consistent file set
+    e) Cliquez sur « Commit changes ».
+
+    IMPORTANT : ne mettez JAMAIS le fichier .streamlit/secrets.toml
+    sur GitHub (il est ignoré). Vos vraies clés restent dans les
+    réglages de Streamlit Cloud.
+
+ÉTAPE 3 — Redémarrer l'application Streamlit
+    a) Ouvrez https://share.streamlit.io/ puis votre application
+       media-smart-lists.
+    b) Cliquez sur « Manage app » (en bas à droite), puis dans le menu
+       ⋮ (trois points) cliquez sur « Reboot » puis « Clear cache ».
+    c) Le déploiement reprend : l'application redémarre avec les
+       fichiers V21 complets. Plus aucune erreur d'import.
+
+NOTE
+----
+Le fichier que vous êtes en train de lire (DEPLOIEMENT-V21-MODE-D-EMPLOI.txt)
+peut être supprimé de GitHub après le déploiement, il n'est pas utile
+au fonctionnement de l'application.
+================================================================

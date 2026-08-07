@@ -1,0 +1,23 @@
+# Secrets — ne jamais envoyer sur GitHub
+.streamlit/secrets.toml
+.env
+.env.*
+
+# Exports et données personnelles
+*.zip
+trakt_mdblist_migration*/
+mdblist_episode_*/
+data/
+tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Éditeurs et système
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
