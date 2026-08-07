@@ -17,6 +17,16 @@ import streamlit as st
 from streamlit_cookies_controller import CookieController
 
 import mdblist_oauth as mdb_oauth
+from list_audit_engine import (
+    ISSUE_OPTIONS,
+    SORT_OPTIONS as AUDIT_SORT_OPTIONS,
+    audit_source,
+    auditable_sources,
+    duplicate_rows,
+    filter_audit_rows,
+    rows_to_csv,
+    rows_to_json,
+)
 from mdblist_provider import MDBListProvider
 from normalized_model import NORMALIZED_SCHEMA_VERSION, dedupe, normalize_provider_dataset
 from progress_engine import (
@@ -31,7 +41,7 @@ from recommendation_engine import PRESET_NAMES, build_profile, preset_matches, s
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.9.0-alpha"
+APP_VERSION = "0.10.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -1430,30 +1440,211 @@ def render_progress_page() -> None:
 
 def render_static_lists_page() -> None:
     st.markdown('<div class="page-title">🧹 Nettoyage des listes</div>', unsafe_allow_html=True)
-    lists = _sections().get("user_lists") or []
-    if not lists:
+    dataset = _dataset()
+    sources = auditable_sources(dataset)
+    if not dataset or not sources:
         st.markdown(
             '<div class="accent-callout"><strong>LISTES NON CHARGÉES</strong> · '
             'Charge MDBList depuis le Tableau de bord.</div>',
             unsafe_allow_html=True,
         )
         return
+
     st.markdown(
-        '<div class="accent-callout"><strong>LECTURE SEULE</strong> · '
-        'Aucune suppression ou modification de liste à cette étape.</div>',
+        '<div class="accent-callout"><strong>APERÇU LOCAL · LECTURE SEULE</strong> · '
+        'Le moteur applique le principe Source → Filtres → Aperçu, sans modifier MDBList '
+        'et sans appel API supplémentaire.</div>',
         unsafe_allow_html=True,
     )
-    for item in lists:
-        movies = item.get("movies") or []
-        shows = item.get("shows") or []
-        list_type = "Dynamique" if item.get("type") == "dynamic" else "Statique"
+
+    source_by_label = {source["label"]: source for source in sources}
+    source_col, type_col, sort_col = st.columns([0.38, 0.22, 0.40])
+    selected_label = source_col.selectbox(
+        "Conteneur à auditer",
+        list(source_by_label),
+        key="audit_source",
+    )
+    selected_source = source_by_label[selected_label]
+    media_filter = type_col.selectbox(
+        "Type",
+        ["Tous", "Films", "Séries"],
+        key="audit_media_type",
+    )
+    sort_mode = sort_col.selectbox(
+        "Trier par",
+        AUDIT_SORT_OPTIONS,
+        key="audit_sort",
+    )
+
+    issue_col, mode_col = st.columns([0.68, 0.32])
+    selected_issues = issue_col.multiselect(
+        "Signaux à rechercher",
+        ISSUE_OPTIONS,
+        key="audit_issues",
+        placeholder="Aucun = afficher tout",
+    )
+    match_mode = mode_col.selectbox(
+        "Combiner les signaux",
+        ["Au moins un", "Tous les signaux"],
+        key="audit_match_mode",
+        disabled=len(selected_issues) < 2,
+    )
+    search = st.text_input(
+        "Recherche locale",
+        key="audit_search",
+        placeholder="Titre…",
+    )
+
+    all_rows = audit_source(dataset, str(selected_source.get("key") or ""))
+    filtered = filter_audit_rows(
+        all_rows,
+        selected_issues=selected_issues,
+        match_all=match_mode == "Tous les signaux",
+        media_filter=media_filter,
+        search=search,
+        sort_mode=sort_mode,
+    )
+
+    metrics = st.columns(4)
+    metrics[0].metric("Contenus", len(all_rows))
+    metrics[1].metric("Avec signal", sum(bool(row.get("issues")) for row in all_rows))
+    metrics[2].metric("Déjà vus", sum(bool(row.get("watched")) for row in all_rows))
+    metrics[3].metric("Multi-conteneurs", sum(bool(row.get("duplicate")) for row in all_rows))
+
+    if selected_source.get("type") == "dynamic":
+        st.caption(
+            "ℹ️ Cette liste est dynamique : les chevauchements sont informatifs. "
+            "MDBList régénère son contenu à partir de ses propres règles."
+        )
+
+    st.markdown(f"### Aperçu ({len(filtered)})")
+    table = [
+        {
+            "Type": row.get("type"),
+            "Titre": row.get("title"),
+            "Année": row.get("year") or "—",
+            "Note": f"{row['note']:.1f}/10" if row.get("note") is not None else "—",
+            "Ancienneté": f"{row['added_days']} j" if row.get("added_days") is not None else "—",
+            "Conteneurs": row.get("container_count"),
+            "Signaux": " · ".join(row.get("issue_labels") or []) or "Aucun",
+        }
+        for row in filtered
+    ]
+    if table:
+        st.dataframe(table, use_container_width=True, hide_index=True)
+    else:
+        st.caption("Aucun contenu ne correspond à ces règles.")
+
+    slug = str(selected_source.get("key") or "source").replace(":", "-")
+    csv_col, json_col = st.columns(2)
+    with csv_col:
+        st.download_button(
+            "⬇️ Télécharger l’audit CSV",
+            data="\ufeff" + rows_to_csv(filtered, "audit"),
+            file_name=f"media-smart-lists-audit-{slug}.csv",
+            mime="text/csv",
+            key="download_audit_csv",
+        )
+    with json_col:
+        st.download_button(
+            "⬇️ Télécharger l’audit JSON",
+            data=rows_to_json(filtered, "audit"),
+            file_name=f"media-smart-lists-audit-{slug}.json",
+            mime="application/json",
+            key="download_audit_json",
+        )
+    st.caption(
+        "Dry-run permanent pour cette étape : aucun bouton de suppression, aucun secret dans les rapports."
+    )
+
+
+def render_duplicates_page() -> None:
+    st.markdown('<div class="page-title">🔍 Recherche de doublons</div>', unsafe_allow_html=True)
+    dataset = _dataset()
+    if not dataset:
         st.markdown(
-            f'<div class="media-list-card"><div class="media-list-content">'
-            f'<strong>{escape(str(item.get("name") or "Liste"))}</strong>'
-            f'<small>{list_type} · {len(movies)} film(s) · {len(shows)} série(s)</small>'
-            f'</div></div>',
+            '<div class="accent-callout"><strong>DONNÉES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord.</div>',
             unsafe_allow_html=True,
         )
+        return
+
+    duplicates = duplicate_rows(dataset)
+    writable_count = sum(row.get("writable_count", 0) >= 2 for row in duplicates)
+    dynamic_count = sum(bool(row.get("dynamic_count")) for row in duplicates)
+    metrics = st.columns(3)
+    metrics[0].metric("Chevauchements", len(duplicates))
+    metrics[1].metric("Entre conteneurs modifiables", writable_count)
+    metrics[2].metric("Impliquant une liste dynamique", dynamic_count)
+
+    st.markdown(
+        '<div class="accent-callout"><strong>DÉDUPLICATION PAR IDENTIFIANTS</strong> · '
+        'TMDb, IMDb, TVDb, Trakt ou MDBList sont comparés localement. Les vues agrégées '
+        'ne sont jamais comptées comme des listes supplémentaires.</div>',
+        unsafe_allow_html=True,
+    )
+
+    scope_col, search_col = st.columns([0.42, 0.58])
+    scope = scope_col.selectbox(
+        "Afficher",
+        ["Tous les chevauchements", "Conteneurs modifiables uniquement", "Avec liste dynamique"],
+        key="duplicate_scope",
+    )
+    query = search_col.text_input(
+        "Recherche",
+        key="duplicate_search",
+        placeholder="Titre…",
+    ).strip().casefold()
+
+    visible = []
+    for row in duplicates:
+        if scope == "Conteneurs modifiables uniquement" and row.get("writable_count", 0) < 2:
+            continue
+        if scope == "Avec liste dynamique" and not row.get("dynamic_count"):
+            continue
+        if query and query not in str(row.get("title") or "").casefold():
+            continue
+        visible.append(row)
+
+    if visible:
+        table = [
+            {
+                "Type": row.get("type"),
+                "Titre": row.get("title"),
+                "Année": row.get("year") or "—",
+                "Classification": row.get("overlap_type"),
+                "Conteneurs": " · ".join(row.get("containers") or []),
+            }
+            for row in visible
+        ]
+        st.dataframe(table, use_container_width=True, hide_index=True)
+    else:
+        st.markdown(
+            '<div class="accent-callout"><strong>✓ AUCUN DOUBLON</strong> · '
+            'Aucun contenu ne correspond à cette sélection.</div>',
+            unsafe_allow_html=True,
+        )
+
+    csv_col, json_col = st.columns(2)
+    with csv_col:
+        st.download_button(
+            "⬇️ Télécharger les doublons CSV",
+            data="\ufeff" + rows_to_csv(visible, "duplicates"),
+            file_name="media-smart-lists-doublons.csv",
+            mime="text/csv",
+            key="download_duplicates_csv",
+        )
+    with json_col:
+        st.download_button(
+            "⬇️ Télécharger les doublons JSON",
+            data=rows_to_json(visible, "duplicates"),
+            file_name="media-smart-lists-doublons.json",
+            mime="application/json",
+            key="download_duplicates_json",
+        )
+    st.caption(
+        "Lecture seule : les listes dynamiques restent informatives et aucune suppression n’est proposée."
+    )
 
 
 def render_basic_stats_page() -> None:
@@ -1575,6 +1766,8 @@ elif page == "▶️ En cours de lecture":
     render_progress_page()
 elif page == "🧹 Nettoyage des listes":
     render_static_lists_page()
+elif page == "🔍 Recherche de doublons":
+    render_duplicates_page()
 elif page == "🎯 Que regarder ?":
     render_watchlist_page()
 elif page == "📊 Statistiques":
