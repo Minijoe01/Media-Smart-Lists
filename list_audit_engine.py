@@ -9,7 +9,7 @@ from __future__ import annotations
 import csv
 import io
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from normalized_model import media_type
@@ -34,6 +34,22 @@ SORT_OPTIONS = [
     "Plus grand nombre de conteneurs",
     "Titre A → Z",
     "Titre Z → A",
+]
+
+ADDITION_PERIOD_OPTIONS = [
+    "Toutes les dates",
+    "7 derniers jours",
+    "30 derniers jours",
+    "90 derniers jours",
+    "Cette année",
+    "Date inconnue",
+]
+
+ADDITION_SORT_OPTIONS = [
+    "Ajouts les plus récents",
+    "Ajouts les plus anciens",
+    "Conteneur",
+    "Titre A → Z",
 ]
 
 
@@ -130,16 +146,18 @@ def _community_note(item: dict[str, Any], kind: str) -> float | None:
     return None
 
 
-def _added_days(item: dict[str, Any], now: datetime) -> int | None:
+def _added_datetime(item: dict[str, Any]) -> datetime | None:
     media = _nested_media(item)
     value = (
         item.get("watchlist_at")
         or item.get("added_at")
         or item.get("added")
         or item.get("created_at")
+        or item.get("listed_at")
         or media.get("watchlist_at")
         or media.get("added_at")
         or media.get("added")
+        or media.get("listed_at")
     )
     if not value:
         return None
@@ -147,9 +165,14 @@ def _added_days(item: dict[str, Any], now: datetime) -> int | None:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         if parsed.tzinfo is None:
             parsed = parsed.replace(tzinfo=timezone.utc)
-        return max((now - parsed.astimezone(timezone.utc)).days, 0)
+        return parsed.astimezone(timezone.utc)
     except Exception:
         return None
+
+
+def _added_days(item: dict[str, Any], now: datetime) -> int | None:
+    parsed = _added_datetime(item)
+    return max((now - parsed).days, 0) if parsed else None
 
 
 def auditable_sources(
@@ -266,6 +289,7 @@ def audit_source(
             identity = _identity(item, kind)
             member_record = memberships.get(identity) or {"memberships": []}
             containers = [member["label"] for member in member_record["memberships"]]
+            added_at = _added_datetime(item)
             days = _added_days(item, now)
             note = _community_note(item, kind)
             is_watched = identity in watched
@@ -304,6 +328,7 @@ def audit_source(
                     "title": _title(item, kind),
                     "year": _year(item, kind),
                     "note": note,
+                    "added_at": added_at.isoformat() if added_at else None,
                     "added_days": days,
                     "watched": is_watched,
                     "duplicate": is_duplicate,
@@ -375,6 +400,108 @@ def filter_audit_rows(
     return output
 
 
+def addition_history(dataset: dict[str, Any]) -> list[dict[str, Any]]:
+    """Une ligne par appartenance réelle à une Watchlist/liste personnelle."""
+    output = []
+    for source in auditable_sources(dataset):
+        source_label = source_display_label(source)
+        source_type = str(source.get("type") or "unknown")
+        for section, kind in (("movies", "movie"), ("shows", "show")):
+            for item in source.get(section) or []:
+                if not isinstance(item, dict):
+                    continue
+                added_at = _added_datetime(item)
+                output.append(
+                    {
+                        "key": f"addition:{source.get('key')}:{_identity(item, kind)}",
+                        "type": "Film" if kind == "movie" else "Série",
+                        "title": _title(item, kind),
+                        "year": _year(item, kind),
+                        "added_at": added_at,
+                        "container": source_label,
+                        "container_type": source_type,
+                    }
+                )
+    return sorted(
+        output,
+        key=lambda row: (
+            row.get("added_at") is None,
+            -(row["added_at"].timestamp()) if row.get("added_at") else 0,
+            row["title"].casefold(),
+        ),
+    )
+
+
+def filter_addition_history(
+    rows: Iterable[dict[str, Any]],
+    container: str = "Tous les conteneurs",
+    media_filter: str = "Tous",
+    period: str = "Toutes les dates",
+    search: str = "",
+    sort_mode: str = "Ajouts les plus récents",
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    now = now or datetime.now(timezone.utc)
+    query = str(search or "").strip().casefold()
+    threshold = None
+    if period == "7 derniers jours":
+        threshold = now - timedelta(days=7)
+    elif period == "30 derniers jours":
+        threshold = now - timedelta(days=30)
+    elif period == "90 derniers jours":
+        threshold = now - timedelta(days=90)
+    elif period == "Cette année":
+        threshold = datetime(now.year, 1, 1, tzinfo=timezone.utc)
+
+    output = []
+    for row in rows:
+        if container != "Tous les conteneurs" and row.get("container") != container:
+            continue
+        if media_filter == "Films" and row.get("type") != "Film":
+            continue
+        if media_filter == "Séries" and row.get("type") != "Série":
+            continue
+        if query and query not in str(row.get("title") or "").casefold():
+            continue
+        added_at = row.get("added_at")
+        if period == "Date inconnue" and added_at is not None:
+            continue
+        if period != "Date inconnue" and threshold and (added_at is None or added_at < threshold):
+            continue
+        output.append(row)
+
+    if sort_mode == "Ajouts les plus anciens":
+        return sorted(output, key=lambda row: (row.get("added_at") is None, row.get("added_at") or datetime.max.replace(tzinfo=timezone.utc)))
+    if sort_mode == "Conteneur":
+        return sorted(output, key=lambda row: (row["container"].casefold(), row.get("added_at") is None, -(row["added_at"].timestamp()) if row.get("added_at") else 0))
+    if sort_mode == "Titre A → Z":
+        return sorted(output, key=lambda row: (row["title"].casefold(), row.get("added_at") is None))
+    return sorted(output, key=lambda row: (row.get("added_at") is None, -(row["added_at"].timestamp()) if row.get("added_at") else 0))
+
+
+def addition_rows_to_csv(rows: Iterable[dict[str, Any]]) -> str:
+    values = []
+    for row in rows:
+        added_at = row.get("added_at")
+        values.append(
+            {
+                "date_ajout": added_at.isoformat() if isinstance(added_at, datetime) else "",
+                "type": row.get("type"),
+                "titre": row.get("title"),
+                "annee": row.get("year"),
+                "conteneur": row.get("container"),
+                "type_conteneur": row.get("container_type"),
+            }
+        )
+    if not values:
+        return ""
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, fieldnames=list(values[0]))
+    writer.writeheader()
+    writer.writerows(values)
+    return stream.getvalue()
+
+
 def export_rows(rows: Iterable[dict[str, Any]], report_type: str) -> list[dict[str, Any]]:
     output = []
     for row in rows:
@@ -395,6 +522,7 @@ def export_rows(rows: Iterable[dict[str, Any]], report_type: str) -> list[dict[s
             base.update(
                 {
                     "note": row.get("note"),
+                    "date_ajout": row.get("added_at"),
                     "anciennete_jours": row.get("added_days"),
                     "deja_vu": row.get("watched"),
                     "nombre_conteneurs": row.get("container_count"),

@@ -74,14 +74,82 @@ def _genres(media: dict[str, Any]) -> list[str]:
 
 
 def _runtime(*containers: dict[str, Any], default: int = 0) -> int:
+    """Runtime d'un film, avec conversion prudente si une source renvoie des secondes."""
     for container in containers:
         try:
             value = int(round(float(container.get("runtime") or 0)))
+        except (TypeError, ValueError):
+            continue
+        if 0 < value <= 600:
+            return value
+        if value > 600 and 5 <= value / 60 <= 600:
+            return int(round(value / 60))
+    return default
+
+
+def _episode_count(show: dict[str, Any]) -> int:
+    for key in (
+        "total_aired_episodes",
+        "aired_episodes",
+        "total_episode_count",
+        "total_episodes",
+        "episode_count",
+        "number_of_episodes",
+    ):
+        try:
+            value = int(show.get(key) or 0)
             if value > 0:
                 return value
         except (TypeError, ValueError):
             pass
-    return default
+    return 0
+
+
+def _episode_runtime(
+    episode: dict[str, Any],
+    show: dict[str, Any],
+    row: dict[str, Any],
+) -> int:
+    """Évite de confondre durée d'un épisode et durée cumulée de toute la série."""
+    for container in (episode, row):
+        for key in ("runtime", "episode_runtime", "duration"):
+            try:
+                value = int(round(float(container.get(key) or 0)))
+            except (TypeError, ValueError):
+                continue
+            if 5 <= value <= 300:
+                return value
+
+    for key in ("episode_runtime", "runtime_per_episode", "average_runtime"):
+        try:
+            value = int(round(float(show.get(key) or 0)))
+        except (TypeError, ValueError):
+            continue
+        if 5 <= value <= 300:
+            return value
+
+    try:
+        show_runtime = int(round(float(show.get("runtime") or 0)))
+    except (TypeError, ValueError):
+        show_runtime = 0
+    if 5 <= show_runtime <= 300:
+        return show_runtime
+
+    # Certaines réponses MDBList exposent le runtime cumulé de la série.
+    count = _episode_count(show)
+    if show_runtime > 300 and count:
+        average = int(round(show_runtime / count))
+        if 5 <= average <= 300:
+            return average
+
+    # Autre format rencontré : durée exprimée en secondes.
+    if show_runtime > 300 and 5 <= show_runtime / 60 <= 300:
+        return int(round(show_runtime / 60))
+
+    genres = {genre.casefold() for genre in _genres(show)}
+    if genres & {"animation", "anime"}:
+        return 20
+    return 45
 
 
 def _year(media: dict[str, Any]) -> int | None:
@@ -225,7 +293,7 @@ def normalize_history(
             episode_label += f" · {episode_title}"
         identity = _identity("episode", episode)
         show_identity = _identity("show", show)
-        runtime = _runtime(episode, show, row, default=45)
+        runtime = _episode_runtime(episode, show, row)
         plays = _plays(row)
         output.append(
             {

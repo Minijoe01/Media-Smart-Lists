@@ -22,6 +22,7 @@ from calendar_engine import (
     CALENDAR_SORT_OPTIONS,
     CALENDAR_TIMING_OPTIONS,
     CALENDAR_TYPE_OPTIONS,
+    build_local_calendar_events,
     filter_calendar_events,
     group_calendar_by_day,
     normalize_calendar_events,
@@ -39,10 +40,15 @@ from history_engine import (
     rows_to_json as history_rows_to_json,
 )
 from list_audit_engine import (
+    ADDITION_PERIOD_OPTIONS,
+    ADDITION_SORT_OPTIONS,
     ISSUE_OPTIONS,
     SORT_OPTIONS as AUDIT_SORT_OPTIONS,
+    addition_history,
+    addition_rows_to_csv,
     audit_source,
     auditable_sources,
+    filter_addition_history,
     filter_audit_rows,
     rows_to_csv,
     rows_to_json,
@@ -72,7 +78,7 @@ from recommendation_engine import PRESET_NAMES, build_profile, preset_matches, s
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.14.0-alpha"
+APP_VERSION = "0.15.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -788,12 +794,31 @@ def _score(item: dict) -> str:
 
 
 def _format_minutes(minutes: int) -> str:
-    minutes = max(int(minutes or 0), 0)
-    hours, rest = divmod(minutes, 60)
-    if hours >= 24:
-        days, hours = divmod(hours, 24)
-        return f"{days}j {hours}h" if hours else f"{days}j"
-    return f"{hours}h{rest:02d}" if hours else f"{rest} min"
+    """Durée compacte et lisible, de quelques minutes à plusieurs années."""
+    minutes = max(int(round(minutes or 0)), 0)
+    if minutes < 60:
+        return f"{minutes} min"
+
+    hours, minute_rest = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h{minute_rest:02d}" if minute_rest else f"{hours}h"
+
+    days, hour_rest = divmod(hours, 24)
+    if days < 30:
+        return f"{days} j {hour_rest} h" if hour_rest else f"{days} j"
+
+    if days < 365:
+        months, day_rest = divmod(days, 30)
+        return f"{months} mois {day_rest} j" if day_rest else f"{months} mois"
+
+    years, day_after_years = divmod(days, 365)
+    months, day_rest = divmod(day_after_years, 30)
+    year_text = f"{years} an" if years == 1 else f"{years} ans"
+    if months:
+        return f"{year_text} {months} mois"
+    if day_rest:
+        return f"{year_text} {day_rest} j"
+    return year_text
 
 
 def _format_date(value: object) -> str:
@@ -804,6 +829,18 @@ def _format_date(value: object) -> str:
         return parsed.strftime("%d/%m/%Y")
     except (TypeError, ValueError):
         return str(value)[:10]
+
+
+def _format_datetime(value: object) -> str:
+    if value in (None, ""):
+        return ""
+    try:
+        parsed = datetime.fromisoformat(str(value).strip().replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo("UTC"))
+        return parsed.astimezone(ZoneInfo("Europe/Paris")).strftime("%d/%m/%Y %H:%M")
+    except (TypeError, ValueError):
+        return str(value)[:16]
 
 
 def _runtime_text(item: dict) -> str:
@@ -1914,6 +1951,7 @@ def render_static_lists_page() -> None:
             "Titre": row.get("title"),
             "Année": row.get("year") or "—",
             "Note": f"{row['note']:.1f}/10" if row.get("note") is not None else "—",
+            "Ajouté le": _format_datetime(row.get("added_at")) or "—",
             "Ancienneté": f"{row['added_days']} j" if row.get("added_days") is not None else "—",
             "Présent dans": " | ".join(row.get("containers") or []) or selected_label,
             "Signaux": " · ".join(row.get("issue_labels") or []) or "Aucun",
@@ -1949,6 +1987,84 @@ def render_static_lists_page() -> None:
         "Aperçu uniquement : rien n’est supprimé et les rapports ne contiennent aucune donnée de connexion."
     )
 
+    with st.expander("🕒 Historique des ajouts aux listes", expanded=False):
+        additions = addition_history(dataset)
+        containers = sorted({row["container"] for row in additions}, key=str.casefold)
+        container_col, period_col, type_add_col = st.columns([0.42, 0.36, 0.22])
+        container_filter = container_col.selectbox(
+            "Conteneur",
+            ["Tous les conteneurs", *containers],
+            key="addition_container",
+        )
+        addition_period = period_col.selectbox(
+            "Date d’ajout",
+            ADDITION_PERIOD_OPTIONS,
+            key="addition_period",
+        )
+        addition_type = type_add_col.selectbox(
+            "Type",
+            ["Tous", "Films", "Séries"],
+            key="addition_type",
+        )
+        search_col, sort_add_col, limit_add_col = st.columns([0.46, 0.36, 0.18])
+        addition_search = search_col.text_input(
+            "Recherche",
+            key="addition_search",
+            placeholder="Titre…",
+        )
+        addition_sort = sort_add_col.selectbox(
+            "Trier par",
+            ADDITION_SORT_OPTIONS,
+            key="addition_sort",
+        )
+        addition_limit = limit_add_col.selectbox(
+            "Afficher",
+            [100, 500, "Tout"],
+            key="addition_limit",
+        )
+        visible_additions = filter_addition_history(
+            additions,
+            container=container_filter,
+            media_filter=addition_type,
+            period=addition_period,
+            search=addition_search,
+            sort_mode=addition_sort,
+            now=datetime.now(PARIS_TZ),
+        )
+        known_dates = sum(row.get("added_at") is not None for row in visible_additions)
+        add_metrics = st.columns(3)
+        add_metrics[0].metric("Ajouts", len(visible_additions))
+        add_metrics[1].metric("Dates connues", known_dates)
+        add_metrics[2].metric("Dates non fournies", len(visible_additions) - known_dates)
+        max_additions = len(visible_additions) if addition_limit == "Tout" else int(addition_limit)
+        additions_table = [
+            {
+                "Ajouté le": row["added_at"].astimezone(PARIS_TZ).strftime("%d/%m/%Y %H:%M") if row.get("added_at") else "Date non fournie",
+                "Type": row.get("type"),
+                "Titre": row.get("title"),
+                "Année": row.get("year") or "—",
+                "Conteneur": row.get("container"),
+            }
+            for row in visible_additions[:max_additions]
+        ]
+        if additions_table:
+            st.dataframe(additions_table, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Aucun ajout ne correspond à ces filtres.")
+        if len(visible_additions) > max_additions:
+            st.caption(f"{len(visible_additions) - max_additions} ajout(s) supplémentaire(s) masqué(s).")
+        st.download_button(
+            "⬇️ Télécharger l’historique des ajouts",
+            data="\ufeff" + addition_rows_to_csv(visible_additions),
+            file_name="media-smart-lists-ajouts-listes.csv",
+            mime="text/csv",
+            type="primary",
+            key="download_addition_history",
+        )
+        st.caption(
+            "Les dates dépendent des champs fournis par MDBList. Les listes dynamiques peuvent ne pas exposer une date d’ajout par élément."
+        )
+
 
 CALENDAR_CACHE_KEY = "_mdblist_calendar_cache"
 PARIS_TZ = ZoneInfo("Europe/Paris")
@@ -1960,15 +2076,24 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
         return False, message or "Session MDBList indisponible."
     start_date = datetime.now(PARIS_TZ).date()
     end_date = start_date + timedelta(days=max(1, min(int(horizon_days), 120)))
+    provider = MDBListProvider(mdb_oauth.access_token())
+    mode = "mdblist"
     try:
-        provider = MDBListProvider(mdb_oauth.access_token())
         events = provider.calendar_events(
             start_date.isoformat(),
             end_date.isoformat(),
             include_favorite_cast=include_favorite_cast,
         )
     except Exception:
-        return False, "MDBList n’a pas pu charger le calendrier pour le moment."
+        events = []
+        mode = "local"
+
+    # Si l'endpoint calendrier est indisponible ou vide, les dates déjà chargées
+    # (Up Next et listes) permettent tout de même un calendrier de secours.
+    if not events:
+        events = build_local_calendar_events(_dataset(), start_date, end_date)
+        mode = "local"
+
     st.session_state[CALENDAR_CACHE_KEY] = {
         "events": events,
         "fetched_at": time.time(),
@@ -1977,13 +2102,16 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
         "horizon": int(horizon_days),
         "favorite_cast": bool(include_favorite_cast),
         "request_count": provider.request_count,
+        "mode": mode,
     }
     account = mdb_oauth.account_summary()
     if provider.rate_limit_remaining is not None and account:
         account["rate_limit_remaining"] = provider.rate_limit_remaining
         st.session_state[mdb_oauth.ACCOUNT_KEY] = account
         mdb_oauth.persist_cookie(cookies)
-    return True, f"{len(events)} événement(s) reçu(s)."
+    if mode == "local":
+        return True, f"Calendrier de secours prêt avec {len(events)} événement(s) issu(s) des données disponibles."
+    return True, f"{len(events)} événement(s) reçu(s) de MDBList."
 
 
 def _calendar_day_title(day: date | None) -> str:
@@ -2064,7 +2192,13 @@ def render_calendar_page() -> None:
         min(row["datetime"] for row in dated).strftime("%d/%m") if dated else "—",
     )
     checked = datetime.fromtimestamp(float(cache.get("fetched_at") or time.time()), PARIS_TZ).strftime("%d/%m à %H:%M")
-    st.caption(f"Calendrier actualisé le {checked} · les filtres ci-dessous préservent votre quota MDBList.")
+    if cache.get("mode") == "local":
+        st.caption(
+            f"Calendrier de secours construit le {checked} depuis les dates déjà disponibles. "
+            "Le service calendrier MDBList n’a pas répondu, mais les filtres et exports restent utilisables."
+        )
+    else:
+        st.caption(f"Calendrier MDBList actualisé le {checked} · les filtres ci-dessous préservent votre quota.")
 
     filter_col, timing_col, sort_col, limit_col = st.columns([0.18, 0.27, 0.37, 0.18])
     type_filter = filter_col.selectbox("Type", CALENDAR_TYPE_OPTIONS, key="calendar_type")
@@ -2168,141 +2302,140 @@ def render_basic_stats_page() -> None:
         return
     render_dataset_overview()
 
-    st.divider()
-    st.markdown("### 📜 Historique des vues")
-    st.caption(
-        "Films et épisodes connus de MDBList, avec filtres temporels, genres, durées et notes personnelles. "
-        "Toute l’analyse ci-dessous utilise les données déjà chargées."
-    )
-    rows = normalize_history(dataset, timezone_name="Europe/Paris")
-    if not rows:
-        st.caption("Aucun visionnage n’est disponible dans le dataset actuel.")
-        return
-
-    dated_values = [row["watched_at"].date() for row in rows if row.get("watched_at")]
-    earliest = min(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
-    latest = max(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
-    period_col, type_col, genre_col, sort_col = st.columns([0.25, 0.18, 0.25, 0.32])
-    period = period_col.selectbox("Période", HISTORY_PERIOD_OPTIONS, key="history_period")
-    media_filter = type_col.selectbox("Type", ["Tous", "Films", "Épisodes"], key="history_type")
-    genre_filter = genre_col.selectbox(
-        "Genre",
-        ["Tous les genres", *available_history_genres(rows)],
-        key="history_genre",
-    )
-    sort_mode = sort_col.selectbox("Trier par", HISTORY_SORT_OPTIONS, key="history_sort")
-
-    custom_start = custom_end = None
-    if period == "Période personnalisée":
-        start_col, end_col = st.columns(2)
-        custom_start = start_col.date_input(
-            "Du",
-            value=max(earliest, latest - timedelta(days=30)),
-            min_value=earliest,
-            max_value=latest,
-            key="history_start",
+    with st.expander("📜 Historique des vues", expanded=False):
+        st.caption(
+            "Films et épisodes connus de MDBList, avec filtres temporels, genres, durées et notes personnelles. "
+            "Toute l’analyse ci-dessous utilise les données déjà chargées."
         )
-        custom_end = end_col.date_input(
-            "Au",
-            value=latest,
-            min_value=earliest,
-            max_value=latest,
-            key="history_end",
+        rows = normalize_history(dataset, timezone_name="Europe/Paris")
+        if not rows:
+            st.caption("Aucun visionnage n’est disponible dans le dataset actuel.")
+            return
+
+        dated_values = [row["watched_at"].date() for row in rows if row.get("watched_at")]
+        earliest = min(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
+        latest = max(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
+        period_col, type_col, genre_col, sort_col = st.columns([0.25, 0.18, 0.25, 0.32])
+        period = period_col.selectbox("Période", HISTORY_PERIOD_OPTIONS, key="history_period")
+        media_filter = type_col.selectbox("Type", ["Tous", "Films", "Épisodes"], key="history_type")
+        genre_filter = genre_col.selectbox(
+            "Genre",
+            ["Tous les genres", *available_history_genres(rows)],
+            key="history_genre",
         )
-        if custom_start > custom_end:
-            custom_start, custom_end = custom_end, custom_start
+        sort_mode = sort_col.selectbox("Trier par", HISTORY_SORT_OPTIONS, key="history_sort")
 
-    search_col, limit_col = st.columns([0.75, 0.25])
-    search = search_col.text_input(
-        "Recherche",
-        key="history_search",
-        placeholder="Film, série ou épisode…",
-    )
-    display_choice = limit_col.selectbox(
-        "Afficher",
-        [100, 500, 1000, "Tout"],
-        key="history_limit",
-    )
-    visible = filter_history(
-        rows,
-        period=period,
-        media_filter=media_filter,
-        genre_filter=genre_filter,
-        search=search,
-        sort_mode=sort_mode,
-        start_date=custom_start,
-        end_date=custom_end,
-        now=datetime.now(PARIS_TZ),
-    )
+        custom_start = custom_end = None
+        if period == "Période personnalisée":
+            start_col, end_col = st.columns(2)
+            custom_start = start_col.date_input(
+                "Du",
+                value=max(earliest, latest - timedelta(days=30)),
+                min_value=earliest,
+                max_value=latest,
+                key="history_start",
+            )
+            custom_end = end_col.date_input(
+                "Au",
+                value=latest,
+                min_value=earliest,
+                max_value=latest,
+                key="history_end",
+            )
+            if custom_start > custom_end:
+                custom_start, custom_end = custom_end, custom_start
 
-    total_plays = sum(int(row.get("plays") or 1) for row in visible)
-    total_minutes = sum(int(row.get("total_minutes") or 0) for row in visible)
-    metrics = st.columns(4)
-    metrics[0].metric("Entrées", len(visible))
-    metrics[1].metric("Lectures connues", total_plays)
-    metrics[2].metric("Films", sum(row.get("type") == "Film" for row in visible))
-    metrics[3].metric("Temps estimé", _format_minutes(total_minutes) if total_minutes else "—")
-
-    top_genres = genre_minutes(visible)[:6]
-    if top_genres:
-        st.markdown("#### Vos genres les plus regardés")
-        total_genre_minutes = sum(minutes for _, minutes in top_genres) or 1
-        genre_columns = st.columns(2)
-        for index, (genre, minutes) in enumerate(top_genres):
-            with genre_columns[index % 2]:
-                fraction = minutes / total_genre_minutes
-                st.markdown(f"**{escape(genre)}** · {_format_minutes(minutes)}")
-                st.progress(min(fraction, 1.0))
-
-    display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
-    table = []
-    for row in visible[:display_limit]:
-        watched_at = row.get("watched_at")
-        table.append(
-            {
-                "Date": watched_at.strftime("%d/%m/%Y %H:%M") if watched_at else "—",
-                "Type": row.get("type"),
-                "Titre": row.get("title"),
-                "Épisode": row.get("episode_label") or "—",
-                "Année": row.get("year") or "—",
-                "Genres": " · ".join(row.get("genres") or []) or "—",
-                "Durée": _format_minutes(int(row.get("runtime") or 0)),
-                "Lectures": row.get("plays") or 1,
-                "Ma note": f"{row['personal_rating']:.1f}/10" if row.get("personal_rating") else "—",
-            }
+        search_col, limit_col = st.columns([0.75, 0.25])
+        search = search_col.text_input(
+            "Recherche",
+            key="history_search",
+            placeholder="Film, série ou épisode…",
         )
-    st.markdown(f"#### Détail des visionnages ({len(visible)})")
-    if table:
-        st.dataframe(table, use_container_width=True, hide_index=True)
-    else:
-        st.caption("Aucun visionnage ne correspond à ces filtres.")
-    if len(visible) > display_limit:
-        st.caption(f"{len(visible) - display_limit} entrée(s) supplémentaire(s) masquée(s).")
-
-    csv_col, json_col = st.columns(2)
-    with csv_col:
-        st.download_button(
-            "⬇️ Télécharger l’historique CSV",
-            data="\ufeff" + history_rows_to_csv(visible),
-            file_name="media-smart-lists-historique.csv",
-            mime="text/csv",
-            type="primary",
-            key="download_history_csv",
+        display_choice = limit_col.selectbox(
+            "Afficher",
+            [100, 500, 1000, "Tout"],
+            key="history_limit",
         )
-    with json_col:
-        st.download_button(
-            "⬇️ Télécharger l’historique JSON",
-            data=history_rows_to_json(visible),
-            file_name="media-smart-lists-historique.json",
-            mime="application/json",
-            type="primary",
-            key="download_history_json",
+        visible = filter_history(
+            rows,
+            period=period,
+            media_filter=media_filter,
+            genre_filter=genre_filter,
+            search=search,
+            sort_mode=sort_mode,
+            start_date=custom_start,
+            end_date=custom_end,
+            now=datetime.now(PARIS_TZ),
         )
 
-    st.caption(
-        "MDBList fournit principalement la dernière date connue par film ou épisode. "
-        "Les événements de revisionnage détaillés seront disponibles avec le futur import ZIP Trakt."
-    )
+        total_plays = sum(int(row.get("plays") or 1) for row in visible)
+        total_minutes = sum(int(row.get("total_minutes") or 0) for row in visible)
+        metrics = st.columns(4)
+        metrics[0].metric("Entrées", len(visible))
+        metrics[1].metric("Lectures connues", total_plays)
+        metrics[2].metric("Films", sum(row.get("type") == "Film" for row in visible))
+        metrics[3].metric("Temps estimé", _format_minutes(total_minutes) if total_minutes else "—")
+
+        top_genres = genre_minutes(visible)[:6]
+        if top_genres:
+            st.markdown("#### Vos genres les plus regardés")
+            total_genre_minutes = sum(minutes for _, minutes in top_genres) or 1
+            genre_columns = st.columns(2)
+            for index, (genre, minutes) in enumerate(top_genres):
+                with genre_columns[index % 2]:
+                    fraction = minutes / total_genre_minutes
+                    st.markdown(f"**{escape(genre)}** · {_format_minutes(minutes)}")
+                    st.progress(min(fraction, 1.0))
+
+        display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
+        table = []
+        for row in visible[:display_limit]:
+            watched_at = row.get("watched_at")
+            table.append(
+                {
+                    "Date": watched_at.strftime("%d/%m/%Y %H:%M") if watched_at else "—",
+                    "Type": row.get("type"),
+                    "Titre": row.get("title"),
+                    "Épisode": row.get("episode_label") or "—",
+                    "Année": row.get("year") or "—",
+                    "Genres": " · ".join(row.get("genres") or []) or "—",
+                    "Durée": _format_minutes(int(row.get("runtime") or 0)),
+                    "Lectures": row.get("plays") or 1,
+                    "Ma note": f"{row['personal_rating']:.1f}/10" if row.get("personal_rating") else "—",
+                }
+            )
+        st.markdown(f"#### Détail des visionnages ({len(visible)})")
+        if table:
+            st.dataframe(table, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Aucun visionnage ne correspond à ces filtres.")
+        if len(visible) > display_limit:
+            st.caption(f"{len(visible) - display_limit} entrée(s) supplémentaire(s) masquée(s).")
+
+        csv_col, json_col = st.columns(2)
+        with csv_col:
+            st.download_button(
+                "⬇️ Télécharger l’historique CSV",
+                data="\ufeff" + history_rows_to_csv(visible),
+                file_name="media-smart-lists-historique.csv",
+                mime="text/csv",
+                type="primary",
+                key="download_history_csv",
+            )
+        with json_col:
+            st.download_button(
+                "⬇️ Télécharger l’historique JSON",
+                data=history_rows_to_json(visible),
+                file_name="media-smart-lists-historique.json",
+                mime="application/json",
+                type="primary",
+                key="download_history_json",
+            )
+
+        st.caption(
+            "MDBList fournit principalement la dernière date connue par film ou épisode. "
+            "Les événements de revisionnage détaillés seront disponibles avec le futur import ZIP Trakt."
+        )
 
 
 def page_dashboard() -> None:

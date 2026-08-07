@@ -59,6 +59,9 @@ def _first_date(*containers: dict[str, Any]) -> datetime | None:
         "release_date",
         "released",
         "released_at",
+        "released_digital",
+        "digital_release_date",
+        "next_air_date",
         "starts_at",
         "start",
         "_calendar_date",
@@ -121,12 +124,90 @@ def _ids(*containers: dict[str, Any]) -> dict[str, Any]:
     return output
 
 
+def build_local_calendar_events(
+    dataset: dict[str, Any],
+    start_date: date,
+    end_date: date,
+) -> list[dict[str, Any]]:
+    """Calendrier de secours depuis les dates déjà présentes dans le dataset."""
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def in_range(value: Any) -> bool:
+        parsed = _parse_datetime(value)
+        return bool(parsed and start_date <= parsed.date() <= end_date)
+
+    def add(event: dict[str, Any], kind: str, media: dict[str, Any], value: Any) -> None:
+        parsed = _parse_datetime(value)
+        if not parsed or not in_range(value):
+            return
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        marker_id = ids.get("tmdb") or ids.get("imdb") or ids.get("mdblist") or media.get("title")
+        marker = f"{kind}:{marker_id}:{parsed.isoformat()}"
+        if marker in seen:
+            return
+        seen.add(marker)
+        output.append(event)
+
+    sections = dataset.get("sections") or {}
+    for row in sections.get("upnext") or []:
+        if not isinstance(row, dict):
+            continue
+        show = _dict(row.get("show"))
+        episode = _dict(row.get("next_episode"))
+        value = episode.get("air_date") or episode.get("first_aired")
+        add(
+            {
+                "event_type": "episode",
+                "first_aired": value,
+                "show": show,
+                "episode": episode,
+                "source": "Vos séries en cours",
+            },
+            "episode",
+            show,
+            value,
+        )
+
+    for source in dataset.get("sources") or []:
+        if not isinstance(source, dict) or source.get("kind") == "aggregate":
+            continue
+        source_name = str(source.get("name") or source.get("label") or "Vos listes")
+        for movie in source.get("movies") or []:
+            if not isinstance(movie, dict):
+                continue
+            value = (
+                movie.get("release_date")
+                or movie.get("released")
+                or movie.get("released_digital")
+                or movie.get("digital_release_date")
+            )
+            add(
+                {"type": "movie", "release_date": value, "movie": movie, "source": source_name},
+                "movie",
+                movie,
+                value,
+            )
+        for show in source.get("shows") or []:
+            if not isinstance(show, dict):
+                continue
+            value = show.get("release_date") or show.get("released") or show.get("first_air_date") or show.get("next_air_date")
+            add(
+                {"type": "show", "date": value, "show": show, "source": source_name},
+                "show",
+                show,
+                value,
+            )
+    return output
+
+
 def normalize_calendar_events(
     events: Iterable[dict[str, Any]],
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     now = now or datetime.now(timezone.utc)
     output = []
+    seen = set()
     for index, event in enumerate(events):
         if not isinstance(event, dict):
             continue
@@ -184,6 +265,10 @@ def normalize_calendar_events(
         source = str(event.get("source") or event.get("reason") or event.get("calendar_source") or "Calendrier MDBList")
         ids = _ids(primary, show, movie, media)
         key_id = ids.get("tmdb") or ids.get("imdb") or ids.get("mdblist") or index
+        marker = (kind, str(key_id), event_datetime.isoformat() if event_datetime else str(index))
+        if marker in seen:
+            continue
+        seen.add(marker)
         output.append(
             {
                 "key": f"calendar:{kind}:{key_id}:{event_datetime.isoformat() if event_datetime else index}",

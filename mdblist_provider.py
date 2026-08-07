@@ -12,7 +12,7 @@ import requests
 
 
 API_BASE = "https://api.mdblist.com"
-USER_AGENT = "Media-Smart-Lists/0.14"
+USER_AGENT = "Media-Smart-Lists/0.15"
 TIMEOUT = 35
 PAGE_LIMIT = 5000
 
