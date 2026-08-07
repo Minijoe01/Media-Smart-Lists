@@ -49,6 +49,20 @@ def _ids(media: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value not in (None, "")}
 
 
+def _studios(media: dict[str, Any]) -> list[str]:
+    """Métadonnées opportunistes du studio/réseau : aucune récupération distante."""
+    output: dict[str, str] = {}
+    for key in ("studios", "studio", "production_companies", "companies", "networks", "network"):
+        raw = media.get(key)
+        values = raw if isinstance(raw, list) else ([raw] if raw else [])
+        for name in values:
+            if isinstance(name, dict):
+                name = name.get("name") or name.get("title")
+            if name:
+                output.setdefault(str(name).casefold(), str(name))
+    return list(output.values())
+
+
 def _identity(kind: str, media: dict[str, Any]) -> str:
     ids = _ids(media)
     for provider in ("tmdb", "imdb", "tvdb", "trakt", "mdblist"):
@@ -307,6 +321,7 @@ def normalize_history(
                 "personal_rating": movie_ratings.get(identity),
                 "ids": _ids(movie),
                 "poster": str(movie.get("poster") or movie.get("poster_path") or ""),
+                "studios": _studios(movie),
             }
         )
 
@@ -348,6 +363,7 @@ def normalize_history(
                 "personal_rating": episode_ratings.get(identity) or show_ratings.get(show_identity),
                 "ids": _ids(show),
                 "poster": str(show.get("poster") or show.get("poster_path") or ""),
+                "studios": _studios(show),
             }
         )
 

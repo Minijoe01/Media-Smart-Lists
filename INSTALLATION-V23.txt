@@ -1,0 +1,65 @@
+================================================================
+MEDIA SMART LISTS — V23
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V23
+----------------------
+1. Calendrier enrichi : les dates à venir de TOUT votre contenu
+   (prochain épisode de vos séries en cours comme Silo, dates de
+   sortie des films et séries de vos listes, y compris fin 2026 et
+   2027) sont récupérées par appels groupés MDBList et fusionnées au
+   calendrier.
+2. Page Statistiques reconstruite à l'identique de l'ancienne
+   application Trakt Smart Lists (filtres, heatmap d'activité,
+   graphiques, ADN cinéphile, studios, marathons, évolution des
+   goûts, détail) avec les mêmes couleurs et la même disposition.
+3. Barres de progression toujours aux couleurs du thème (vert → citron).
+
+LES FICHIERS À ENVOYER (3 modifiés, 2 nouveaux)
+-----------------------------------------------
+À REMPLACER (version complète, inclut la V22 + la V23) :
+  • app.py
+  • history_engine.py
+
+À AJOUTER (nouveaux fichiers) :
+  • stats_engine.py
+  • ETAPE-23.md
+  • INSTALLATION-V23.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER :
+  • calendar_engine.py  → gardez votre version actuelle (celle de la V22).
+  • Tous les autres fichiers du dépôt restent inchangés.
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser dans la zone de dépôt CES 5 FICHIERS
+UNIQUEMENT :
+    app.py
+    history_engine.py
+    stats_engine.py
+    ETAPE-23.md
+    INSTALLATION-V23.txt
+GitHub vous proposera de remplacer les fichiers déjà existants
+(app.py et history_engine.py) : acceptez le remplacement.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    feat: enriched long-range calendar and Trakt-style detailed stats
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io, votre application :
+    « Manage app » → ⋮ → « Reboot », puis « Clear cache ».
+L'application redémarre avec la V23.
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+• Dans le calendrier, l'enrichissement des dates se déclenche quand vous
+  cliquez « Charger mon calendrier » (quelques appels groupés
+  supplémentaires, indiqués sur le bouton).
+================================================================
