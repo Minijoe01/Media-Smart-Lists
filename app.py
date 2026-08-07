@@ -22,7 +22,6 @@ from list_audit_engine import (
     SORT_OPTIONS as AUDIT_SORT_OPTIONS,
     audit_source,
     auditable_sources,
-    duplicate_rows,
     filter_audit_rows,
     rows_to_csv,
     rows_to_json,
@@ -33,8 +32,10 @@ from playback_engine import (
     DEFAULT_PLAYBACK_SORT,
     PLAYBACK_PROGRESS_OPTIONS,
     PLAYBACK_SORT_OPTIONS,
+    enrich_playback_posters,
     filter_playback_rows,
     finishable_tonight,
+    normalize_now_playing,
     normalize_playback,
 )
 from progress_engine import (
@@ -49,14 +50,13 @@ from recommendation_engine import PRESET_NAMES, build_profile, preset_matches, s
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.11.0-alpha"
+APP_VERSION = "0.12.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
     "▶️ En cours de lecture",
     "👻 Progression Fantôme",
     "🧹 Nettoyage des listes",
-    "🔍 Recherche de doublons",
     "🎯 Que regarder ?",
     "📅 Calendrier des sorties",
     "📊 Statistiques",
@@ -383,7 +383,8 @@ st.markdown(
     /* Boutons historiques : verre vert, sans ombre. */
     .stButton > button,
     div[data-testid="stButton"] > button,
-    div[data-testid="stDownloadButton"] > button,
+    div[data-testid="stDownloadButton"] button,
+    div[data-testid="stDownloadButton"] a,
     div[data-testid="stFormSubmitButton"] > button {
         background: rgba(5, 38, 34, 0.75) !important;
         border: 1px solid rgba(0,163,146,0.30) !important;
@@ -398,21 +399,26 @@ st.markdown(
     }
     .stButton > button:hover,
     div[data-testid="stButton"] > button:hover,
-    div[data-testid="stDownloadButton"] > button:hover,
+    div[data-testid="stDownloadButton"] button:hover,
+    div[data-testid="stDownloadButton"] a:hover,
     div[data-testid="stFormSubmitButton"] > button:hover {
         background: rgba(8, 55, 50, 0.85) !important;
         border-color: rgba(0,163,146,0.50) !important;
         box-shadow: none !important;
     }
     .stButton > button[kind="primary"],
-    div[data-testid="stButton"] > button[kind="primary"] {
+    div[data-testid="stButton"] > button[kind="primary"],
+    div[data-testid="stDownloadButton"] button[kind="primary"],
+    div[data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"] {
         background: linear-gradient(135deg, var(--am-green), var(--am-green-aston)) !important;
         border: none !important;
         color: #fff !important;
         font-weight: 700 !important;
     }
     .stButton > button[kind="primary"]:hover,
-    div[data-testid="stButton"] > button[kind="primary"]:hover {
+    div[data-testid="stButton"] > button[kind="primary"]:hover,
+    div[data-testid="stDownloadButton"] button[kind="primary"]:hover,
+    div[data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"]:hover {
         background: linear-gradient(135deg, #00B8A5, #006058) !important;
     }
 
@@ -548,6 +554,8 @@ def _render_connected_mdblist() -> None:
         if st.button("Se déconnecter de MDBList", type="primary", key="disconnect_mdblist"): 
             with st.spinner("Déconnexion et révocation MDBList…"):
                 mdb_oauth.disconnect(cookies)
+            for key in ("_normalized_dataset", "_source_genre_cache", "_mdblist_now_playing_live"):
+                st.session_state.pop(key, None)
             st.session_state["pending_source"] = "mdblist"
             st.rerun()
 
@@ -1446,6 +1454,102 @@ def render_progress_page() -> None:
             )
 
 
+NOW_PLAYING_CACHE_KEY = "_mdblist_now_playing_live"
+NOW_PLAYING_AUTO_SECONDS = 300
+
+
+def _refresh_now_playing() -> tuple[bool, str]:
+    """Un unique appel ciblé, sans recharger les onze sections du dataset."""
+    valid, message = mdb_oauth.ensure_valid_session(cookies)
+    if not valid:
+        return False, message or "Session MDBList indisponible."
+    try:
+        provider = MDBListProvider(mdb_oauth.access_token())
+        items = provider.now_playing()
+    except Exception:
+        return False, "MDBList n’a pas pu lire /sync/now-playing pour le moment."
+    st.session_state[NOW_PLAYING_CACHE_KEY] = {
+        "items": items,
+        "fetched_at": time.time(),
+        "request_count": provider.request_count,
+    }
+    account = mdb_oauth.account_summary()
+    if provider.rate_limit_remaining is not None and account:
+        account["rate_limit_remaining"] = provider.rate_limit_remaining
+        st.session_state[mdb_oauth.ACCOUNT_KEY] = account
+        mdb_oauth.persist_cookie(cookies)
+    return True, "Lecture en cours actualisée."
+
+
+def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
+    if not rows:
+        st.markdown(
+            '<div class="accent-callout"><strong>AUCUNE LECTURE ACTIVE</strong> · '
+            'Aucun scrobble actif n’était présent lors du dernier contrôle ciblé.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    for row in rows:
+        poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
+        image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+        title = escape(str(row.get("title") or "Titre inconnu"))
+        year = f" ({int(row['year'])})" if row.get("year") else ""
+        episode_label = escape(str(row.get("episode_label") or ""))
+        progress = float(row.get("progress") or 0)
+        runtime = int(row.get("runtime") or 0)
+        remaining = int(row.get("remaining_minutes") or 0)
+        details = [f"progression estimée {progress:.1f}%"]
+        if runtime:
+            details.append(f"reste environ {_format_minutes(remaining)}")
+        if row.get("is_manual"):
+            details.append("check-in manuel")
+        else:
+            details.append("scrobble actif")
+        if row.get("possibly_ended"):
+            details.append("nouveau contrôle conseillé")
+        episode_html = f'<small>▶️ {episode_label}</small>' if episode_label else ""
+        st.markdown(
+            f'<div class="media-list-card upnext-card">{image_html}'
+            f'<div class="media-list-content" style="width:100%;">'
+            f'<span class="source-badge">EN COURS MAINTENANT</span><br>'
+            f'<strong>{escape(str(row.get("type") or "Lecture"))} — {title}{year}</strong>'
+            f'{episode_html}<small>{escape(" · ".join(details))}</small>'
+            f'<div class="progress-bar-container"><div class="progress-bar-fill" '
+            f'style="width:{max(0,min(progress,100))}%;"></div></div>'
+            f'</div></div>',
+            unsafe_allow_html=True,
+        )
+    checked = datetime.fromtimestamp(float(fetched_at)).strftime("%H:%M:%S")
+    st.caption(
+        f"Dernier contrôle réseau : {checked} · progression ensuite estimée localement chaque minute."
+    )
+
+
+@st.fragment(run_every=60)
+def _now_playing_fragment() -> None:
+    cache = st.session_state.get(NOW_PLAYING_CACHE_KEY)
+    auto_refresh = bool(st.session_state.get("ghost_live_auto"))
+    cache_age = time.time() - float((cache or {}).get("fetched_at") or 0)
+    if auto_refresh and (not isinstance(cache, dict) or cache_age >= NOW_PLAYING_AUTO_SECONDS):
+        ok, message = _refresh_now_playing()
+        if not ok:
+            st.caption(f"⚠️ {message}")
+        cache = st.session_state.get(NOW_PLAYING_CACHE_KEY)
+    if not isinstance(cache, dict):
+        st.caption(
+            "Clique sur « Actualiser la lecture en cours » pour interroger uniquement "
+            "`/sync/now-playing` avec un seul appel MDBList."
+        )
+        return
+    rows = normalize_now_playing(
+        cache.get("items") or [],
+        fetched_at=float(cache.get("fetched_at") or time.time()),
+        now_timestamp=time.time(),
+    )
+    rows = enrich_playback_posters(rows, _dataset())
+    _render_live_now_playing_rows(rows, float(cache.get("fetched_at") or time.time()))
+
+
 def render_ghost_page() -> None:
     st.markdown('<div class="page-title">👻 Progression Fantôme</div>', unsafe_allow_html=True)
     dataset = _dataset()
@@ -1457,8 +1561,38 @@ def render_ghost_page() -> None:
         )
         return
 
+    st.markdown("### 🔴 Lecture en cours maintenant")
+    refresh_col, auto_col = st.columns([0.58, 0.42])
+    with refresh_col:
+        if st.button(
+            "Actualiser la lecture en cours · 1 appel",
+            type="primary",
+            key="refresh_now_playing",
+        ):
+            with st.spinner("Lecture ciblée de /sync/now-playing…"):
+                ok, message = _refresh_now_playing()
+            if not ok:
+                st.caption(f"⚠️ {message}")
+    with auto_col:
+        st.toggle(
+            "Auto toutes les 5 minutes",
+            value=False,
+            key="ghost_live_auto",
+            help=(
+                "Option désactivée par défaut. Tant que cette page reste ouverte, "
+                "elle coûte au maximum environ 12 appels MDBList par heure."
+            ),
+        )
+    if st.session_state.get("ghost_live_auto"):
+        st.caption("Actualisation automatique active · environ 12 appels/heure maximum sur cette page.")
+    else:
+        st.caption("Mode économe actif · aucun appel tant que tu ne cliques pas sur Actualiser.")
+    _now_playing_fragment()
+
+    st.divider()
+    st.markdown("### ⏸️ Reprises mises en pause")
     playback_items = (_sections().get("playback") or [])
-    rows = normalize_playback(playback_items)
+    rows = enrich_playback_posters(normalize_playback(playback_items), dataset)
     known_remaining = sum(int(row.get("remaining_minutes") or 0) for row in rows)
     metrics = st.columns(4)
     metrics[0].metric("Progressions", len(rows))
@@ -1677,7 +1811,7 @@ def render_static_lists_page() -> None:
             "Année": row.get("year") or "—",
             "Note": f"{row['note']:.1f}/10" if row.get("note") is not None else "—",
             "Ancienneté": f"{row['added_days']} j" if row.get("added_days") is not None else "—",
-            "Conteneurs": row.get("container_count"),
+            "Présent dans": " · ".join(row.get("containers") or []) or selected_label,
             "Signaux": " · ".join(row.get("issue_labels") or []) or "Aucun",
         }
         for row in filtered
@@ -1695,6 +1829,7 @@ def render_static_lists_page() -> None:
             data="\ufeff" + rows_to_csv(filtered, "audit"),
             file_name=f"media-smart-lists-audit-{slug}.csv",
             mime="text/csv",
+            type="primary",
             key="download_audit_csv",
         )
     with json_col:
@@ -1703,99 +1838,11 @@ def render_static_lists_page() -> None:
             data=rows_to_json(filtered, "audit"),
             file_name=f"media-smart-lists-audit-{slug}.json",
             mime="application/json",
+            type="primary",
             key="download_audit_json",
         )
     st.caption(
         "Dry-run permanent pour cette étape : aucun bouton de suppression, aucun secret dans les rapports."
-    )
-
-
-def render_duplicates_page() -> None:
-    st.markdown('<div class="page-title">🔍 Recherche de doublons</div>', unsafe_allow_html=True)
-    dataset = _dataset()
-    if not dataset:
-        st.markdown(
-            '<div class="accent-callout"><strong>DONNÉES NON CHARGÉES</strong> · '
-            'Charge MDBList depuis le Tableau de bord.</div>',
-            unsafe_allow_html=True,
-        )
-        return
-
-    duplicates = duplicate_rows(dataset)
-    writable_count = sum(row.get("writable_count", 0) >= 2 for row in duplicates)
-    dynamic_count = sum(bool(row.get("dynamic_count")) for row in duplicates)
-    metrics = st.columns(3)
-    metrics[0].metric("Chevauchements", len(duplicates))
-    metrics[1].metric("Entre conteneurs modifiables", writable_count)
-    metrics[2].metric("Impliquant une liste dynamique", dynamic_count)
-
-    st.markdown(
-        '<div class="accent-callout"><strong>DÉDUPLICATION PAR IDENTIFIANTS</strong> · '
-        'TMDb, IMDb, TVDb, Trakt ou MDBList sont comparés localement. Les vues agrégées '
-        'ne sont jamais comptées comme des listes supplémentaires.</div>',
-        unsafe_allow_html=True,
-    )
-
-    scope_col, search_col = st.columns([0.42, 0.58])
-    scope = scope_col.selectbox(
-        "Afficher",
-        ["Tous les chevauchements", "Conteneurs modifiables uniquement", "Avec liste dynamique"],
-        key="duplicate_scope",
-    )
-    query = search_col.text_input(
-        "Recherche",
-        key="duplicate_search",
-        placeholder="Titre…",
-    ).strip().casefold()
-
-    visible = []
-    for row in duplicates:
-        if scope == "Conteneurs modifiables uniquement" and row.get("writable_count", 0) < 2:
-            continue
-        if scope == "Avec liste dynamique" and not row.get("dynamic_count"):
-            continue
-        if query and query not in str(row.get("title") or "").casefold():
-            continue
-        visible.append(row)
-
-    if visible:
-        table = [
-            {
-                "Type": row.get("type"),
-                "Titre": row.get("title"),
-                "Année": row.get("year") or "—",
-                "Classification": row.get("overlap_type"),
-                "Conteneurs": " · ".join(row.get("containers") or []),
-            }
-            for row in visible
-        ]
-        st.dataframe(table, use_container_width=True, hide_index=True)
-    else:
-        st.markdown(
-            '<div class="accent-callout"><strong>✓ AUCUN DOUBLON</strong> · '
-            'Aucun contenu ne correspond à cette sélection.</div>',
-            unsafe_allow_html=True,
-        )
-
-    csv_col, json_col = st.columns(2)
-    with csv_col:
-        st.download_button(
-            "⬇️ Télécharger les doublons CSV",
-            data="\ufeff" + rows_to_csv(visible, "duplicates"),
-            file_name="media-smart-lists-doublons.csv",
-            mime="text/csv",
-            key="download_duplicates_csv",
-        )
-    with json_col:
-        st.download_button(
-            "⬇️ Télécharger les doublons JSON",
-            data=rows_to_json(visible, "duplicates"),
-            file_name="media-smart-lists-doublons.json",
-            mime="application/json",
-            key="download_duplicates_json",
-        )
-    st.caption(
-        "Lecture seule : les listes dynamiques restent informatives et aucune suppression n’est proposée."
     )
 
 
@@ -1920,8 +1967,6 @@ elif page == "👻 Progression Fantôme":
     render_ghost_page()
 elif page == "🧹 Nettoyage des listes":
     render_static_lists_page()
-elif page == "🔍 Recherche de doublons":
-    render_duplicates_page()
 elif page == "🎯 Que regarder ?":
     render_watchlist_page()
 elif page == "📊 Statistiques":

@@ -131,26 +131,132 @@ def normalize_playback(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
 
         raw_id = item.get("id")
         key = f"playback:{raw_id}" if raw_id is not None else f"playback:{index}:{title}:{season}:{number}"
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
         output.append(
             {
                 "key": key,
                 "id": raw_id,
                 "type": "Film" if is_movie else "Épisode",
                 "kind": "movie" if is_movie else "episode",
+                "media_kind": "movie" if is_movie else "show",
                 "title": title,
                 "year": year,
+                "ids": ids,
                 "episode_label": episode_label,
                 "progress": round(progress, 1),
                 "runtime": runtime,
                 "remaining_minutes": remaining,
                 "updated_at": updated_at,
                 "updated_timestamp": updated_ts,
+                "expires_at": item.get("expires_at"),
                 "paused_at": item.get("paused_at"),
                 "is_manual": bool(item.get("is_manual")),
                 "poster": _poster(media),
                 "item": item,
             }
         )
+    return output
+
+
+def normalize_now_playing(
+    items: Iterable[dict[str, Any]],
+    fetched_at: float,
+    now_timestamp: float,
+) -> list[dict[str, Any]]:
+    """Estime localement la progression depuis le dernier appel ciblé.
+
+    Le serveur fournit la progression au moment de la requête. Entre deux
+    vérifications réseau, le pourcentage avance à partir du runtime : le rendu
+    peut donc se rafraîchir sans consommer de quota MDBList.
+    """
+    rows = normalize_playback(items)
+    elapsed_minutes = max(float(now_timestamp) - float(fetched_at), 0) / 60
+    output = []
+    for row in rows:
+        value = dict(row)
+        runtime = int(value.get("runtime") or 0)
+        initial = float(value.get("progress") or 0)
+        if runtime > 0 and not value.get("paused_at"):
+            estimated = min(initial + elapsed_minutes / runtime * 100, 100.0)
+            value["progress"] = round(estimated, 1)
+            value["remaining_minutes"] = int(round(runtime * max(100 - estimated, 0) / 100))
+        expires_timestamp = _timestamp(value.get("expires_at"))
+        value["possibly_ended"] = bool(expires_timestamp and now_timestamp > expires_timestamp)
+        value["live"] = True
+        output.append(value)
+    return output
+
+
+def _identity_keys(kind: str, ids: dict[str, Any]) -> list[tuple[str, str, str]]:
+    output = []
+    for provider in ("tmdb", "imdb", "tvdb", "trakt", "mdblist"):
+        value = ids.get(provider)
+        if value not in (None, "", 0, "0"):
+            output.append((kind, provider, str(value)))
+    return output
+
+
+def enrich_playback_posters(
+    rows: Iterable[dict[str, Any]],
+    dataset: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Complète les posters depuis les autres sections déjà en mémoire."""
+    poster_by_id: dict[tuple[str, str, str], str] = {}
+    poster_by_title: dict[tuple[str, str, int | None], str] = {}
+
+    def remember(media: dict[str, Any], kind: str) -> None:
+        if not isinstance(media, dict):
+            return
+        poster = _poster(media)
+        if not poster:
+            return
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        for identity in _identity_keys(kind, ids):
+            poster_by_id.setdefault(identity, poster)
+        title = str(media.get("title") or media.get("name") or "").strip().casefold()
+        year_value = media.get("year") or media.get("release_year")
+        try:
+            year = int(year_value) if year_value else None
+        except (TypeError, ValueError):
+            year = None
+        if title:
+            poster_by_title.setdefault((kind, title, year), poster)
+
+    for source in dataset.get("sources") or []:
+        if not isinstance(source, dict) or source.get("kind") == "aggregate":
+            continue
+        for item in source.get("movies") or []:
+            remember(item, "movie")
+        for item in source.get("shows") or []:
+            remember(item, "show")
+    for progress in dataset.get("progress") or []:
+        if isinstance(progress, dict):
+            remember(_dict(progress.get("show")), "show")
+    watched = (dataset.get("sections") or {}).get("watched") or {}
+    for item in watched.get("movies") or []:
+        remember(_dict(item.get("movie")) or item, "movie")
+    for item in watched.get("shows") or []:
+        remember(_dict(item.get("show")) or item, "show")
+
+    output = []
+    for row in rows:
+        value = dict(row)
+        if not value.get("poster"):
+            kind = str(value.get("media_kind") or "movie")
+            ids = value.get("ids") if isinstance(value.get("ids"), dict) else {}
+            poster = ""
+            for identity in _identity_keys(kind, ids):
+                if identity in poster_by_id:
+                    poster = poster_by_id[identity]
+                    break
+            if not poster:
+                poster = poster_by_title.get(
+                    (kind, str(value.get("title") or "").casefold(), value.get("year")),
+                    "",
+                )
+            value["poster"] = poster
+            value["poster_from_cache"] = bool(poster)
+        output.append(value)
     return output
 
 

@@ -12,7 +12,7 @@ import requests
 
 
 API_BASE = "https://api.mdblist.com"
-USER_AGENT = "Media-Smart-Lists/0.8"
+USER_AGENT = "Media-Smart-Lists/0.12"
 TIMEOUT = 35
 PAGE_LIMIT = 5000
 
@@ -141,12 +141,23 @@ class MDBListProvider:
         )
 
     def playback(self) -> list[dict[str, Any]]:
+        """Reprises mises en pause, distinctes des lectures réellement actives."""
         response = self._get("/sync/playback")
         if isinstance(response, list):
             return response
         if isinstance(response, dict):
             values = response.get("items") or response.get("playback") or []
             return values if isinstance(values, list) else []
+        return []
+
+    def now_playing(self) -> list[dict[str, Any]]:
+        """Lectures actives uniquement — un appel ciblé à `/sync/now-playing`."""
+        response = self._get("/sync/now-playing")
+        if isinstance(response, list):
+            return [item for item in response if isinstance(item, dict)]
+        if isinstance(response, dict):
+            values = response.get("items") or response.get("now_playing") or []
+            return [item for item in values if isinstance(item, dict)]
         return []
 
     def upnext(self) -> list[dict[str, Any]]:
