@@ -18,7 +18,7 @@ from mdblist_provider import MDBListProvider
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.6.1-alpha"
+APP_VERSION = "0.7.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -234,10 +234,17 @@ st.markdown(
         border-left: 4px solid var(--am-lime);
     }
     .media-list-card img {
-        border-radius: 8px;
-        height: 76px;
+        border-radius: 10px;
+        height: 132px;
         object-fit: cover;
-        width: 52px;
+        width: 88px;
+    }
+    .media-list-card.upnext-card img {
+        height: 150px;
+        width: 100px;
+    }
+    .media-list-card.poster-card {
+        min-height: 154px;
     }
     .media-list-content {
         min-width: 0;
@@ -335,6 +342,14 @@ st.markdown(
     @media (max-width: 768px) {
         .block-container { padding-top: 2.5rem !important; }
         .brand-title { font-size: 1.7rem; }
+        .media-list-card img {
+            height: 114px;
+            width: 76px;
+        }
+        .media-list-card.upnext-card img {
+            height: 126px;
+            width: 84px;
+        }
     }
     </style>
     """,
@@ -610,7 +625,7 @@ def _poster_url(item: dict) -> str:
         return value
     if not value.startswith("/"):
         value = "/" + value
-    return f"https://image.tmdb.org/t/p/w342{value}"
+    return f"https://image.tmdb.org/t/p/w500{value}"
 
 
 def _score(item: dict) -> str:
@@ -621,6 +636,38 @@ def _score(item: dict) -> str:
         return str(int(round(float(value)))) if value is not None else ""
     except (TypeError, ValueError):
         return ""
+
+
+def _runtime_text(item: dict) -> str:
+    if not isinstance(item, dict):
+        return ""
+    value = item.get("runtime")
+    try:
+        minutes = int(round(float(value)))
+    except (TypeError, ValueError):
+        return ""
+    if minutes <= 0:
+        return ""
+    return f"{minutes // 60}h{minutes % 60:02d}" if minutes >= 60 else f"{minutes} min"
+
+
+def _rating_text(item: dict) -> str:
+    values = item.get("ratings") if isinstance(item, dict) else []
+    if not isinstance(values, list):
+        return ""
+    preferred = ("imdb", "tmdb", "trakt", "letterboxd")
+    indexed = {
+        str(value.get("source") or value.get("name") or "").lower(): value
+        for value in values if isinstance(value, dict)
+    }
+    for source in preferred:
+        value = indexed.get(source)
+        if not value:
+            continue
+        rating = value.get("value") if value.get("value") is not None else value.get("rating")
+        if rating is not None:
+            return f"{source.upper()} {rating}"
+    return ""
 
 
 def load_mdblist_dataset() -> None:
@@ -679,7 +726,7 @@ def render_dataset_overview() -> None:
     watched = sections.get("watched") or {}
     watchlist = sections.get("watchlist") or {}
     ratings = sections.get("ratings") or {}
-    lists = sections.get("static_lists") or []
+    lists = sections.get("user_lists") or []
     playback = sections.get("playback") or []
     dropped = sections.get("dropped") or {}
 
@@ -690,7 +737,7 @@ def render_dataset_overview() -> None:
         "Watchlist",
         len(watchlist.get("movies") or []) + len(watchlist.get("shows") or []),
     )
-    first[3].metric("Listes statiques", len(lists))
+    first[3].metric("Listes personnelles", len(lists))
 
     second = st.columns(4)
     second[0].metric(
@@ -705,15 +752,47 @@ def render_dataset_overview() -> None:
 def render_watchlist_page() -> None:
     st.markdown('<div class="page-title">🎯 Que regarder ?</div>', unsafe_allow_html=True)
     sections = _sections()
-    base_watchlist = sections.get("watchlist") or {}
-    base_items = list(base_watchlist.get("movies") or []) + list(base_watchlist.get("shows") or [])
-    if not base_items:
+    watchlist = sections.get("watchlist") or {}
+    user_lists = sections.get("user_lists") or []
+
+    sources = [{
+        "key": "watchlist",
+        "label": "Watchlist MDBList",
+        "kind": "watchlist",
+        "id": None,
+        "name": "Watchlist MDBList",
+        "type": "native",
+        "movies": list(watchlist.get("movies") or []),
+        "shows": list(watchlist.get("shows") or []),
+    }]
+    for item in user_lists:
+        if not isinstance(item, dict):
+            continue
+        list_type = str(item.get("type") or "static")
+        suffix = "Dynamique" if list_type == "dynamic" else "Statique"
+        sources.append({
+            "key": f"list:{item.get('id')}",
+            "label": f"{item.get('name') or 'Liste MDBList'} · {suffix}",
+            "kind": "list",
+            "id": item.get("id"),
+            "name": item.get("name") or "Liste MDBList",
+            "type": list_type,
+            "movies": list(item.get("movies") or []),
+            "shows": list(item.get("shows") or []),
+        })
+
+    if not any(source["movies"] or source["shows"] for source in sources):
         st.markdown(
-            '<div class="accent-callout"><strong>WATCHLIST NON CHARGÉE</strong> · '
+            '<div class="accent-callout"><strong>LISTES NON CHARGÉES</strong> · '
             'Connecte MDBList puis charge les données depuis le Tableau de bord.</div>',
             unsafe_allow_html=True,
         )
         return
+
+    source_by_label = {source["label"]: source for source in sources}
+    source_col, genre_col = st.columns(2)
+    selected_label = source_col.selectbox("Source", list(source_by_label), key="qr_source")
+    source = source_by_label[selected_label]
 
     genre_records = sections.get("genres") or []
     genre_by_title = {
@@ -722,18 +801,19 @@ def render_watchlist_page() -> None:
         if isinstance(item, dict) and item.get("slug")
     }
     genre_titles = sorted([title for title in genre_by_title if title], key=str.casefold)
+    selected_genre = genre_col.selectbox("Genre", ["Tous"] + genre_titles, key="watchlist_genre")
 
-    filter_col, type_col, limit_col = st.columns(3)
-    selected_genre = filter_col.selectbox("Genre", ["Tous"] + genre_titles, key="watchlist_genre")
+    type_col, limit_col = st.columns(2)
     media_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
     display_limit = limit_col.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
 
-    items = base_items
+    items = list(source["movies"]) + list(source["shows"])
     api_extra = False
     if selected_genre != "Tous":
         slug = genre_by_title.get(selected_genre, selected_genre.lower())
-        cache = st.session_state.setdefault("_watchlist_genre_cache", {})
-        filtered_response = cache.get(slug)
+        cache_key = f"{source['key']}:{slug}"
+        cache = st.session_state.setdefault("_source_genre_cache", {})
+        filtered_response = cache.get(cache_key)
         if not isinstance(filtered_response, dict):
             valid, message = mdb_oauth.ensure_valid_session(cookies)
             if not valid:
@@ -746,9 +826,12 @@ def render_watchlist_page() -> None:
             try:
                 provider = MDBListProvider(mdb_oauth.access_token())
                 with st.spinner(f"Filtrage MDBList : {selected_genre}…"):
-                    filtered_response = provider.watchlist(slug)
-                cache[slug] = filtered_response
-                st.session_state["_watchlist_genre_cache"] = cache
+                    if source["kind"] == "watchlist":
+                        filtered_response = provider.watchlist(slug)
+                    else:
+                        filtered_response = provider.list_items(int(source["id"]), slug)
+                cache[cache_key] = filtered_response
+                st.session_state["_source_genre_cache"] = cache
                 account = mdb_oauth.account_summary()
                 if provider.rate_limit_remaining is not None and account:
                     account["rate_limit_remaining"] = provider.rate_limit_remaining
@@ -758,7 +841,7 @@ def render_watchlist_page() -> None:
             except Exception:
                 st.markdown(
                     '<div class="accent-callout"><strong>FILTRE INDISPONIBLE</strong> · '
-                    'MDBList n’a pas pu filtrer cette Watchlist.</div>',
+                    'MDBList n’a pas pu filtrer cette source.</div>',
                     unsafe_allow_html=True,
                 )
                 return
@@ -766,7 +849,7 @@ def render_watchlist_page() -> None:
 
     filtered = []
     for item in items:
-        item_type = str(item.get("mediatype") or "")
+        item_type = str(item.get("mediatype") or item.get("type") or "")
         if media_type == "Films" and item_type not in {"movie", "movies"}:
             continue
         if media_type == "Séries" and item_type not in {"show", "tv", "series"}:
@@ -774,7 +857,7 @@ def render_watchlist_page() -> None:
         filtered.append(item)
 
     source_note = (
-        "1 requête MDBList, résultat maintenant mémorisé pour cette session"
+        "1 requête MDBList, résultat mémorisé pour cette session"
         if api_extra else
         ("résultat MDBList mémorisé pour cette session" if selected_genre != "Tous" else "aucun appel API supplémentaire")
     )
@@ -789,18 +872,32 @@ def render_watchlist_page() -> None:
         title = escape(_media_title(item))
         year = escape(_media_year(item))
         item_genres = _genres(item)
-        genre_text = " · ".join(item_genres) if item_genres else (
-            selected_genre if selected_genre != "Tous" else "Watchlist MDBList"
-        )
+        info_parts = []
+        if item_genres:
+            info_parts.append(" · ".join(item_genres))
+        elif selected_genre != "Tous":
+            info_parts.append(selected_genre)
+        runtime = _runtime_text(item)
+        if runtime:
+            info_parts.append(f"⏱️ {runtime}")
+        rating = _rating_text(item)
+        if rating:
+            info_parts.append(f"⭐ {rating}")
+        score = _score(item)
+        if score:
+            info_parts.append(f"MDB Score {score}/100")
+        if not info_parts:
+            item_type = str(item.get("mediatype") or item.get("type") or "").lower()
+            info_parts.append("Film" if item_type == "movie" else "Série" if item_type == "show" else source["name"])
+        info_parts.append(source["name"])
+
         poster = escape(_poster_url(item), quote=True)
         image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
-        score = _score(item)
-        score_html = f" · MDB Score {score}/100" if score else ""
         with columns[index % 2]:
             st.markdown(
-                f'<div class="media-list-card">{image_html}<div class="media-list-content">'
+                f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content">'
                 f'<strong>{title}</strong><span>{(" (" + year + ")") if year else ""}</span>'
-                f'<small>{escape(genre_text)}{score_html}</small></div></div>',
+                f'<small>{escape(" · ".join(info_parts))}</small></div></div>',
                 unsafe_allow_html=True,
             )
     if len(filtered) > display_limit:
@@ -857,7 +954,7 @@ def render_progress_page() -> None:
 
 def render_static_lists_page() -> None:
     st.markdown('<div class="page-title">🧹 Nettoyage des listes</div>', unsafe_allow_html=True)
-    lists = _sections().get("static_lists") or []
+    lists = _sections().get("user_lists") or []
     if not lists:
         st.markdown(
             '<div class="accent-callout"><strong>LISTES NON CHARGÉES</strong> · '
@@ -873,9 +970,12 @@ def render_static_lists_page() -> None:
     for item in lists:
         movies = item.get("movies") or []
         shows = item.get("shows") or []
+        list_type = "Dynamique" if item.get("type") == "dynamic" else "Statique"
         st.markdown(
-            f'<div class="media-list-card"><strong>{escape(str(item.get("name") or "Liste"))}</strong>'
-            f'<small>{len(movies)} film(s) · {len(shows)} série(s)</small></div>',
+            f'<div class="media-list-card"><div class="media-list-content">'
+            f'<strong>{escape(str(item.get("name") or "Liste"))}</strong>'
+            f'<small>{list_type} · {len(movies)} film(s) · {len(shows)} série(s)</small>'
+            f'</div></div>',
             unsafe_allow_html=True,
         )
 

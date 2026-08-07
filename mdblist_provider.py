@@ -12,7 +12,7 @@ import requests
 
 
 API_BASE = "https://api.mdblist.com"
-USER_AGENT = "Media-Smart-Lists/0.6.1"
+USER_AGENT = "Media-Smart-Lists/0.7"
 TIMEOUT = 35
 PAGE_LIMIT = 5000
 
@@ -165,33 +165,40 @@ class MDBListProvider:
                 break
         return all_items
 
-    def static_lists(self) -> list[dict[str, Any]]:
+    def list_items(self, list_id: int, filter_genre: str | None = None) -> dict[str, Any]:
+        params: dict[str, Any] = {
+            "append_to_response": "genres,poster,description,ratings",
+            "unified": "false",
+        }
+        if filter_genre:
+            params["filter_genre"] = filter_genre
+        return self._paged_dict(
+            f"/lists/{list_id}/items",
+            ("movies", "shows"),
+            params,
+        )
+
+    def user_lists(self) -> list[dict[str, Any]]:
+        """Charge les listes personnelles statiques ET dynamiques."""
         response = self._get("/lists/user", {"unified": "false"})
         if not isinstance(response, list):
             raise MDBListReadError("Format des listes utilisateur inattendu")
-        static = [
-            item for item in response
-            if isinstance(item, dict)
-            and (item.get("type") == "static" or item.get("dynamic") is False)
-        ]
+        personal = [item for item in response if isinstance(item, dict)]
         output: list[dict[str, Any]] = []
-        for metadata in static:
+        for metadata in personal:
             list_id = metadata.get("id")
             if list_id is None:
                 continue
-            items = self._paged_dict(
-                f"/lists/{list_id}/items",
-                ("movies", "shows"),
-                {
-                    "append_to_response": "genres,poster,description,ratings",
-                    "unified": "false",
-                },
-            )
+            items = self.list_items(int(list_id))
+            list_type = "dynamic" if (
+                metadata.get("type") == "dynamic" or metadata.get("dynamic") is True
+            ) else "static"
             output.append(
                 {
-                    "id": list_id,
+                    "id": int(list_id),
                     "name": metadata.get("name") or "Liste MDBList",
                     "private": metadata.get("private"),
+                    "type": list_type,
                     "movies": items["movies"],
                     "shows": items["shows"],
                     "pages": items["pages"],
@@ -206,7 +213,7 @@ class MDBListProvider:
             ("watched", self.watched),
             ("watchlist", self.watchlist),
             ("genres", self.genres),
-            ("static_lists", self.static_lists),
+            ("user_lists", self.user_lists),
             ("ratings", self.ratings),
             ("playback", self.playback),
             ("upnext", self.upnext),
@@ -217,7 +224,7 @@ class MDBListProvider:
                 sections[name] = loader()
             except MDBListReadError as exc:
                 errors.append({"section": name, "error": str(exc)})
-                sections[name] = [] if name in {"genres", "static_lists", "playback", "upnext"} else {}
+                sections[name] = [] if name in {"genres", "user_lists", "playback", "upnext"} else {}
         return {
             "provider": "mdblist",
             "mode": "realtime",
