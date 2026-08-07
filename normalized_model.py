@@ -88,10 +88,18 @@ def build_sources(sections: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(item, dict) or item.get("id") is None:
             continue
         list_id = int(item["id"])
-        list_type = "dynamic" if item.get("type") == "dynamic" else "static"
+        raw_type = str(item.get("type") or "").strip().lower()
+        list_type = raw_type if raw_type in {"static", "dynamic", "ai", "feed", "other"} else "static"
         key = f"list:{list_id}"
         name = str(item.get("name") or "Liste MDBList")
-        label = f"{name} · {'Dynamique' if list_type == 'dynamic' else 'Statique'}"
+        type_labels = {
+            "static": "Liste statique",
+            "dynamic": "Liste dynamique",
+            "ai": "Liste IA",
+            "feed": "Liste flux",
+            "other": "Liste",
+        }
+        label = f"{type_labels[list_type]} : {name}"
         sources.append(
             _source(
                 key,
@@ -105,7 +113,10 @@ def build_sources(sections: dict[str, Any]) -> list[dict[str, Any]]:
             )
         )
         personal_keys.append(key)
-        (dynamic_keys if list_type == "dynamic" else static_keys).append(key)
+        if list_type == "dynamic":
+            dynamic_keys.append(key)
+        elif list_type == "static":
+            static_keys.append(key)
 
     source_index = {source["key"]: source for source in sources}
 

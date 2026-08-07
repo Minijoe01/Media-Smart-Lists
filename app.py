@@ -25,6 +25,7 @@ from list_audit_engine import (
     filter_audit_rows,
     rows_to_csv,
     rows_to_json,
+    source_display_label,
 )
 from mdblist_provider import MDBListProvider
 from normalized_model import NORMALIZED_SCHEMA_VERSION, dedupe, normalize_provider_dataset
@@ -50,7 +51,7 @@ from recommendation_engine import PRESET_NAMES, build_profile, preset_matches, s
 
 
 APP_NAME = "Media Smart Lists"
-APP_VERSION = "0.12.0-alpha"
+APP_VERSION = "0.13.0-alpha"
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -554,7 +555,12 @@ def _render_connected_mdblist() -> None:
         if st.button("Se déconnecter de MDBList", type="primary", key="disconnect_mdblist"): 
             with st.spinner("Déconnexion et révocation MDBList…"):
                 mdb_oauth.disconnect(cookies)
-            for key in ("_normalized_dataset", "_source_genre_cache", "_mdblist_now_playing_live"):
+            for key in (
+                "_normalized_dataset",
+                "_source_genre_cache",
+                "_mdblist_now_playing_live",
+                "_mdblist_playback_poster_cache",
+            ):
                 st.session_state.pop(key, None)
             st.session_state["pending_source"] = "mdblist"
             st.rerun()
@@ -1036,9 +1042,9 @@ def render_watchlist_page() -> None:
 
     profile = build_profile(_dataset())
     st.caption(
-        f"🧠 Score calculé localement sur {profile.get('history_count', 0)} visionnage(s) "
-        f"et {profile.get('ratings_count', 0)} note(s) personnelle(s) · 0 appel API pour le score, "
-        "les tris, presets et roulettes."
+        f"🧠 Profil établi à partir de {profile.get('history_count', 0)} visionnage(s) "
+        f"et {profile.get('ratings_count', 0)} note(s) personnelle(s). "
+        "Scores, tris, presets et roulettes sont calculés sur l’appareil et préservent votre quota MDBList."
     )
     st.caption(
         "ℹ️ Survole une pastille — ou sélectionne-la au clavier — pour voir son explication "
@@ -1046,7 +1052,7 @@ def render_watchlist_page() -> None:
     )
     _render_taste_profile(profile)
 
-    source_by_label = {source["label"]: source for source in sources}
+    source_by_label = {source_display_label(source): source for source in sources}
     source_by_key = {source["key"]: source for source in sources}
     source_col, genre_col, type_col = st.columns(3)
     selected_label = source_col.selectbox("Source", list(source_by_label), key="qr_source")
@@ -1233,9 +1239,9 @@ def render_watchlist_page() -> None:
         )
 
     source_note = (
-        f"{api_calls_extra} requête(s) MDBList, résultat mémorisé pour cette session"
+        f"filtre MDBList actualisé ({api_calls_extra} appel(s)), puis mémorisé pour cette session"
         if api_calls_extra else
-        ("résultat MDBList mémorisé pour cette session" if selected_genre != "Tous" else "score et filtres locaux, aucun appel API supplémentaire")
+        ("filtre déjà mémorisé pour cette session" if selected_genre != "Tous" else "analyse locale · quota MDBList préservé")
     )
     st.markdown(
         f'<div class="accent-callout"><strong>{len(display_rows)} RÉSULTAT(S)</strong> · '
@@ -1346,9 +1352,9 @@ def render_progress_page() -> None:
         st.caption("Aucune série Up Next disponible.")
     else:
         st.markdown(
-            '<div class="accent-callout"><strong>FILTRES ET TRIS LOCAUX</strong> · '
-            'Genre, progression, durées, dernier visionnage et nouveauté utilisent uniquement '
-            'les données déjà chargées · 0 appel API supplémentaire.</div>',
+            '<div class="accent-callout"><strong>FILTRES ET TRIS INSTANTANÉS</strong> · '
+            'Genre, progression, durées, dernier visionnage et nouveauté utilisent les données '
+            'déjà disponibles et préservent votre quota MDBList.</div>',
             unsafe_allow_html=True,
         )
         search_col, genre_col, sort_col, limit_col = st.columns([0.22, 0.20, 0.40, 0.18])
@@ -1445,7 +1451,7 @@ def render_progress_page() -> None:
 
     if dropped:
         st.markdown("### Séries abandonnées")
-        st.caption("Statut MDBList Dropped — lecture seule dans cette étape.")
+        st.caption("Ces séries sont marquées « Abandonnée » dans MDBList. Aucune modification n’est proposée ici.")
         for item in dropped[:30]:
             st.markdown(
                 f'<div class="media-list-card"><div class="media-list-content">'
@@ -1455,7 +1461,64 @@ def render_progress_page() -> None:
 
 
 NOW_PLAYING_CACHE_KEY = "_mdblist_now_playing_live"
+PLAYBACK_POSTER_CACHE_KEY = "_mdblist_playback_poster_cache"
 NOW_PLAYING_AUTO_SECONDS = 300
+
+
+def _apply_playback_poster_cache(rows: list[dict]) -> list[dict]:
+    cache = st.session_state.get(PLAYBACK_POSTER_CACHE_KEY)
+    cache = cache if isinstance(cache, dict) else {}
+    output = []
+    for row in rows:
+        value = dict(row)
+        ids = value.get("ids") if isinstance(value.get("ids"), dict) else {}
+        tmdb_id = ids.get("tmdb")
+        if not value.get("poster") and tmdb_id is not None and str(tmdb_id) in cache:
+            value["poster"] = cache[str(tmdb_id)]
+        output.append(value)
+    return output
+
+
+def _refresh_missing_playback_posters(rows: list[dict]) -> tuple[bool, str]:
+    tmdb_ids = []
+    for row in rows:
+        ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+        value = ids.get("tmdb")
+        if not row.get("poster") and value is not None:
+            try:
+                media_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if media_id > 0 and media_id not in tmdb_ids:
+                tmdb_ids.append(media_id)
+    tmdb_ids = tmdb_ids[:200]
+    if not tmdb_ids:
+        return False, "Aucun identifiant TMDb disponible pour compléter ces posters."
+    valid, message = mdb_oauth.ensure_valid_session(cookies)
+    if not valid:
+        return False, message or "Session MDBList indisponible."
+    try:
+        provider = MDBListProvider(mdb_oauth.access_token())
+        metadata = provider.media_info_batch(tmdb_ids)
+    except Exception:
+        return False, "MDBList n’a pas pu compléter les posters pour le moment."
+    cache = st.session_state.get(PLAYBACK_POSTER_CACHE_KEY)
+    cache = dict(cache) if isinstance(cache, dict) else {}
+    added = 0
+    for item in metadata:
+        ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+        tmdb_id = ids.get("tmdb")
+        poster = item.get("poster") or item.get("poster_path")
+        if tmdb_id is not None and poster:
+            cache[str(tmdb_id)] = str(poster)
+            added += 1
+    st.session_state[PLAYBACK_POSTER_CACHE_KEY] = cache
+    account = mdb_oauth.account_summary()
+    if provider.rate_limit_remaining is not None and account:
+        account["rate_limit_remaining"] = provider.rate_limit_remaining
+        st.session_state[mdb_oauth.ACCOUNT_KEY] = account
+        mdb_oauth.persist_cookie(cookies)
+    return True, f"{added} poster(s) complété(s) avec un appel groupé."
 
 
 def _refresh_now_playing() -> tuple[bool, str]:
@@ -1537,8 +1600,8 @@ def _now_playing_fragment() -> None:
         cache = st.session_state.get(NOW_PLAYING_CACHE_KEY)
     if not isinstance(cache, dict):
         st.caption(
-            "Clique sur « Actualiser la lecture en cours » pour interroger uniquement "
-            "`/sync/now-playing` avec un seul appel MDBList."
+            "La vérification de la lecture active est facultative : elle utilise un seul appel MDBList "
+            "lorsque vous cliquez sur « Actualiser la lecture en cours »."
         )
         return
     rows = normalize_now_playing(
@@ -1547,6 +1610,7 @@ def _now_playing_fragment() -> None:
         now_timestamp=time.time(),
     )
     rows = enrich_playback_posters(rows, _dataset())
+    rows = _apply_playback_poster_cache(rows)
     _render_live_now_playing_rows(rows, float(cache.get("fetched_at") or time.time()))
 
 
@@ -1569,7 +1633,7 @@ def render_ghost_page() -> None:
             type="primary",
             key="refresh_now_playing",
         ):
-            with st.spinner("Lecture ciblée de /sync/now-playing…"):
+            with st.spinner("Vérification de la lecture en cours…"):
                 ok, message = _refresh_now_playing()
             if not ok:
                 st.caption(f"⚠️ {message}")
@@ -1586,13 +1650,14 @@ def render_ghost_page() -> None:
     if st.session_state.get("ghost_live_auto"):
         st.caption("Actualisation automatique active · environ 12 appels/heure maximum sur cette page.")
     else:
-        st.caption("Mode économe actif · aucun appel tant que tu ne cliques pas sur Actualiser.")
+        st.caption("Actualisation manuelle · votre quota reste inchangé tant que vous n’actualisez pas.")
     _now_playing_fragment()
 
     st.divider()
     st.markdown("### ⏸️ Reprises mises en pause")
     playback_items = (_sections().get("playback") or [])
     rows = enrich_playback_posters(normalize_playback(playback_items), dataset)
+    rows = _apply_playback_poster_cache(rows)
     known_remaining = sum(int(row.get("remaining_minutes") or 0) for row in rows)
     metrics = st.columns(4)
     metrics[0].metric("Progressions", len(rows))
@@ -1601,11 +1666,30 @@ def render_ghost_page() -> None:
     metrics[3].metric("Temps restant connu", _format_minutes(known_remaining) if known_remaining else "—")
 
     st.markdown(
-        '<div class="accent-callout"><strong>PLAYBACK DÉJÀ CHARGÉ · 0 APPEL</strong> · '
-        'Cette page analyse les reprises MDBList présentes dans le dataset de session. '
-        'Aucune progression n’est supprimée à cette étape.</div>',
+        '<div class="accent-callout"><strong>REPRISES DISPONIBLES</strong> · '
+        'Les filtres et calculs utilisent les données déjà chargées et préservent votre quota. '
+        'Aucune progression n’est modifiée.</div>',
         unsafe_allow_html=True,
     )
+
+    missing_with_tmdb = [
+        row for row in rows
+        if not row.get("poster")
+        and isinstance(row.get("ids"), dict)
+        and row["ids"].get("tmdb") is not None
+    ]
+    if missing_with_tmdb:
+        if st.button(
+            f"Compléter {min(len(missing_with_tmdb), 200)} poster(s) · 1 appel groupé",
+            type="primary",
+            key="complete_playback_posters",
+            help="MDBList accepte jusqu’à 200 identifiants dans une seule requête groupée.",
+        ):
+            with st.spinner("Récupération groupée des posters…"):
+                ok, message = _refresh_missing_playback_posters(rows)
+            st.caption(("✓ " if ok else "⚠️ ") + message)
+            if ok:
+                rows = _apply_playback_poster_cache(rows)
 
     if not rows:
         st.markdown(
@@ -1704,9 +1788,7 @@ def render_ghost_page() -> None:
         st.caption(f"{len(visible) - display_limit} progression(s) supplémentaire(s) masquée(s).")
     if not visible:
         st.caption("Aucune progression ne correspond à ces filtres.")
-    st.caption(
-        "Lecture seule : la future suppression MDBList conservera cet aperçu et exigera une confirmation explicite."
-    )
+    st.caption("Vos reprises restent intactes : aucune suppression n’est proposée sur cette page.")
 
 
 def render_static_lists_page() -> None:
@@ -1722,13 +1804,13 @@ def render_static_lists_page() -> None:
         return
 
     st.markdown(
-        '<div class="accent-callout"><strong>APERÇU LOCAL · LECTURE SEULE</strong> · '
-        'Le moteur applique le principe Source → Filtres → Aperçu, sans modifier MDBList '
-        'et sans appel API supplémentaire.</div>',
+        '<div class="accent-callout"><strong>ANALYSE AVANT ACTION</strong> · '
+        'Choisissez un conteneur et vos critères pour obtenir un aperçu. '
+        'L’analyse ne modifie pas vos listes et préserve votre quota MDBList.</div>',
         unsafe_allow_html=True,
     )
 
-    source_by_label = {source["label"]: source for source in sources}
+    source_by_label = {source_display_label(source): source for source in sources}
     source_col, type_col, sort_col = st.columns([0.38, 0.22, 0.40])
     selected_label = source_col.selectbox(
         "Conteneur à auditer",
@@ -1811,7 +1893,7 @@ def render_static_lists_page() -> None:
             "Année": row.get("year") or "—",
             "Note": f"{row['note']:.1f}/10" if row.get("note") is not None else "—",
             "Ancienneté": f"{row['added_days']} j" if row.get("added_days") is not None else "—",
-            "Présent dans": " · ".join(row.get("containers") or []) or selected_label,
+            "Présent dans": " | ".join(row.get("containers") or []) or selected_label,
             "Signaux": " · ".join(row.get("issue_labels") or []) or "Aucun",
         }
         for row in filtered
@@ -1842,7 +1924,7 @@ def render_static_lists_page() -> None:
             key="download_audit_json",
         )
     st.caption(
-        "Dry-run permanent pour cette étape : aucun bouton de suppression, aucun secret dans les rapports."
+        "Aperçu uniquement : rien n’est supprimé et les rapports ne contiennent aucune donnée de connexion."
     )
 
 

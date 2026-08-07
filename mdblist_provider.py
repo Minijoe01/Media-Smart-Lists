@@ -12,7 +12,7 @@ import requests
 
 
 API_BASE = "https://api.mdblist.com"
-USER_AGENT = "Media-Smart-Lists/0.12"
+USER_AGENT = "Media-Smart-Lists/0.13"
 TIMEOUT = 35
 PAGE_LIMIT = 5000
 
@@ -38,6 +38,29 @@ class MDBListProvider:
             response = requests.get(
                 f"{API_BASE}{path}",
                 params=params or {},
+                headers=self.headers,
+                timeout=TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            raise MDBListReadError(f"Réseau indisponible pour {path}") from exc
+        self.request_count += 1
+        remaining = response.headers.get("X-RateLimit-Remaining") or response.headers.get("X-Rate-Limit-Remaining")
+        if remaining and str(remaining).isdigit():
+            self.rate_limit_remaining = int(remaining)
+        if response.status_code == 401:
+            raise MDBListReadError("Session MDBList expirée ou révoquée")
+        if response.status_code >= 400:
+            raise MDBListReadError(f"MDBList a répondu HTTP {response.status_code} pour {path}")
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise MDBListReadError(f"Réponse JSON invalide pour {path}") from exc
+
+    def _post(self, path: str, payload: dict[str, Any]) -> Any:
+        try:
+            response = requests.post(
+                f"{API_BASE}{path}",
+                json=payload,
                 headers=self.headers,
                 timeout=TIMEOUT,
             )
@@ -134,6 +157,25 @@ class MDBListProvider:
         unique = {item["slug"]: item for item in output}
         return sorted(unique.values(), key=lambda item: item["title"].casefold())
 
+    def media_info_batch(self, tmdb_ids: list[int]) -> list[dict[str, Any]]:
+        """Complète jusqu'à 200 médias en un seul appel groupé MDBList."""
+        unique = []
+        seen = set()
+        for value in tmdb_ids:
+            try:
+                media_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if media_id > 0 and media_id not in seen:
+                seen.add(media_id)
+                unique.append(media_id)
+        if not unique:
+            return []
+        if len(unique) > 200:
+            raise ValueError("Le batch MDBList accepte au maximum 200 identifiants")
+        response = self._post("/tmdb/any/", {"ids": unique})
+        return [item for item in response if isinstance(item, dict)] if isinstance(response, list) else []
+
     def dropped(self) -> dict[str, Any]:
         return self._paged_dict(
             "/sync/dropped",
@@ -202,13 +244,18 @@ class MDBListProvider:
             if list_id is None:
                 continue
             items = self.list_items(int(list_id))
-            list_type = "dynamic" if (
-                metadata.get("type") == "dynamic" or metadata.get("dynamic") is True
-            ) else "static"
+            raw_type = str(metadata.get("type") or "").strip().lower()
+            if metadata.get("dynamic") is True:
+                list_type = "dynamic"
+            elif raw_type in {"static", "dynamic", "ai", "feed", "other"}:
+                list_type = raw_type
+            else:
+                list_type = "static"
             output.append(
                 {
                     "id": int(list_id),
                     "name": metadata.get("name") or "Liste MDBList",
+                    "slug": metadata.get("slug"),
                     "private": metadata.get("private"),
                     "type": list_type,
                     "movies": items["movies"],

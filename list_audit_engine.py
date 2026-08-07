@@ -37,6 +37,23 @@ SORT_OPTIONS = [
 ]
 
 
+def source_display_label(source: dict[str, Any]) -> str:
+    """Libellé explicite conforme aux types de listes documentés par MDBList."""
+    if source.get("kind") == "watchlist":
+        return "Watchlist MDBList"
+    if source.get("kind") == "aggregate":
+        return str(source.get("label") or source.get("name") or "Vue combinée")
+    name = str(source.get("name") or "Sans nom")
+    prefix = {
+        "static": "Liste statique",
+        "dynamic": "Liste dynamique",
+        "ai": "Liste IA",
+        "feed": "Liste flux",
+        "other": "Liste",
+    }.get(str(source.get("type") or "").lower(), "Liste")
+    return f"{prefix} : {name}"
+
+
 def _nested_media(row: dict[str, Any], kind: str | None = None) -> dict[str, Any]:
     if kind == "movie" and isinstance(row.get("movie"), dict):
         return row["movie"]
@@ -165,7 +182,7 @@ def membership_index(dataset: dict[str, Any]) -> dict[str, dict[str, Any]]:
     output: dict[str, dict[str, Any]] = {}
     for source in auditable_sources(dataset):
         source_key = str(source.get("key") or "")
-        source_label = str(source.get("label") or source.get("name") or source_key)
+        source_label = source_display_label(source)
         source_type = str(source.get("type") or "unknown")
         writable = source_type in {"native", "static"}
         for section, kind in (("movies", "movie"), ("shows", "show")):
@@ -296,7 +313,7 @@ def audit_source(
                     "issue_labels": issue_labels,
                     "priority": priority,
                     "source_key": source_key,
-                    "source_label": str(source.get("label") or source.get("name") or source_key),
+                    "source_label": source_display_label(source),
                     "source_type": str(source.get("type") or "unknown"),
                     "writable": str(source.get("type") or "") in {"native", "static"},
                 }
