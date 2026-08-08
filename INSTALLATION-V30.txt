@@ -1,0 +1,78 @@
+================================================================
+MEDIA SMART LISTS — V30
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V30
+----------------------
+1. BOUTON « CHARGER MES DONNÉES MDBLIST » RESTAURÉ (bug critique de
+   la V29) : après connexion, tu retrouves le bouton pour charger
+   tes données, puis « Actualiser » pour les rafraîchir.
+2. CACHE PERSISTANT (1 h) : un simple rechargement de page ne rejoue
+   plus tous les appels API. « Actualiser » force un rechargement.
+3. TABLEAU DE BORD CLAIR : un badge en haut indique ce que tu
+   consultes — 🔵 DONNÉES MDBLIST, 🟢 DONNÉES TRAKT (ZIP), ou
+   ⚠️ AUCUNE DONNÉE. Tout s'affiche dans l'ordre, aucun bloc ne
+   disparaît.
+4. ZIP TRAKT : l'enrichissement couvre TOUS les contenus (par lots de
+   200) — les posters manquaient car seuls les 200 premiers étaient
+   traités. Maintenant : 250 contenus = 2 lots = 250 posters.
+5. NETTOYAGE DES LISTES : distinction « Vu · à retirer » (ajouté
+   AVANT le visionnage = oubli) et « Vu · à revoir » (ajouté APRÈS =
+   remis exprès), avec compteurs et filtres dédiés.
+6. SESSION EXPIRÉE : déconnexion propre + message clair.
+
+LES FICHIERS À ENVOYER (2 modifiés, 2 nouveaux)
+-----------------------------------------------
+À REMPLACER :
+  • app.py
+  • list_audit_engine.py
+
+À AJOUTER (nouveaux fichiers) :
+  • ETAPE-30.md
+  • INSTALLATION-V30.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER : tous les autres fichiers (déjà à jour en ligne).
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser CES 4 FICHIERS UNIQUEMENT :
+    app.py
+    list_audit_engine.py
+    ETAPE-30.md
+    INSTALLATION-V30.txt
+GitHub vous proposera de remplacer app.py et list_audit_engine.py :
+acceptez.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    fix: restore MDBList load button, persistent cache, list watch audit
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io, votre application :
+    « Manage app » → ⋮ → « Reboot », PUIS « Clear cache »
+    (important : vide aussi l'ancien cache de session).
+
+POUR VÉRIFIER
+-------------
+1. Connecte-toi à MDBList : le bouton « 📥 Charger mes données
+   MDBList » apparaît sous « Vos données MDBList ».
+2. Clique-le : tes données s'affichent avec le badge 🔵.
+3. Recharge la page (F5) : les données restent (cache 1 h), la
+   mention « extrait du cache » apparaît.
+4. « 🔄 Actualiser » : recharge depuis l'API (cache ignoré).
+5. Importe un ZIP Trakt (connecté) : enrichissement complet, posters
+   sur tous les contenus.
+6. « 🧹 Nettoyage des listes » : nouveaux signaux « Vu · à retirer »
+   et « Vu · à revoir ».
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+• Le cache est par utilisateur : tes données ne sont jamais visibles
+  par un autre compte.
+================================================================

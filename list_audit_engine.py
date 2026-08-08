@@ -19,6 +19,8 @@ AUDIT_ENGINE_VERSION = 1
 
 ISSUE_OPTIONS = [
     "Déjà vus",
+    "Vu · à retirer",
+    "Vu · à revoir",
     "Présents dans plusieurs conteneurs",
     "Ajoutés depuis plus de 6 mois",
     "Ajoutés depuis plus d’un an",
@@ -199,12 +201,34 @@ def auditable_sources(
 
 
 def watched_identities(dataset: dict[str, Any]) -> set[str]:
+    return set(watched_dates(dataset))
+
+
+def _parse_watch_dt(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def watched_dates(dataset: dict[str, Any]) -> dict[str, datetime]:
+    """Dernière date de visionnage connue par contenu (film ou série)."""
     watched = (dataset.get("sections") or {}).get("watched") or {}
-    output = set()
+    output: dict[str, datetime] = {}
     for section, kind in (("movies", "movie"), ("shows", "show")):
         for row in watched.get(section) or []:
-            if isinstance(row, dict):
-                output.add(_identity(row, kind))
+            if not isinstance(row, dict):
+                continue
+            identity = _identity(row, kind)
+            value = row.get("last_watched_at") or row.get("watched_at")
+            parsed = _parse_watch_dt(value)
+            if identity and parsed and (identity not in output or parsed > output[identity]):
+                output[identity] = parsed
     return output
 
 
@@ -286,7 +310,8 @@ def audit_source(
     )
     if not source:
         return []
-    watched = watched_identities(dataset)
+    watch_dates = watched_dates(dataset)
+    watched = set(watch_dates)
     memberships = membership_index(dataset)
     rows = []
     for section, kind in (("movies", "movie"), ("shows", "show")):
@@ -300,12 +325,24 @@ def audit_source(
             days = _added_days(item, now)
             note = _community_note(item, kind)
             is_watched = identity in watched
+            last_watched_at = watch_dates.get(identity)
+            # Distingue « oublié dans la liste » (ajouté AVANT le visionnage)
+            # de « remis exprès pour le revoir » (ajouté APRÈS le visionnage).
+            added_after_watch = bool(
+                is_watched and added_at is not None and last_watched_at is not None
+                and added_at > last_watched_at
+            )
             is_duplicate = len(containers) > 1
             issue_keys = []
             issue_labels = []
             if is_watched:
                 issue_keys.append("watched")
-                issue_labels.append("Déjà vu")
+                if added_after_watch:
+                    issue_keys.append("watched_torewatch")
+                    issue_labels.append("Vu · à revoir")
+                else:
+                    issue_keys.append("watched_toremove")
+                    issue_labels.append("Vu · à retirer")
             if is_duplicate:
                 issue_keys.append("duplicate")
                 issue_labels.append(f"{len(containers)} conteneurs")
@@ -338,6 +375,8 @@ def audit_source(
                     "added_at": added_at.isoformat() if added_at else None,
                     "added_days": days,
                     "watched": is_watched,
+                    "last_watched_at": last_watched_at.isoformat() if last_watched_at else None,
+                    "added_after_watch": added_after_watch,
                     "duplicate": is_duplicate,
                     "container_count": len(containers),
                     "containers": containers,
@@ -356,6 +395,8 @@ def audit_source(
 def _issue_key(label: str) -> str:
     return {
         "Déjà vus": "watched",
+        "Vu · à retirer": "watched_toremove",
+        "Vu · à revoir": "watched_torewatch",
         "Présents dans plusieurs conteneurs": "duplicate",
         "Ajoutés depuis plus de 6 mois": "old_180",
         "Ajoutés depuis plus d’un an": "old_365",

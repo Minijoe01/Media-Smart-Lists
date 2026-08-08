@@ -878,11 +878,20 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
     if not tmdb_ids:
         return False, "Aucun identifiant TMDb trouvé dans le ZIP pour l'enrichissement."
 
+    # Enrichir TOUS les contenus : les appels groupés acceptent 200 ids max.
+    # Le nombre d'appels reste raisonnable (1 appel par tranche de 200).
     try:
         provider = MDBListProvider(mdb_oauth.access_token())
-        metadata = provider.media_info_batch(tmdb_ids=tmdb_ids[:200])
     except Exception as exc:
         return False, f"MDBList n'a pas pu être interrogé : {exc}"
+
+    metadata: list[dict[str, Any]] = []
+    for index in range(0, len(tmdb_ids), 200):
+        chunk = tmdb_ids[index:index + 200]
+        try:
+            metadata.extend(provider.media_info_batch(tmdb_ids=chunk))
+        except Exception as exc:
+            return False, f"MDBList a interrompu l'enrichissement (lot {index // 200 + 1}) : {exc}"
 
     by_tmdb: dict[int, dict[str, Any]] = {}
     for item in metadata:
@@ -1203,6 +1212,27 @@ def _rating_text(item: dict) -> str:
     return ""
 
 
+def _mdblist_cache_key(access_token: str) -> str:
+    """Clé de cache stable par utilisateur (jamais le token en clair)."""
+    import hashlib
+    return hashlib.sha256((access_token or "").encode("utf-8")).hexdigest()[:16]
+
+
+@st.cache_data(ttl=3600, show_spinner=False, hash_funcs={str: lambda _: "token"})
+def _load_mdblist_cached(cache_key: str, access_token: str) -> dict[str, Any]:
+    """Charge le dataset MDBList avec un cache persistant (1 h).
+
+    La clé de cache est dérivée du token (jamais le token lui-même) : chaque
+    utilisateur a sa propre entrée, et un simple rechargement de page ne
+    rejoue pas tous les appels API. Le bouton « Actualiser » vide ce cache.
+    """
+    provider = MDBListProvider(access_token)
+    raw_data = provider.load_dataset()
+    data = normalize_provider_dataset(raw_data)
+    data["_cached"] = True
+    return data
+
+
 def load_mdblist_dataset() -> None:
     valid, message = mdb_oauth.ensure_valid_session(cookies)
     if not valid:
@@ -1212,10 +1242,10 @@ def load_mdblist_dataset() -> None:
             unsafe_allow_html=True,
         )
         return
+    token = mdb_oauth.access_token()
     try:
-        provider = MDBListProvider(mdb_oauth.access_token())
-        raw_data = provider.load_dataset()
-        data = normalize_provider_dataset(raw_data)
+        key = _mdblist_cache_key(token)
+        data = _load_mdblist_cached(key, token)
     except Exception:
         st.markdown(
             '<div class="accent-callout"><strong>LECTURE IMPOSSIBLE</strong> · '
@@ -1235,6 +1265,7 @@ def load_mdblist_dataset() -> None:
     )
     if session_expired:
         mdb_oauth.disconnect(cookies)
+        _load_mdblist_cached.clear()
         st.session_state.pop("_normalized_dataset", None)
         st.markdown(
             '<div class="accent-callout"><strong>SESSION EXPIRÉE</strong> · '
@@ -1263,16 +1294,26 @@ def render_data_loader() -> None:
             'actuellement affichées.</div>',
             unsafe_allow_html=True,
         )
-    label = "Actualiser mes données MDBList" if data and str(data.get("source") or "") == "mdblist" else "Charger mes données MDBList"
-    if st.button(label, type="primary", key="load_mdblist_dataset"):
+    is_mdblist_data = bool(data and str(data.get("source") or "") == "mdblist")
+    cached = bool(is_mdblist_data and data.get("_cached"))
+    if is_mdblist_data:
+        label = "🔄 Actualiser mes données MDBList"
+        help_text = "Recharge depuis l'API MDBList (le cache d'une heure est ignoré)."
+    else:
+        label = "📥 Charger mes données MDBList"
+        help_text = "Un chargement complet (historique, Watchlist, listes, notes, progression)."
+    if st.button(label, type="primary", key="load_mdblist_dataset", help=help_text):
         with st.spinner("Chargement MDBList en lecture seule…"):
+            # L'actualisation ignore le cache persistant.
+            _load_mdblist_cached.clear()
             load_mdblist_dataset()
         st.rerun()
-    if data and str(data.get("source") or "") == "mdblist":
+    if is_mdblist_data:
         errors = data.get("errors") or []
         request_count = data.get("request_count", 0)
         loaded_at = str(data.get("loaded_at") or "").replace("T", " ").replace("Z", " UTC")
-        st.caption(f"Données chargées : {loaded_at} · {request_count} requête(s) API")
+        source_txt = " (extrait du cache)" if cached else ""
+        st.caption(f"Données chargées{source_txt} : {loaded_at} · {request_count} requête(s) API")
         if errors:
             st.markdown(
                 f'<div class="accent-callout"><strong>CHARGEMENT PARTIEL</strong> · '
@@ -2365,6 +2406,15 @@ def render_static_lists_page() -> None:
     metrics[1].metric("Avec signal", sum(bool(row.get("issues")) for row in all_rows))
     metrics[2].metric("Déjà vus", sum(bool(row.get("watched")) for row in all_rows))
     metrics[3].metric("Multi-conteneurs", sum(bool(row.get("duplicate")) for row in all_rows))
+
+    nb_revoir = sum(bool(row.get("added_after_watch")) for row in all_rows if row.get("watched"))
+    nb_retirer = sum(bool(row.get("watched")) and not row.get("added_after_watch") for row in all_rows)
+    st.caption(
+        f"📌 **Vu · à retirer** ({nb_retirer}) : déjà vu, ajouté à la liste AVANT son visionnage "
+        f"(oublié de l'enlever). "
+        f"🔄 **Vu · à revoir** ({nb_revoir}) : déjà vu, ajouté APRÈS son visionnage "
+        "(remis exprès pour le revoir)."
+    )
 
     if selected_source.get("type") == "dynamic":
         st.caption(
@@ -3475,14 +3525,37 @@ def render_dashboard_widgets() -> None:
             )
 
 
+def _source_badge_html(source: str, has_data: bool) -> str:
+    """Badge indiquant clairement la source des données consultées."""
+    if not has_data:
+        return (
+            '<div class="accent-callout"><strong>⚠️ AUCUNE DONNÉE CHARGÉE</strong> · '
+            'Connecte MDBList ou importe un ZIP Trakt ci-dessous.</div>'
+        )
+    if source == "trakt_zip":
+        return (
+            '<div class="accent-callout" style="border-left-color:#00D084;">'
+            '<strong>🟢 DONNÉES TRAKT · IMPORT ZIP</strong> · '
+            'Tu consultes les données de ton export ZIP Trakt (lecture seule).</div>'
+        )
+    return (
+        '<div class="accent-callout">'
+        '<strong>🔵 DONNÉES MDBLIST · TEMPS RÉEL</strong> · '
+        'Tu consultes les données de ton compte MDBList.</div>'
+    )
+
+
 def page_dashboard() -> None:
     st.markdown('<div class="page-title">🏠 Tableau de bord</div>', unsafe_allow_html=True)
-    if not st.session_state.get("pending_source") and not mdb_oauth.is_connected():
-        st.markdown(
-            '<div class="accent-callout"><strong>CHOISIS TA SOURCE</strong> · '
-            'Aucun identifiant ni fichier n’est encore envoyé.</div>',
-            unsafe_allow_html=True,
-        )
+
+    loaded = _dataset()
+    has_data = bool(loaded and isinstance(loaded, dict) and loaded.get("sections"))
+    source = str(loaded.get("source") or "mdblist") if has_data else "none"
+
+    # ── 1. Quelle source consulte-t-on ? ─────────────────────────────────────
+    st.markdown(_source_badge_html(source, has_data), unsafe_allow_html=True)
+
+    # ── 2. Choix de la source ────────────────────────────────────────────────
     mdb_col, zip_col = st.columns(2, gap="large")
     with mdb_col:
         st.markdown(
@@ -3490,20 +3563,26 @@ def page_dashboard() -> None:
             <div class="source-card">
                 <span class="source-badge">TEMPS RÉEL · LECTURE/ÉCRITURE</span>
                 <h3>🔗 Connecter MDBList</h3>
-                <p>Historique, Watchlist filtrable par genre, notes, listes, progression et séries abandonnées.</p>
+                <p>Historique, Watchlist, notes, listes, progression, statistiques.</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        if st.button("Préparer la connexion MDBList", type="primary", key="choose_mdblist"):
-            st.session_state["pending_source"] = "mdblist"
+        if mdb_oauth.is_connected():
+            account = mdb_oauth.account_summary() or {}
+            st.caption(f"✓ Connecté : **{account.get('username') or 'Compte MDBList'}**")
+            if st.button("🔐 Gérer la connexion MDBList", key="choose_mdblist"):
+                st.session_state["pending_source"] = "mdblist"
+        else:
+            if st.button("Préparer la connexion MDBList", type="primary", key="choose_mdblist"):
+                st.session_state["pending_source"] = "mdblist"
     with zip_col:
         st.markdown(
             """
             <div class="source-card">
                 <span class="source-badge">IMPORT LOCAL · LECTURE SEULE</span>
                 <h3>📦 Importer un ZIP Trakt</h3>
-                <p>Historique complet, rewatches, Watchlist, notes et listes, sans accès à l'API Trakt.</p>
+                <p>Historique complet, rewatches, Watchlist, notes et listes, sans API Trakt.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -3511,25 +3590,22 @@ def page_dashboard() -> None:
         if st.button("Préparer l'import ZIP Trakt", type="primary", key="choose_zip"):
             st.session_state["pending_source"] = "trakt_zip"
 
-    # Une seule source à la fois : pas de mélange des blocs.
+    # ── 3. Actions en attente (connexion ou import) ─────────────────────────
     pending = st.session_state.get("pending_source")
     if pending == "mdblist":
         st.divider()
         st.markdown('<div class="page-title">🔐 Connexion MDBList</div>', unsafe_allow_html=True)
         render_mdblist_connector()
-        return
-    if pending == "trakt_zip":
+        if mdb_oauth.is_connected():
+            st.session_state.pop("pending_source", None)
+    elif pending == "trakt_zip":
         st.divider()
         st.markdown('<div class="page-title">📦 Import ZIP Trakt</div>', unsafe_allow_html=True)
         st.caption(
             "Dépose ton export ZIP Trakt (Settings → Your data → Export). "
             "Lecture seule, aucune écriture sur aucun compte. Les protections ZIP sont actives."
         )
-        zip_file = st.file_uploader(
-            "Choisis le fichier ZIP Trakt",
-            type=["zip"],
-            key="trakt_zip_uploader",
-        )
+        zip_file = st.file_uploader("Choisis le fichier ZIP Trakt", type=["zip"], key="trakt_zip_uploader")
         if zip_file is not None:
             st.caption(f"Fichier : **{zip_file.name}** · {zip_file.size // 1024} Ko")
             if st.button("📥 Importer et charger mes données", type="primary", key="import_trakt_zip"):
@@ -3549,8 +3625,6 @@ def page_dashboard() -> None:
                     st.session_state.pop("_mdblist_playback_poster_cache", None)
                     counts = trakt_zip_provider.summarize(data)
                     enrich_msg = ""
-                    # Enrichissement AUTOMATIQUE si déjà connecté MDBList
-                    # (lecture seule, quelques appels groupés seulement).
                     if mdb_oauth.is_connected():
                         with st.spinner("Enrichissement automatique avec MDBList…"):
                             ok_enrich, enrich_msg = _enrich_zip_dataset()
@@ -3566,19 +3640,14 @@ def page_dashboard() -> None:
                     )
                     st.session_state.pop("pending_source", None)
                     st.rerun()
-        return
 
-    loaded = _dataset()
-    source = str(loaded.get("source") or "mdblist") if isinstance(loaded, dict) else "mdblist"
-    if source == "trakt_zip":
+    # ── 4. Données actives et leurs boutons ─────────────────────────────────
+    if has_data and source == "trakt_zip":
         st.divider()
-        st.markdown('<div class="page-title">📥 Données Trakt (import ZIP)</div>', unsafe_allow_html=True)
-        st.caption(
-            "Lecture seule · aucune écriture. Toutes les pages utilisent ces données."
-        )
-        render_dataset_overview()
+        st.markdown('<div class="page-title">📥 Vos données Trakt (import ZIP)</div>', unsafe_allow_html=True)
+        st.caption("Lecture seule · aucune écriture. Toutes les pages utilisent ces données.")
         if mdb_oauth.is_connected():
-            st.caption("Connecté à MDBList (lecture seule) : tu peux enrichir ces données avec les métadonnées MDBList.")
+            st.caption("Connecté à MDBList (lecture seule) : enrichis ces données avec les métadonnées MDBList.")
             if st.button(
                 "✨ Enrichir avec MDBList (genres, posters, durées, notes)",
                 type="primary",
@@ -3595,14 +3664,31 @@ def page_dashboard() -> None:
                 "Connecte MDBList (lecture seule) puis clique « Enrichir » : "
                 "genres, posters, durées et notes apparaîtront."
             )
-        render_dashboard_widgets()
-        return
-    if mdb_oauth.is_connected():
-        st.divider()
-        st.markdown('<div class="page-title">📥 Données MDBList</div>', unsafe_allow_html=True)
-        render_data_loader()
         render_dataset_overview()
         render_dashboard_widgets()
+        return
+
+    if mdb_oauth.is_connected():
+        st.divider()
+        st.markdown('<div class="page-title">📥 Vos données MDBList</div>', unsafe_allow_html=True)
+        render_data_loader()
+        if has_data:
+            render_dataset_overview()
+            render_dashboard_widgets()
+        else:
+            st.markdown(
+                '<div class="accent-callout"><strong>PAS ENCORE CHARGÉ</strong> · '
+                'Clique « Charger mes données MDBList » ci-dessus pour afficher '
+                'ton analyse (films, séries, statistiques…).</div>',
+                unsafe_allow_html=True,
+            )
+        return
+
+    if not has_data:
+        st.caption(
+            "Choisis une source ci-dessus : connecte MDBList (temps réel) ou "
+            "importe ton ZIP Trakt (local, sans API)."
+        )
 
 
 def render_achievements_page() -> None:
