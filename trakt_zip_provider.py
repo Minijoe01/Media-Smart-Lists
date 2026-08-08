@@ -75,7 +75,7 @@ def _media_key(ids: dict[str, Any], media: str) -> str:
     return ""
 
 
-def _mdb_item(ids: dict[str, Any], title: Any, year: Any, media: str) -> dict[str, Any]:
+def _mdb_item(ids: dict[str, Any], title: Any, year: Any, media: str, listed_at: Any = None) -> dict[str, Any]:
     """Item au format des listes MDBList (id à plat = id TMDB, ids, imdb_id)."""
     item: dict[str, Any] = {"ids": dict(ids or {}), "title": str(title or "?"), "year": year}
     tmdb = ids.get("tmdb") if isinstance(ids, dict) else None
@@ -83,6 +83,8 @@ def _mdb_item(ids: dict[str, Any], title: Any, year: Any, media: str) -> dict[st
     item["imdb_id"] = ids.get("imdb") or ""
     item["mediatype"] = "movie" if media == "movie" else "show"
     item["release_year"] = year
+    if listed_at:
+        item["listed_at"] = listed_at
     return item
 
 
@@ -287,17 +289,17 @@ def _parse_watchlist(source: TraktZip) -> dict[str, Any]:
         if isinstance(row.get("movie"), dict):
             movie = _media_stub(row["movie"], "movie")
             if _media_key(movie.get("ids") or {}, "movie"):
-                movies.append(_mdb_item(movie.get("ids") or {}, movie.get("title"), movie.get("year"), "movie"))
+                movies.append(_mdb_item(movie.get("ids") or {}, movie.get("title"), movie.get("year"), "movie", listed_at=row.get("listed_at")))
             continue
         if isinstance(row.get("show"), dict):
             show = _media_stub(row["show"], "show")
             if _media_key(show.get("ids") or {}, "show"):
-                shows.append(_mdb_item(show.get("ids") or {}, show.get("title"), show.get("year"), "show"))
+                shows.append(_mdb_item(show.get("ids") or {}, show.get("title"), show.get("year"), "show", listed_at=row.get("listed_at")))
             continue
         if isinstance(row.get("episode"), dict) and isinstance(row.get("show"), dict):
             show = _media_stub(row["show"], "show")
             if _media_key(show.get("ids") or {}, "show"):
-                shows.append(_mdb_item(show.get("ids") or {}, show.get("title"), show.get("year"), "show"))
+                shows.append(_mdb_item(show.get("ids") or {}, show.get("title"), show.get("year"), "show", listed_at=row.get("listed_at")))
     return {"movies": movies, "shows": shows}
 
 
@@ -331,12 +333,12 @@ def _parse_lists(source: TraktZip) -> list[dict[str, Any]]:
             if isinstance(row.get("movie"), dict):
                 movie = _media_stub(row["movie"], "movie")
                 if _media_key(movie.get("ids") or {}, "movie"):
-                    movies.append(_mdb_item(movie.get("ids") or {}, movie.get("title"), movie.get("year"), "movie"))
+                    movies.append(_mdb_item(movie.get("ids") or {}, movie.get("title"), movie.get("year"), "movie", listed_at=row.get("listed_at")))
                 continue
             if isinstance(row.get("show"), dict):
                 show = _media_stub(row["show"], "show")
                 if _media_key(show.get("ids") or {}, "show"):
-                    shows.append(_mdb_item(show.get("ids") or {}, show.get("title"), show.get("year"), "show"))
+                    shows.append(_mdb_item(show.get("ids") or {}, show.get("title"), show.get("year"), "show", listed_at=row.get("listed_at")))
                 continue
         output.append(
             {
@@ -403,6 +405,50 @@ def _parse_dropped(source: TraktZip) -> dict[str, Any]:
     return {"shows": shows}
 
 
+def _build_upnext_from_watched(watched: dict[str, Any]) -> list[dict[str, Any]]:
+    """Construit une liste « séries en cours » depuis l'historique du ZIP.
+
+    Sans accès aux métadonnées MDBList, le total d'épisodes est inconnu :
+    on fournit quand même la série, le nombre d'épisodes vus et la date du
+    dernier visionnage pour alimenter « En cours de lecture ».
+    """
+    episodes = watched.get("episodes") or []
+    shows_by_key: dict[str, dict[str, Any]] = {}
+    for row in episodes:
+        if not isinstance(row, dict):
+            continue
+        show = row.get("show") if isinstance(row.get("show"), dict) else None
+        if not show:
+            episode_obj = row.get("episode")
+            if isinstance(episode_obj, dict) and isinstance(episode_obj.get("show"), dict):
+                show = episode_obj["show"]
+        if not show:
+            continue
+        key = _media_key(show.get("ids") or {}, "show")
+        if not key:
+            continue
+        entry = shows_by_key.setdefault(
+            key, {"show": show, "count": 0, "last_watched_at": row.get("last_watched_at")}
+        )
+        entry["count"] += 1
+        current = row.get("last_watched_at")
+        if current and (not entry["last_watched_at"] or str(current) > str(entry["last_watched_at"])):
+            entry["last_watched_at"] = current
+
+    output: list[dict[str, Any]] = []
+    for entry in shows_by_key.values():
+        output.append(
+            {
+                "show": entry["show"],
+                "next_episode": {},
+                "progress": {"watched_episode_count": entry["count"], "total_episode_count": 0},
+                "last_watched_at": entry.get("last_watched_at"),
+            }
+        )
+    output.sort(key=lambda item: str(item.get("last_watched_at") or ""), reverse=True)
+    return output
+
+
 # ── API publique ─────────────────────────────────────────────────────────────
 
 
@@ -412,14 +458,16 @@ def load_trakt_zip(zip_bytes: bytes) -> dict[str, Any]:
         raise TraktZipError("Fichier vide.")
     source = TraktZip(io.BytesIO(zip_bytes))
     try:
+        watched = _parse_watched(source)
         sections: dict[str, Any] = {
-            "watched": _parse_watched(source),
+            "watched": watched,
             "ratings": _parse_ratings(source),
             "watchlist": _parse_watchlist(source),
             "user_lists": _parse_lists(source),
             "playback": _parse_playback(source),
             "dropped": _parse_dropped(source),
-            "upnext": [],
+            # Séries en cours reconstruites depuis l'historique (total inconnu).
+            "upnext": _build_upnext_from_watched(watched),
             "genres": [],
         }
     finally:

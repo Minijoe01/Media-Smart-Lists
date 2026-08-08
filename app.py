@@ -812,6 +812,136 @@ def _dataset() -> dict:
     return value
 
 
+def _enrich_zip_dataset() -> tuple[bool, str]:
+    """Enrichit un dataset issu d'un ZIP Trakt avec les métadonnées MDBList
+    (genres, posters, durées, notes) via appels groupés, sans écrire sur
+    aucun compte. Nécessite une session MDBList (lecture seule)."""
+    dataset = _dataset()
+    if not dataset or str(dataset.get("source") or "") != "trakt_zip":
+        return False, "Enrichissement réservé aux données issues d'un ZIP Trakt."
+    valid, message = mdb_oauth.ensure_valid_session(cookies)
+    if not valid:
+        return False, message or "Connecte MDBList pour enrichir (lecture seule)."
+    sections = dataset.get("sections") or {}
+
+    # Collecte des identifiants TMDb (films et séries).
+    tmdb_ids: list[int] = []
+    seen: set[int] = set()
+
+    def push(media: Any) -> None:
+        if not isinstance(media, dict):
+            return
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        raw = ids.get("tmdb")
+        try:
+            media_id = int(raw)
+        except (TypeError, ValueError):
+            return
+        if media_id > 0 and media_id not in seen:
+            seen.add(media_id)
+            tmdb_ids.append(media_id)
+
+    watched = sections.get("watched") or {}
+    for row in watched.get("movies") or []:
+        push(row.get("movie") if isinstance(row.get("movie"), dict) else row)
+    for row in watched.get("shows") or []:
+        push(row.get("show") if isinstance(row.get("show"), dict) else row)
+    for row in watched.get("episodes") or []:
+        show = (row.get("episode") or {}).get("show") if isinstance(row.get("episode"), dict) else row.get("show")
+        push(show or row)
+    watchlist = sections.get("watchlist") or {}
+    for movie in watchlist.get("movies") or []:
+        push(movie)
+    for show in watchlist.get("shows") or []:
+        push(show)
+    for item in sections.get("user_lists") or []:
+        if not isinstance(item, dict):
+            continue
+        for movie in item.get("movies") or []:
+            push(movie)
+        for show in item.get("shows") or []:
+            push(show)
+
+    if not tmdb_ids:
+        return False, "Aucun identifiant TMDb trouvé dans le ZIP pour l'enrichissement."
+
+    try:
+        provider = MDBListProvider(mdb_oauth.access_token())
+        metadata = provider.media_info_batch(tmdb_ids=tmdb_ids[:200])
+    except Exception as exc:
+        return False, f"MDBList n'a pas pu être interrogé : {exc}"
+
+    by_tmdb: dict[int, dict[str, Any]] = {}
+    for item in metadata:
+        if not isinstance(item, dict):
+            continue
+        ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+        raw = ids.get("tmdb")
+        try:
+            media_id = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if media_id > 0:
+            by_tmdb[media_id] = item
+
+    def apply(media: Any) -> None:
+        if not isinstance(media, dict):
+            return
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        try:
+            media_id = int(ids.get("tmdb"))
+        except (TypeError, ValueError):
+            return
+        meta = by_tmdb.get(media_id)
+        if not meta:
+            return
+        if not media.get("genres") and meta.get("genres"):
+            genres = meta["genres"]
+            names = [g.get("name") or g.get("title") or str(g) for g in genres if isinstance(g, (dict, str))]
+            media["genres"] = [n for n in names if n]
+        if not media.get("poster") and meta.get("poster"):
+            media["poster"] = meta["poster"]
+        if not media.get("runtime") and meta.get("runtime"):
+            media["runtime"] = meta["runtime"]
+        if meta.get("score_average") is not None and media.get("score_average") is None:
+            media["score_average"] = meta["score_average"]
+        if meta.get("score") is not None and media.get("score") is None:
+            media["score"] = meta["score"]
+
+    for row in watched.get("movies") or []:
+        apply(row.get("movie") if isinstance(row.get("movie"), dict) else row)
+    for row in watched.get("shows") or []:
+        apply(row.get("show") if isinstance(row.get("show"), dict) else row)
+    for row in watched.get("episodes") or []:
+        if isinstance(row.get("episode"), dict):
+            apply(row["episode"].get("show") if isinstance(row["episode"].get("show"), dict) else row)
+    for movie in watchlist.get("movies") or []:
+        apply(movie)
+    for show in watchlist.get("shows") or []:
+        apply(show)
+    for item in sections.get("user_lists") or []:
+        if not isinstance(item, dict):
+            continue
+        for movie in item.get("movies") or []:
+            apply(movie)
+        for show in item.get("shows") or []:
+            apply(show)
+
+    # Re-normaliser pour reconstruire sources et progressions enrichies.
+    raw = {"sections": sections, "source": "trakt_zip",
+           "loaded_at": datetime.now(PARIS_TZ).isoformat(), "request_count": provider.request_count}
+    enriched = normalize_provider_dataset(raw)
+    st.session_state["_normalized_dataset"] = enriched
+    st.session_state.pop("_source_genre_cache", None)
+    st.session_state.pop("_mdblist_playback_poster_cache", None)
+    account = mdb_oauth.account_summary()
+    if provider.rate_limit_remaining is not None and account:
+        account["rate_limit_remaining"] = provider.rate_limit_remaining
+        st.session_state[mdb_oauth.ACCOUNT_KEY] = account
+        mdb_oauth.persist_cookie(cookies)
+    return True, f"{len(by_tmdb)} fiche(s) MDBList fusionnée(s) : genres, posters, durées et notes ajoutés."
+
+
 def _sections() -> dict:
     value = _dataset().get("sections")
     return value if isinstance(value, dict) else {}
@@ -1163,7 +1293,7 @@ def _content_links_html(ids: dict, title: str, is_show: bool = False) -> str:
     justwatch = f"https://www.justwatch.com/fr/recherche?q={title_text}"
     links = [
         f'<a class="link-pill" href="{justwatch}" target="_blank" rel="noopener noreferrer" '
-        f'title="Où regarder sur JustWatch">🔎</a>'
+        f'title="Où regarder sur JustWatch">🔎 Où regarder</a>'
     ]
     tmdb = ids.get("tmdb")
     if tmdb:
@@ -1229,11 +1359,9 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         pills = "".join(_signal_pill(signal) for signal in legacy)
 
     roulette_badge = '<span class="source-badge">CHOIX DE LA ROULETTE</span><br>' if highlighted else ""
-    justwatch = escape(_justwatch_url(raw_title), quote=True)
-    links_html = (
-        f'<small><a href="{justwatch}" target="_blank" rel="noopener noreferrer" '
-        'style="color:#CEDC00;text-decoration:none;">🔎 Où regarder ?</a></small>'
-    )
+    # Liens uniformisés (mêmes badges que En cours / Fantôme / Calendrier).
+    item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+    links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
     st.markdown(
         f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}<strong>{row.get("type")} — {title}</strong>'
@@ -1327,12 +1455,25 @@ def render_watchlist_page() -> None:
     source = source_by_label[selected_label]
 
     genre_records = sections.get("genres") or []
-    genre_by_title = {
-        str(item.get("title") or item.get("slug") or ""): str(item.get("slug") or "")
-        for item in genre_records
-        if isinstance(item, dict) and item.get("slug")
-    }
-    genre_titles = sorted([title for title in genre_by_title if title], key=str.casefold)
+    if genre_records:
+        genre_by_title = {
+            str(item.get("title") or item.get("slug") or ""): str(item.get("slug") or "")
+            for item in genre_records
+            if isinstance(item, dict) and item.get("slug")
+        }
+        genre_titles = sorted([title for title in genre_by_title if title], key=str.casefold)
+    else:
+        # Import ZIP Trakt : construire la liste des genres depuis les contenus.
+        genre_by_title = {}
+        seen: set[str] = set()
+        for source in sources:
+            for item in (source.get("movies") or []) + (source.get("shows") or []):
+                for genre in item.get("genres") or []:
+                    name = genre.get("name") if isinstance(genre, dict) else str(genre)
+                    if name and name not in seen:
+                        seen.add(name)
+                        genre_by_title[str(name)] = str(name)
+        genre_titles = sorted(seen, key=str.casefold)
     selected_genre = genre_col.selectbox("Genre", ["Tous"] + genre_titles, key="watchlist_genre")
     selected_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
 
@@ -1695,17 +1836,30 @@ def render_progress_page() -> None:
             show_ids = show_ref.get("ids") if isinstance(show_ref.get("ids"), dict) else {}
             raw_show_title = str(show_ref.get("title") or row.get("title") or "")
             links_html = _content_links_html(show_ids, raw_show_title, is_show=True)
+            # Progression connue (MDBList) ou inconnue (ZIP Trakt sans métadonnées).
+            if total and number:
+                progress_line = (
+                    f"📊 {watched}/{total} épisode(s) vu(s) · {percent:.1f}% · il en reste {remaining} · "
+                    f"▶️ Prochain : S{int(season or 0):02d}E{int(number or 0):02d}"
+                )
+                time_line = f"⏱️ {watched_time} de visionnage · reste {remaining_time}"
+                bar_html = (
+                    f'<div class="progress-bar-container"><div class="progress-bar-fill" '
+                    f'style="width:{max(0,min(percent,100))}%;"></div></div>'
+                )
+            else:
+                progress_line = f"📊 {watched} épisode(s) vu(s) (progression totale inconnue sans MDBList)"
+                time_line = f"⏱️ {watched_time} de visionnage"
+                bar_html = ""
             st.markdown(
                 f'<div class="media-list-card upnext-card">{image_html}'
                 f'<div class="media-list-content" style="width:100%;">'
                 f'<strong style="font-size:1.05rem;">{title}</strong>'
                 f'{genres_html}'
                 f'<div style="margin:.35rem 0;">{dates_html}</div>'
-                f'<div style="margin:.15rem 0;"><small>▶️ Prochain : S{int(season or 0):02d}E{int(number or 0):02d} · {ep_title}</small></div>'
-                f'<div style="margin:.15rem 0;"><small>📊 {watched}/{total} épisode(s) vu(s) · {percent:.1f}% · il en reste {remaining}</small></div>'
-                f'<div style="margin:.15rem 0;"><small>⏱️ {watched_time} de visionnage · reste {remaining_time}</small></div>'
-                f'<div class="progress-bar-container"><div class="progress-bar-fill" '
-                f'style="width:{max(0,min(percent,100))}%;"></div></div>'
+                f'<div style="margin:.15rem 0;"><small>{progress_line}</small></div>'
+                f'<div style="margin:.15rem 0;"><small>{time_line}</small></div>'
+                f'{bar_html}'
                 f'{links_html}'
                 f'</div></div>',
                 unsafe_allow_html=True,
@@ -2529,39 +2683,51 @@ def _enrich_calendar_metadata(
 
 def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[bool, str]:
     valid, message = mdb_oauth.ensure_valid_session(cookies)
-    if not valid:
+    if not valid and not _dataset():
         return False, message or "Session MDBList indisponible."
     start_date = datetime.now(PARIS_TZ).date()
     horizon = max(1, min(int(horizon_days), 545))
     end_date = start_date + timedelta(days=horizon)
-    provider = MDBListProvider(mdb_oauth.access_token())
     mode = "mdblist"
     events: list[dict[str, Any]] = []
     calendar_error: str | None = None
-    try:
-        # L'endpoint MDBList limite chaque appel à 120 jours : les horizons plus
-        # longs sont découpés en tranches successives puis fusionnés.
-        calls = _calendar_call_count(horizon)
-        for index in range(calls):
-            segment_start = start_date + timedelta(days=index * CALENDAR_API_MAX_DAYS)
-            segment_end = min(end_date, segment_start + timedelta(days=CALENDAR_API_MAX_DAYS))
-            segment = provider.calendar_events(
-                segment_start.isoformat(),
-                segment_end.isoformat(),
-                include_favorite_cast=include_favorite_cast,
+    provider: MDBListProvider | None = None
+    if valid:
+        try:
+            provider = MDBListProvider(mdb_oauth.access_token())
+        except Exception as exc:
+            valid = False
+            calendar_error = str(exc)
+    if valid and provider is not None:
+        try:
+            # L'endpoint MDBList limite chaque appel à 120 jours : les horizons
+            # plus longs sont découpés en tranches successives puis fusionnés.
+            calls = _calendar_call_count(horizon)
+            for index in range(calls):
+                segment_start = start_date + timedelta(days=index * CALENDAR_API_MAX_DAYS)
+                segment_end = min(end_date, segment_start + timedelta(days=CALENDAR_API_MAX_DAYS))
+                segment = provider.calendar_events(
+                    segment_start.isoformat(),
+                    segment_end.isoformat(),
+                    include_favorite_cast=include_favorite_cast,
+                )
+                events.extend(segment)
+        except Exception as exc:
+            events = []
+            mode = "local"
+            calendar_error = str(getattr(provider, "calendar_error", None) or exc)
+        # Pas d'exception mais zéro événement : le service a répondu autre chose.
+        if not events and calendar_error is None:
+            calendar_error = getattr(provider, "calendar_error", None)
+        if not events and calendar_error is None:
+            calendar_error = (
+                "Le service calendrier MDBList a répondu mais n'a renvoyé aucun événement "
+                "sur cet horizon (réponse vide ou hors plage)."
             )
-            events.extend(segment)
-    except Exception as exc:
-        events = []
+    else:
         mode = "local"
-        calendar_error = str(getattr(provider, "calendar_error", None) or exc)
-    # Pas d'exception mais zéro événement : le service a répondu autre chose.
-    if not events and calendar_error is None:
-        calendar_error = getattr(provider, "calendar_error", None)
-    if not events and calendar_error is None:
-        calendar_error = (
-            "Le service calendrier MDBList a répondu mais n'a renvoyé aucun événement "
-            "sur cet horizon (réponse vide ou hors plage)."
+        calendar_error = calendar_error or (
+            "Aucune session MDBList : calendrier construit uniquement depuis vos données."
         )
 
     dataset = _dataset()
@@ -2572,10 +2738,11 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
     # premières de séries présents dans vos listes et votre Watchlist.
     enriched: list[dict[str, Any]] = []
     enrich_diag: dict[str, Any] = {}
-    try:
-        enriched, enrich_diag = _enrich_calendar_metadata(provider, dataset, start_date, end_date)
-    except Exception as exc:
-        enrich_diag = {"erreurs": [f"enrichissement : {exc}"]}
+    if provider is not None:
+        try:
+            enriched, enrich_diag = _enrich_calendar_metadata(provider, dataset, start_date, end_date)
+        except Exception as exc:
+            enrich_diag = {"erreurs": [f"enrichissement : {exc}"]}
 
     all_events = events + local_events + enriched
     if events:
@@ -2590,7 +2757,7 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
         "end": end_date.isoformat(),
         "horizon": horizon,
         "favorite_cast": bool(include_favorite_cast),
-        "request_count": provider.request_count,
+        "request_count": provider.request_count if provider is not None else 0,
         "mode": mode,
         "event_counts": {
             "mdblist": len(events),
@@ -2600,11 +2767,12 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
         "enrich_diag": enrich_diag,
         "calendar_error": calendar_error,
     }
-    account = mdb_oauth.account_summary()
-    if provider.rate_limit_remaining is not None and account:
-        account["rate_limit_remaining"] = provider.rate_limit_remaining
-        st.session_state[mdb_oauth.ACCOUNT_KEY] = account
-        mdb_oauth.persist_cookie(cookies)
+    if provider is not None:
+        account = mdb_oauth.account_summary()
+        if provider.rate_limit_remaining is not None and account:
+            account["rate_limit_remaining"] = provider.rate_limit_remaining
+            st.session_state[mdb_oauth.ACCOUNT_KEY] = account
+            mdb_oauth.persist_cookie(cookies)
     if mode == "local":
         return True, (
             f"Calendrier de secours prêt avec {len(all_events)} événement(s) : "
@@ -2633,17 +2801,18 @@ def _calendar_day_title(day: date | None) -> str:
 
 def render_calendar_page() -> None:
     st.markdown('<div class="page-title">📅 Calendrier des sorties</div>', unsafe_allow_html=True)
-    if not mdb_oauth.is_connected():
+    if not mdb_oauth.is_connected() and not _dataset():
         st.markdown(
             '<div class="accent-callout"><strong>CONNEXION NÉCESSAIRE</strong> · '
-            'Connectez MDBList depuis le Tableau de bord pour consulter votre calendrier personnel.</div>',
+            'Connectez MDBList depuis le Tableau de bord (ou importez un ZIP Trakt) '
+            'pour consulter votre calendrier personnel.</div>',
             unsafe_allow_html=True,
         )
         return
 
     st.caption(
-        "Films, premières de séries et prochains épisodes liés à votre compte MDBList. "
-        "Un horizon complet est chargé (segments de 120 jours maximum) puis filtré localement."
+        "Films, premières de séries et prochains épisodes liés à vos données "
+        "(MDBList ou ZIP Trakt). Un horizon complet est chargé puis filtré localement."
     )
     horizon_col, cast_col, button_col = st.columns([0.30, 0.32, 0.38])
     horizon = horizon_col.selectbox(
@@ -3325,7 +3494,35 @@ def page_dashboard() -> None:
                     )
                     st.rerun()
 
-    if mdb_oauth.is_connected():
+    loaded = _dataset()
+    source = str(loaded.get("source") or "mdblist") if isinstance(loaded, dict) else "mdblist"
+    if source == "trakt_zip":
+        st.divider()
+        st.markdown('<div class="page-title">📥 Données Trakt (import ZIP)</div>', unsafe_allow_html=True)
+        st.caption(
+            "Lecture seule · aucun appel API nécessaire. "
+            "Toutes les pages utilisent ces données."
+        )
+        render_dataset_overview()
+        if mdb_oauth.is_connected():
+            if st.button(
+                "✨ Enrichir avec MDBList (genres, posters, durées, notes)",
+                type="primary",
+                key="enrich_zip",
+                help="Un appel groupé par lot de 200. Aucune écriture sur vos comptes.",
+            ):
+                with st.spinner("Fusion des métadonnées MDBList…"):
+                    ok, message = _enrich_zip_dataset()
+                st.caption(("✓ " if ok else "⚠️ ") + message)
+                if ok:
+                    st.rerun()
+        else:
+            st.caption(
+                "Connecte MDBList (lecture seule) pour enrichir ces données : "
+                "genres, posters, durées et notes apparaîtront."
+            )
+        render_dashboard_widgets()
+    elif mdb_oauth.is_connected():
         st.divider()
         st.markdown('<div class="page-title">📥 Données MDBList</div>', unsafe_allow_html=True)
         render_data_loader()
@@ -3582,14 +3779,47 @@ def render_backup_page() -> None:
     rapport Excel multi-onglets, sans aucun secret."""
     st.markdown('<div class="page-title">📤 Sauvegarde</div>', unsafe_allow_html=True)
     st.caption(
-        "Exporte tes données MDBList (historique, Watchlist, listes, statistiques, badges) "
-        "au format JSON neutre ou en rapport Excel multi-onglets. Aucun secret ni jeton n'est jamais inclus."
+        "Exporte tes données (MDBList ou ZIP Trakt) au format JSON neutre ou en rapport "
+        "Excel multi-onglets. Aucun secret ni jeton n'est jamais inclus."
     )
     dataset = _dataset()
+
+    # ── Restauration : disponible même sans données chargées ni connexion ────
+    st.markdown("#### 📥 Restaurer une sauvegarde")
+    st.caption(
+        "Importe ton fichier de sauvegarde JSON pour recharger l'application "
+        "sans nouvelle analyse ni connexion MDBList."
+    )
+    uploaded = st.file_uploader("Choisis un fichier JSON", type=["json"], key="backup_restore")
+    if uploaded is not None:
+        try:
+            data = json.load(uploaded)
+        except Exception:
+            st.error("Fichier JSON invalide.")
+            data = None
+        if data:
+            saved = data.get("dataset") if isinstance(data, dict) else None
+            if isinstance(saved, dict) and isinstance(saved.get("sections"), dict):
+                st.markdown(
+                    f'<div class="accent-callout"><strong>✅ SAUVEGARDE VALIDE</strong> · '
+                    f'Export du {str(data.get("export_date") or "?").replace("T", " ")[:16]}.</div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("🔄 Restaurer dans l'application", type="primary", key="restore_backup"):
+                    st.session_state["_normalized_dataset"] = saved
+                    st.session_state.pop("_source_genre_cache", None)
+                    st.session_state.pop("_mdblist_playback_poster_cache", None)
+                    st.rerun()
+            else:
+                st.error("Format de sauvegarde non reconnu (dataset manquant).")
+
+    st.divider()
+
     if not dataset:
         st.markdown(
             '<div class="accent-callout"><strong>DONNÉES NON CHARGÉES</strong> · '
-            'Charge MDBList depuis le Tableau de bord avant d’exporter.</div>',
+            'Charge MDBList depuis le Tableau de bord ou restaure une sauvegarde '
+            'ci-dessus avant d’exporter.</div>',
             unsafe_allow_html=True,
         )
         return
@@ -3761,34 +3991,6 @@ def render_backup_page() -> None:
     st.divider()
 
     # ── Restauration ─────────────────────────────────────────────────────────
-    st.markdown("#### 📥 Restaurer une sauvegarde")
-    st.caption(
-        "L'import ne modifie rien sur MDBList : il recharge simplement les données "
-        "dans l'application pour éviter une nouvelle analyse."
-    )
-    uploaded = st.file_uploader("Choisis un fichier JSON", type=["json"], key="backup_restore")
-    if uploaded is not None:
-        try:
-            data = json.load(uploaded)
-        except Exception:
-            st.error("Fichier JSON invalide.")
-            data = None
-        if data:
-            saved = data.get("dataset")
-            if isinstance(saved, dict) and saved.get("sections"):
-                st.markdown(
-                    f'<div class="accent-callout"><strong>✅ SAUVEGARDE VALIDE</strong> · '
-                    f'Export du {str(data.get("export_date") or "?").replace("T", " ")[:16]}.</div>',
-                    unsafe_allow_html=True,
-                )
-                if st.button("🔄 Restaurer dans l'application", type="primary", key="restore_backup"):
-                    st.session_state["_normalized_dataset"] = saved
-                    st.session_state.pop("_source_genre_cache", None)
-                    st.rerun()
-            else:
-                st.error("Format de sauvegarde non reconnu (dataset manquant).")
-
-
 def placeholder(page: str) -> None:
     st.markdown(f'<div class="page-title">{page}</div>', unsafe_allow_html=True)
     st.markdown(

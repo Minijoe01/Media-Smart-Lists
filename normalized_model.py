@@ -66,14 +66,16 @@ def _source(
     }
 
 
-def build_sources(sections: dict[str, Any]) -> list[dict[str, Any]]:
+def build_sources(sections: dict[str, Any], source_name: str = "mdblist") -> list[dict[str, Any]]:
     watchlist = sections.get("watchlist") or {}
     user_lists = sections.get("user_lists") or []
+    is_zip = source_name == "trakt_zip"
+    watchlist_label = "Watchlist Trakt (import ZIP)" if is_zip else "Watchlist MDBList"
     sources = [
         _source(
             "watchlist",
-            "Watchlist MDBList",
-            "Watchlist MDBList",
+            watchlist_label,
+            watchlist_label,
             "watchlist",
             "native",
             list(watchlist.get("movies") or []),
@@ -265,9 +267,10 @@ def build_progress(sections: dict[str, Any]) -> list[dict[str, Any]]:
 
 def normalize_provider_dataset(raw: dict[str, Any]) -> dict[str, Any]:
     sections = raw.get("sections") if isinstance(raw.get("sections"), dict) else {}
+    source_name = str(raw.get("source") or "mdblist")
     return {
         **raw,
         "schema_version": NORMALIZED_SCHEMA_VERSION,
-        "sources": build_sources(sections),
+        "sources": build_sources(sections, source_name=source_name),
         "progress": build_progress(sections),
     }

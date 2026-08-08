@@ -54,11 +54,18 @@ ADDITION_SORT_OPTIONS = [
 
 
 def source_display_label(source: dict[str, Any]) -> str:
-    """Libellé explicite conforme aux types de listes documentés par MDBList."""
+    """Libellé explicite conforme aux types de listes documentés par MDBList.
+
+    Le label de la source (éventuellement précisé pour l'import ZIP Trakt)
+    prime ; sinon le libellé par type est reconstruit.
+    """
+    explicit = source.get("label")
+    if explicit and str(explicit).strip():
+        return str(explicit).strip()
     if source.get("kind") == "watchlist":
         return "Watchlist MDBList"
     if source.get("kind") == "aggregate":
-        return str(source.get("label") or source.get("name") or "Vue combinée")
+        return str(source.get("name") or "Vue combinée")
     name = str(source.get("name") or "Sans nom")
     prefix = {
         "static": "Liste statique",
