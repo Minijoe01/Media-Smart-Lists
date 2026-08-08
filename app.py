@@ -23,6 +23,8 @@ import pandas as pd
 
 import mdblist_oauth as mdb_oauth
 import achievements_engine as achievements_mod
+import dashboard_engine as dashboard_mod
+import excel_export as excel_mod
 import stats_engine as stats_mod
 import wrapped_engine as wrapped_mod
 from calendar_engine import (
@@ -583,6 +585,13 @@ def navigation() -> str:
             '<div class="sidebar-brand">🍿 MDBList en temps réel<br>📦 Export ZIP Trakt en lecture seule</div>',
             unsafe_allow_html=True,
         )
+        # Déconnexion discrète, accessible depuis toutes les pages (sidebar).
+        if mdb_oauth.is_connected():
+            if st.button("🔌 Se déconnecter de MDBList", key="logout_sidebar", use_container_width=True):
+                mdb_oauth.disconnect(cookies)
+                st.session_state.pop("_normalized_dataset", None)
+                st.session_state.pop("_source_genre_cache", None)
+                st.rerun()
     st.session_state["page_active"] = page
     return page
 
@@ -1087,6 +1096,22 @@ def render_dataset_overview() -> None:
     second[2].metric("Séries abandonnées", len(dropped.get("shows") or []))
     second[3].metric("Up Next", len(sections.get("upnext") or []))
 
+    # Temps de visionnage (à vie) — calcul local depuis l'historique.
+    try:
+        dash = dashboard_mod.compute_dashboard(_dataset(), timezone_name="Europe/Paris")
+        if not dash.get("empty"):
+            c = dash["compteurs"]
+            third = st.columns(4)
+            third[0].metric("⏱️ Temps total", dashboard_mod._minutes_to_duree(dash["total_minutes"]))
+            third[1].metric("📺 Temps séries", dashboard_mod._minutes_to_duree(int(c["h_series"] * 60)))
+            third[2].metric("🎬 Temps films", dashboard_mod._minutes_to_duree(int(c["h_films"] * 60)))
+            third[3].metric(
+                "🏃 Épisodes/semaine",
+                f"{dash['eps_sem']:.1f}".replace(".", ",") if dash["eps_sem"] else "—",
+            )
+    except Exception:
+        pass
+
 
 def _reset_recommendation_filters() -> None:
     defaults = {
@@ -1104,6 +1129,29 @@ def _reset_recommendation_filters() -> None:
 
 def _justwatch_url(title: str) -> str:
     return "https://www.justwatch.com/fr/recherche?q=" + quote(str(title or ""))
+
+
+def _content_links_html(ids: dict, title: str, is_show: bool = False) -> str:
+    """Liens discrets vers le contenu : JustWatch (où regarder), TMDB (fiche)
+    et MDBList (fiche) quand les identifiants sont connus."""
+    title_text = quote(str(title or ""))
+    justwatch = f"https://www.justwatch.com/fr/recherche?q={title_text}"
+    links = [f'<a href="{justwatch}" target="_blank" rel="noopener noreferrer" style="color:#CEDC00;text-decoration:none;">🔎 Où regarder</a>']
+    tmdb = ids.get("tmdb") if isinstance(ids, dict) else None
+    if tmdb:
+        base = "tv" if is_show else "movie"
+        links.append(
+            f'<a href="https://www.themoviedb.org/{base}/{int(tmdb)}" target="_blank" rel="noopener noreferrer" '
+            f'style="color:#9DC5BF;text-decoration:none;">TMDB</a>'
+        )
+    imdb = ids.get("imdb") if isinstance(ids, dict) else None
+    if imdb:
+        base = "show" if is_show else "m"
+        links.append(
+            f'<a href="https://mdblist.com/{base}/{str(imdb)}" target="_blank" rel="noopener noreferrer" '
+            f'style="color:#9DC5BF;text-decoration:none;">MDBList</a>'
+        )
+    return f'<small style="margin-top:.3rem;">{" · ".join(links)}</small>'
 
 
 def _signal_pill(signal: dict) -> str:
@@ -1508,10 +1556,10 @@ def render_watchlist_page() -> None:
             continue
         st.markdown(f"### {section_title} ({len(group)})")
         visible = group[:remaining_slots]
-        columns = st.columns(2)
-        for index, row in enumerate(visible):
-            with columns[index % 2]:
-                _render_recommendation_card(row)
+        # Une carte sous l'autre (comme « En cours de lecture ») : lecture
+        # plus aérée, sans décalage de largeur entre colonnes.
+        for row in visible:
+            _render_recommendation_card(row)
         rendered += len(visible)
         remaining_slots -= len(visible)
 
@@ -1615,16 +1663,22 @@ def render_progress_page() -> None:
                 else:
                     dates.append(f"Dernier épisode disponible : {latest_available}")
             dates_html = f'<small>🗓️ {escape(" · ".join(dates))}</small>' if dates else ""
+            show_ref = row.get("show") if isinstance(row.get("show"), dict) else {}
+            show_ids = show_ref.get("ids") if isinstance(show_ref.get("ids"), dict) else {}
+            raw_show_title = str(show_ref.get("title") or row.get("title") or "")
+            links_html = _content_links_html(show_ids, raw_show_title, is_show=True)
             st.markdown(
                 f'<div class="media-list-card upnext-card">{image_html}'
                 f'<div class="media-list-content" style="width:100%;">'
-                f'<strong>{title}</strong>'
-                f'{genres_html}{dates_html}'
-                f'<small>{watched}/{total} épisode(s) vu(s) · environ {watched_time} de visionnage</small>'
-                f'<small>Il en reste {remaining} · environ {remaining_time} · progression {percent:.1f}%</small>'
+                f'<strong style="font-size:1.05rem;">{title}</strong>'
+                f'{genres_html}'
+                f'<div style="margin:.35rem 0;">{dates_html}</div>'
+                f'<div style="margin:.15rem 0;"><small>▶️ Prochain : S{int(season or 0):02d}E{int(number or 0):02d} · {ep_title}</small></div>'
+                f'<div style="margin:.15rem 0;"><small>📊 {watched}/{total} épisode(s) vu(s) · {percent:.1f}% · il en reste {remaining}</small></div>'
+                f'<div style="margin:.15rem 0;"><small>⏱️ {watched_time} de visionnage · reste {remaining_time}</small></div>'
                 f'<div class="progress-bar-container"><div class="progress-bar-fill" '
                 f'style="width:{max(0,min(percent,100))}%;"></div></div>'
-                f'<small>▶️ Prochain : S{int(season or 0):02d}E{int(number or 0):02d} · {ep_title}</small>'
+                f'{links_html}'
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
@@ -1965,6 +2019,8 @@ def render_ghost_page() -> None:
         if row.get("is_manual"):
             details.append("progression manuelle")
         episode_html = f'<small>▶️ {episode_label}</small>' if episode_label else ""
+        row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+        links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
         st.markdown(
             f'<div class="media-list-card upnext-card">{image_html}'
             f'<div class="media-list-content" style="width:100%;">'
@@ -1972,6 +2028,7 @@ def render_ghost_page() -> None:
             f'{episode_html}<small>{escape(" · ".join(details))}</small>'
             f'<div class="progress-bar-container"><div class="progress-bar-fill" '
             f'style="width:{max(0,min(progress,100))}%;"></div></div>'
+            f'{links_html}'
             f'</div></div>',
             unsafe_allow_html=True,
         )
@@ -2452,6 +2509,7 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
     provider = MDBListProvider(mdb_oauth.access_token())
     mode = "mdblist"
     events: list[dict[str, Any]] = []
+    calendar_error: str | None = None
     try:
         # L'endpoint MDBList limite chaque appel à 120 jours : les horizons plus
         # longs sont découpés en tranches successives puis fusionnés.
@@ -2465,9 +2523,10 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
                 include_favorite_cast=include_favorite_cast,
             )
             events.extend(segment)
-    except Exception:
+    except Exception as exc:
         events = []
         mode = "local"
+        calendar_error = str(getattr(provider, "calendar_error", None) or exc)
 
     dataset = _dataset()
     # Les dates déjà chargées (Up Next et listes) alimentent un calendrier de
@@ -2503,6 +2562,7 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
             "enriched": len(enriched),
         },
         "enrich_diag": enrich_diag,
+        "calendar_error": calendar_error,
     }
     account = mdb_oauth.account_summary()
     if provider.rate_limit_remaining is not None and account:
@@ -2639,6 +2699,10 @@ def render_calendar_page() -> None:
                 "Détail de l'enrichissement : les contenus de vos listes sont interrogés par lots "
                 "pour trouver leurs dates de sortie à venir."
             )
+            if cache.get("calendar_error"):
+                st.markdown(
+                    f"⚠️ **Calendrier officiel MDBList** : {escape(str(cache['calendar_error']))}"
+                )
             if enrich_diag.get("erreurs"):
                 for error in enrich_diag["erreurs"]:
                     st.markdown(f"⚠️ {escape(str(error))}")
@@ -2709,11 +2773,13 @@ def render_calendar_page() -> None:
                     meta.append(str(row["source"]))
                 episode_html = f'<small>▶️ {episode}</small>' if episode else ""
                 meta_html = f'<small>{escape(" · ".join(meta))}</small>' if meta else ""
+                row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+                links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
                 st.markdown(
                     f'<div class="media-list-card poster-card">{image_html}'
                     f'<div class="media-list-content" style="width:100%;">'
                     f'<span class="source-badge">{escape(str(row.get("type") or "SORTIE").upper())}</span><br>'
-                    f'<strong>{title}{year}</strong>{episode_html}{meta_html}'
+                    f'<strong>{title}{year}</strong>{episode_html}{meta_html}{links_html}'
                     f'</div></div>',
                     unsafe_allow_html=True,
                 )
@@ -3084,6 +3150,64 @@ def render_basic_stats_page() -> None:
     render_detailed_stats_page(dataset)
 
 
+def render_dashboard_widgets() -> None:
+    """Widgets du tableau de bord — rythme, compteurs à vie, projection de fin
+    (copie les widgets de l'ancienne application Trakt Smart Lists)."""
+    dataset = _dataset()
+    if not dataset:
+        return
+    dash = dashboard_mod.compute_dashboard(dataset, timezone_name="Europe/Paris")
+    if dash.get("empty"):
+        return
+
+    st.divider()
+    st.markdown("### ⏱️ Ton rythme de visionnage")
+    bilan = dash["bilan"]
+    c1, c2 = st.columns([0.55, 0.45])
+    with c1:
+        with st.container(border=True):
+            st.markdown(
+                f"🗓️ **{bilan['mois']}** : **{dashboard_mod._minutes_to_duree(int(bilan['heures'] * 60))}** "
+                f"· **{bilan['eps']}** épisode(s) · **{bilan['films']}** film(s)"
+            )
+            if dash["eps_sem"]:
+                rythme_txt = f"{dash['eps_sem']:.1f}".replace(".", ",")
+                st.markdown(f"🏃 Ton rythme : **{rythme_txt} ép./semaine**")
+            if dash["projection"]:
+                p = dash["projection"]
+                st.markdown(
+                    f"🏁 Au rythme actuel, tes **{dash['series_actives']} série(s) en cours** "
+                    f"({dash['reste_actives']} épisode(s) restant(s)) seront finies vers le "
+                    f"**{p.day} {dashboard_mod.MOIS_NOMS[p.month - 1]} {p.year}** "
+                    f"*(hors nouvelles saisons… et nouvelles envies)* 😉"
+                )
+                st.caption("🚫 Les séries abandonnées (statut « dropped ») sont exclues de ce calcul.")
+            elif dash["reste_actives"] > 0:
+                st.caption("🏁 Regarde encore quelques épisodes et j'estimerai ta date de fin.")
+            else:
+                st.caption("🏁 Aucune série en cours ou en pause : rien à projeter pour l'instant.")
+    with c2:
+        with st.container(border=True):
+            st.markdown("📼 **Compteurs à vie**")
+            c = dash["compteurs"]
+            st.caption(f"📺 Séries : **{dashboard_mod._minutes_to_duree(int(c['h_series'] * 60))}** ({c['nb_ep']} ép.)")
+            st.caption(f"🎬 Films : **{dashboard_mod._minutes_to_duree(int(c['h_films'] * 60))}** ({c['nb_films']} films)")
+
+    digest = dash["digest"]
+    if digest["films"] or digest["eps"]:
+        st.markdown(
+            f"🍿 **Cette semaine** : {digest['eps']} épisode(s), {digest['films']} film(s) — "
+            f"soit **{dashboard_mod._minutes_to_duree(digest['minutes'])}** de visionnage."
+        )
+
+    if dash["derniers"]:
+        st.markdown("#### 🕘 Derniers visionnages")
+        for item in dash["derniers"]:
+            st.markdown(
+                f"📅 **{item['date'].strftime('%d/%m/%Y %H:%M')}** · {item['type']} · **{escape(str(item['titre']))}**"
+            )
+
+
 def page_dashboard() -> None:
     st.markdown('<div class="page-title">🏠 Tableau de bord</div>', unsafe_allow_html=True)
     if not st.session_state.get("pending_source") and not mdb_oauth.is_connected():
@@ -3136,19 +3260,7 @@ def page_dashboard() -> None:
         st.markdown('<div class="page-title">📥 Données MDBList</div>', unsafe_allow_html=True)
         render_data_loader()
         render_dataset_overview()
-
-    st.divider()
-    st.markdown("### Aperçu des possibilités conservées")
-    cols = st.columns(4)
-    for column, icon, title, text in (
-        (cols[0], "📺", "Progression", "Séries en cours et épisodes suivants"),
-        (cols[1], "🎯", "Recommandations", "Filtres, genres et choix du soir"),
-        (cols[2], "📊", "Statistiques", "Habitudes, rythmes et Wrapped"),
-        (cols[3], "🧹", "Listes", "Doublons et nettoyage prudent"),
-    ):
-        with column:
-            st.markdown(f"#### {icon} {title}")
-            st.caption(text)
+        render_dashboard_widgets()
 
 
 def render_achievements_page() -> None:
@@ -3395,6 +3507,199 @@ def render_annual_page() -> None:
             )
 
 
+def render_backup_page() -> None:
+    """Sauvegarde et restauration — export JSON neutre du dataset normalisé +
+    rapport Excel multi-onglets, sans aucun secret."""
+    st.markdown('<div class="page-title">📤 Sauvegarde</div>', unsafe_allow_html=True)
+    st.caption(
+        "Exporte tes données MDBList (historique, Watchlist, listes, statistiques, badges) "
+        "au format JSON neutre ou en rapport Excel multi-onglets. Aucun secret ni jeton n'est jamais inclus."
+    )
+    dataset = _dataset()
+    if not dataset:
+        st.markdown(
+            '<div class="accent-callout"><strong>DONNÉES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord avant d’exporter.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    # ── Export JSON (sauvegarde neutre et versionnée) ────────────────────────
+    st.markdown("#### 📦 Sauvegarde JSON (restaurable)")
+    st.caption(
+        "Fichier neutre et versionné du dataset normalisé : historique, Watchlist, "
+        "listes, notes et progressions. Utilisable pour recharger l'application sans nouvelle analyse."
+    )
+    payload = {
+        "app": "media-smart-lists",
+        "version": int(NORMALIZED_SCHEMA_VERSION),
+        "export_date": datetime.now(PARIS_TZ).isoformat(),
+        "dataset": dataset,
+    }
+    try:
+        json_bytes = json.dumps(payload, ensure_ascii=False, default=str, indent=2).encode("utf-8")
+    except (TypeError, ValueError):
+        json_bytes = b"{}"
+    date_str = datetime.now(PARIS_TZ).strftime("%Y-%m-%d")
+    st.download_button(
+        "💾 Télécharger la sauvegarde JSON",
+        data=json_bytes,
+        file_name=f"media-smart-lists-sauvegarde-{date_str}.json",
+        mime="application/json",
+        type="primary",
+        key="download_backup_json",
+    )
+
+    st.divider()
+
+    # ── Export Excel multi-onglets ───────────────────────────────────────────
+    st.markdown("#### 📊 Rapport Excel (tous les onglets)")
+    st.caption(
+        "Un classeur avec un onglet par analyse : Résumé, Historique, Watchlist, "
+        "Listes, Statistiques et Badges."
+    )
+    try:
+        rows = normalize_history(dataset, timezone_name="Europe/Paris")
+        df = stats_mod.build_frame(rows)
+        dash = dashboard_mod.compute_dashboard(dataset, timezone_name="Europe/Paris")
+
+        # Résumé
+        if not dash.get("empty"):
+            summary_rows = [
+                ("Comptes", "MDBList"),
+                ("Films", dash["compteurs"]["nb_films"]),
+                ("Séries", dash["compteurs"]["nb_series"]),
+                ("Épisodes", dash["compteurs"]["nb_ep"]),
+                ("Temps total", dashboard_mod._minutes_to_duree(dash["total_minutes"])),
+                ("Temps séries", dashboard_mod._minutes_to_duree(int(dash["compteurs"]["h_series"] * 60))),
+                ("Temps films", dashboard_mod._minutes_to_duree(int(dash["compteurs"]["h_films"] * 60))),
+                ("Séries en cours", dash["series_actives"]),
+                ("Épisodes restants", dash["reste_actives"]),
+            ]
+        else:
+            summary_rows = [("Comptes", "MDBList"), ("Données", "Aucune")]
+
+        # Historique
+        history_values = []
+        for row in sorted(rows, key=lambda r: r.get("watched_at") or datetime.min.replace(tzinfo=PARIS_TZ), reverse=True):
+            watched_at = row.get("watched_at")
+            history_values.append(
+                {
+                    "Date": watched_at.strftime("%d/%m/%Y %H:%M") if watched_at else "—",
+                    "Type": row.get("type"),
+                    "Titre": row.get("title"),
+                    "Épisode": row.get("episode_label") or "—",
+                    "Année": row.get("year") or "—",
+                    "Genres": " · ".join(row.get("genres") or []),
+                    "Durée (min)": row.get("runtime") or 0,
+                    "Lectures": row.get("plays") or 1,
+                    "Note": f"{row['personal_rating']:.1f}/10" if row.get("personal_rating") else "—",
+                }
+            )
+        history_df = pd.DataFrame(history_values)
+
+        # Watchlist
+        watchlist_values = []
+        sections = dataset.get("sections") or {}
+        watchlist = sections.get("watchlist") or {}
+        for movie in watchlist.get("movies") or []:
+            watchlist_values.append({"Type": "Film", "Titre": movie.get("title") or "?", "Année": movie.get("release_year") or movie.get("year") or "—"})
+        for show in watchlist.get("shows") or []:
+            watchlist_values.append({"Type": "Série", "Titre": show.get("title") or "?", "Année": show.get("release_year") or show.get("year") or "—"})
+        watchlist_df = pd.DataFrame(watchlist_values)
+
+        # Listes
+        lists_values = []
+        for source in dataset.get("sources") or []:
+            if not isinstance(source, dict) or source.get("kind") == "aggregate":
+                continue
+            movies = source.get("movies") or []
+            shows = source.get("shows") or []
+            lists_values.append(
+                {
+                    "Liste": source.get("name") or source.get("label") or "?",
+                    "Films": len(movies),
+                    "Séries": len(shows),
+                    "Total": len(movies) + len(shows),
+                }
+            )
+        lists_df = pd.DataFrame(lists_values)
+
+        # Statistiques (genres + heures)
+        stats_values = []
+        if not df.empty:
+            genre_hours = stats_mod.dna_genres(df)
+            total_hours = sum(hours for _, hours in genre_hours) or 1
+            for genre, hours in genre_hours:
+                stats_values.append(
+                    {
+                        "Genre": genre,
+                        "Heures": round(hours, 1),
+                        "%": round(hours / total_hours * 100, 1),
+                    }
+                )
+        stats_df = pd.DataFrame(stats_values)
+
+        # Badges
+        achievements_values = []
+        if not df.empty:
+            result = achievements_mod.compute_achievements(df)
+            for _bid, emoji, titre, desc, _cond, _prog in result["badges"]:
+                achievements_values.append(
+                    {
+                        "Badge": f"{emoji} {titre}",
+                        "Description": desc,
+                        "Obtenu": "Oui" if _cond else "Non",
+                        "Progression %": round(_prog, 1),
+                    }
+                )
+        achievements_df = pd.DataFrame(achievements_values)
+
+        excel_bytes = excel_mod.build_excel(
+            summary_rows, history_df, watchlist_df, lists_df, stats_df, achievements_df
+        )
+        st.download_button(
+            "📥 Télécharger le rapport Excel",
+            data=excel_bytes,
+            file_name=f"media-smart-lists-rapport-{date_str}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+            key="download_backup_excel",
+        )
+    except Exception as exc:
+        st.warning(f"Impossible de générer le rapport Excel pour le moment : {exc}")
+
+    st.divider()
+
+    # ── Restauration ─────────────────────────────────────────────────────────
+    st.markdown("#### 📥 Restaurer une sauvegarde")
+    st.caption(
+        "L'import ne modifie rien sur MDBList : il recharge simplement les données "
+        "dans l'application pour éviter une nouvelle analyse."
+    )
+    uploaded = st.file_uploader("Choisis un fichier JSON", type=["json"], key="backup_restore")
+    if uploaded is not None:
+        try:
+            data = json.load(uploaded)
+        except Exception:
+            st.error("Fichier JSON invalide.")
+            data = None
+        if data:
+            saved = data.get("dataset")
+            if isinstance(saved, dict) and saved.get("sections"):
+                st.markdown(
+                    f'<div class="accent-callout"><strong>✅ SAUVEGARDE VALIDE</strong> · '
+                    f'Export du {str(data.get("export_date") or "?").replace("T", " ")[:16]}.</div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("🔄 Restaurer dans l'application", type="primary", key="restore_backup"):
+                    st.session_state["_normalized_dataset"] = saved
+                    st.session_state.pop("_source_genre_cache", None)
+                    st.rerun()
+            else:
+                st.error("Format de sauvegarde non reconnu (dataset manquant).")
+
+
 def placeholder(page: str) -> None:
     st.markdown(f'<div class="page-title">{page}</div>', unsafe_allow_html=True)
     st.markdown(
@@ -3442,6 +3747,8 @@ elif page == "🎬 Rendez-vous annuel":
     render_annual_page()
 elif page == "🏆 Succès":
     render_achievements_page()
+elif page == "📤 Sauvegarde":
+    render_backup_page()
 else:
     placeholder(page)
 

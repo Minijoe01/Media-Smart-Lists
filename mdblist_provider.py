@@ -236,25 +236,33 @@ class MDBListProvider:
     ) -> list[dict[str, Any]]:
         """Événements personnels sur une période de 120 jours maximum.
 
-        Si le paramètre `favorite_cast` est refusé (ancienne/autre version de
-        l'API), un second appel sans ce paramètre est tenté.
+        L'endpoint n'est pas documenté publiquement : plusieurs combinaisons de
+        paramètres sont tentées en cas d'échec (sans `favorite_cast`, sans
+        `append_to_response`, sans `limit`), et le message d'erreur précis est
+        exposé via l'attribut `calendar_error` pour le diagnostic.
         """
-        params: dict[str, Any] = {
-            "start": start,
-            "end": end,
-            "limit": 1000,
-            "append_to_response": "description",
-        }
+        self.calendar_error: str | None = None
+        combinaisons: list[dict[str, Any]] = []
+        base: dict[str, Any] = {"start": start, "end": end}
         if include_favorite_cast:
-            params["favorite_cast"] = "true"
-        try:
-            response = self._get("/calendar/events", params)
-        except MDBListReadError:
-            if include_favorite_cast:
-                params.pop("favorite_cast", None)
+            combinaisons.append({**base, "favorite_cast": "true", "limit": 1000, "append_to_response": "description"})
+        combinaisons.append({**base, "limit": 1000, "append_to_response": "description"})
+        combinaisons.append({**base, "limit": 1000})
+        combinaisons.append({**base, "limit": 500})
+
+        last_error: str | None = None
+        response = None
+        for params in combinaisons:
+            try:
                 response = self._get("/calendar/events", params)
-            else:
-                raise
+                self.calendar_error = None
+                break
+            except MDBListReadError as exc:
+                last_error = str(exc)
+                continue
+        if response is None:
+            self.calendar_error = last_error or "Échec de /calendar/events"
+            raise MDBListReadError(self.calendar_error)
         if isinstance(response, list):
             return [item for item in response if isinstance(item, dict)]
         if not isinstance(response, dict):

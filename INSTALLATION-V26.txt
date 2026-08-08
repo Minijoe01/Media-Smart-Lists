@@ -1,0 +1,81 @@
+================================================================
+MEDIA SMART LISTS — V26
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V26
+----------------------
+1. TABLEAU DE BORD enrichi : temps total à vie, répartition
+   séries/films, rythme en épisodes/semaine, bilan du mois, compteurs
+   à vie, et la date estimée où tu auras fini toutes tes séries en
+   cours (hors séries abandonnées). Le bloc « Aperçu des possibilités »
+   (inutile) a été supprimé.
+2. PAGE SAUVEGARDE fonctionnelle : export JSON restaurable + rapport
+   Excel multi-onglets (Résumé, Historique, Watchlist, Listes,
+   Statistiques, Badges) comme dans l'ancienne app Trakt.
+3. CALENDRIER : l'erreur du service officiel s'affiche maintenant dans
+   le panneau « Pourquoi ce calendrier… » (précieux pour diagnostiquer
+   les dates d'épisodes).
+4. LIENS : les cartes En cours / Fantôme / Calendrier proposent
+   « Où regarder » (JustWatch) + TMDB + MDBList.
+5. CONFORT : En cours de lecture aéré (toutes les infos gardées) et
+   Que regarder ? en une carte sous l'autre.
+6. DÉCONNEXION : bouton discret dans la sidebar (accessible partout,
+   sans encombrer l'écran).
+
+LES FICHIERS À ENVOYER (2 modifiés, 4 nouveaux)
+-----------------------------------------------
+À REMPLACER :
+  • app.py
+  • mdblist_provider.py
+
+À AJOUTER (nouveaux fichiers) :
+  • dashboard_engine.py
+  • excel_export.py
+  • ETAPE-26.md
+  • INSTALLATION-V26.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER :
+  • calendar_engine.py, history_engine.py  → versions en ligne (V23).
+  • stats_engine.py, achievements_engine.py → versions en ligne (V25).
+  • wrapped_engine.py → version en ligne (V24).
+  • Tous les autres fichiers restent inchangés.
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser CES 6 FICHIERS UNIQUEMENT :
+    app.py
+    mdblist_provider.py
+    dashboard_engine.py
+    excel_export.py
+    ETAPE-26.md
+    INSTALLATION-V26.txt
+GitHub vous proposera de remplacer app.py et mdblist_provider.py :
+acceptez.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    feat: enriched dashboard, excel backup, content links, readable cards
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io, votre application :
+    « Manage app » → ⋮ → « Reboot », PUIS « Clear cache ».
+
+POUR VÉRIFIER
+-------------
+• Tableau de bord (connecté) : les métriques Temps total / Temps
+  séries / Temps films / Épisodes par semaine apparaissent, puis le
+  widget « Ton rythme de visionnage » avec la date de fin projetée.
+• Page « 📤 Sauvegarde » : télécharge la sauvegarde JSON et le rapport
+  Excel (6 onglets).
+• Page « 📅 Calendrier » : ouvre « 🔍 Pourquoi ce calendrier… » — s'il
+  y a un message d'erreur du service officiel, recopie-le moi.
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+================================================================
