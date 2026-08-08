@@ -32,6 +32,8 @@ class MDBListProvider:
         }
         self.request_count = 0
         self.rate_limit_remaining: int | None = None
+        self.last_status_code: int | None = None
+        self.calendar_error: str | None = None
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
         try:
@@ -44,6 +46,7 @@ class MDBListProvider:
         except requests.RequestException as exc:
             raise MDBListReadError(f"Réseau indisponible pour {path}") from exc
         self.request_count += 1
+        self.last_status_code = response.status_code
         remaining = response.headers.get("X-RateLimit-Remaining") or response.headers.get("X-Rate-Limit-Remaining")
         if remaining and str(remaining).isdigit():
             self.rate_limit_remaining = int(remaining)
@@ -264,8 +267,16 @@ class MDBListProvider:
             self.calendar_error = last_error or "Échec de /calendar/events"
             raise MDBListReadError(self.calendar_error)
         if isinstance(response, list):
-            return [item for item in response if isinstance(item, dict)]
+            items = [item for item in response if isinstance(item, dict)]
+            if not items:
+                self.calendar_error = (
+                    f"Réponse HTTP {self.last_status_code} mais aucun événement dans la liste."
+                )
+            return items
         if not isinstance(response, dict):
+            self.calendar_error = (
+                f"Réponse HTTP {self.last_status_code} avec une structure non reconnue."
+            )
             return []
         # Tolère les réponses directes, regroupées par type, par date, ou sous `events`.
         output = []
@@ -296,6 +307,11 @@ class MDBListProvider:
                 collect(child, str(key))
 
         collect(response)
+        if not output:
+            keys = ", ".join(list(response.keys())[:8])
+            self.calendar_error = (
+                f"Réponse HTTP {self.last_status_code} sans événement reconnu (clés : {keys})."
+            )
         return output
 
     def upnext(self) -> list[dict[str, Any]]:

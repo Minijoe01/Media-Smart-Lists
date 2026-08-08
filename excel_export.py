@@ -19,9 +19,20 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 
 
 def _ajuster(ws) -> None:
-    for cell in ws[1]:
-        width = min(max(len(str(cell.value or "")) + 2, 8), 60)
-        ws.column_dimensions[get_column_letter(cell.column)].width = width
+    """Ajuste chaque colonne à la largeur maximale de son contenu
+    (en-tête compris), bornée entre 8 et 80 caractères."""
+    if ws.max_row < 1:
+        return
+    widths: dict[int, int] = {}
+    for row in ws.iter_rows():
+        for cell in row:
+            value = cell.value
+            if value is None:
+                continue
+            length = len(str(value))
+            widths[cell.column] = max(widths.get(cell.column, 0), length)
+    for column, width in widths.items():
+        ws.column_dimensions[get_column_letter(column)].width = min(max(width + 2, 8), 80)
 
 
 def _forme(ws, coul: str = "00524B") -> None:
@@ -48,19 +59,23 @@ def _forme(ws, coul: str = "00524B") -> None:
 def build_excel(
     summary_rows: list[tuple[str, Any]],
     history_df: pd.DataFrame,
-    watchlist_df: pd.DataFrame,
+    contents_df: pd.DataFrame,
     lists_df: pd.DataFrame,
     stats_df: pd.DataFrame,
     achievements_df: pd.DataFrame,
 ) -> bytes:
-    """Construit un classeur Excel multi-onglets et le retourne en octets."""
+    """Construit un classeur Excel multi-onglets et le retourne en octets.
+
+    `contents_df` liste tous les contenus de toutes les listes (Watchlist,
+    listes statiques et dynamiques) avec la colonne du conteneur.
+    """
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         pd.DataFrame(summary_rows, columns=["Statistique", "Valeur"]).to_excel(
             writer, sheet_name="Résumé", index=False
         )
         history_df.to_excel(writer, sheet_name="Historique", index=False)
-        watchlist_df.to_excel(writer, sheet_name="Watchlist", index=False)
+        contents_df.to_excel(writer, sheet_name="Mes contenus", index=False)
         lists_df.to_excel(writer, sheet_name="Listes", index=False)
         stats_df.to_excel(writer, sheet_name="Statistiques", index=False)
         achievements_df.to_excel(writer, sheet_name="Badges", index=False)

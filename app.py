@@ -26,6 +26,7 @@ import achievements_engine as achievements_mod
 import dashboard_engine as dashboard_mod
 import excel_export as excel_mod
 import stats_engine as stats_mod
+import trakt_zip_provider
 import wrapped_engine as wrapped_mod
 from calendar_engine import (
     CALENDAR_SORT_OPTIONS,
@@ -416,6 +417,25 @@ st.markdown(
         font-weight: 800;
         padding: .24rem .55rem;
     }
+    /* Liens contenus : petits badges discrets, couleur citron, info-bulle au survol. */
+    .link-pill {
+        background: rgba(0,163,146,.14);
+        border: 1px solid rgba(206,220,0,.38);
+        border-radius: 999px;
+        color: var(--am-lime) !important;
+        cursor: pointer;
+        display: inline-block;
+        font-size: .68rem;
+        font-weight: 700;
+        margin: .15rem .15rem 0 0;
+        padding: .18rem .5rem;
+        text-decoration: none !important;
+        transition: background .15s ease, border-color .15s ease;
+    }
+    .link-pill:hover {
+        background: rgba(206,220,0,.20);
+        border-color: var(--am-lime);
+    }
 
     /* Boutons historiques : verre vert, sans ombre. */
     .stButton > button,
@@ -587,6 +607,7 @@ def navigation() -> str:
         )
         # Déconnexion discrète, accessible depuis toutes les pages (sidebar).
         if mdb_oauth.is_connected():
+            st.markdown("<div style='height:1.2rem;'></div>", unsafe_allow_html=True)
             if st.button("🔌 Se déconnecter de MDBList", key="logout_sidebar", use_container_width=True):
                 mdb_oauth.disconnect(cookies)
                 st.session_state.pop("_normalized_dataset", None)
@@ -687,11 +708,13 @@ def _render_device_flow(flow: dict) -> None:
             unsafe_allow_html=True,
         )
         st.caption("Sur ce navigateur ou n’importe quel autre appareil.")
+        # Lien direct : la page s'ouvre avec le code déjà pré-rempli.
+        direct_url = complete_url or verification_uri
         st.markdown(
             f'<div class="accent-callout"><strong>SANS SMARTPHONE</strong> · '
-            f'Ouvre <a href="{safe_verification_uri}" target="_blank" rel="noopener noreferrer" '
-            f'style="color:#CEDC00;font-weight:700;">{safe_verification_uri}</a> '
-            'depuis un navigateur, puis saisis le code ci-dessous.</div>',
+            f'Ouvre le lien direct ci-dessous, le code sera déjà saisi :<br>'
+            f'<a href="{escape(direct_url, quote=True)}" target="_blank" rel="noopener noreferrer" '
+            f'style="color:#CEDC00;font-weight:700;word-break:break-all;">{escape(direct_url)}</a></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -1132,26 +1155,31 @@ def _justwatch_url(title: str) -> str:
 
 
 def _content_links_html(ids: dict, title: str, is_show: bool = False) -> str:
-    """Liens discrets vers le contenu : JustWatch (où regarder), TMDB (fiche)
-    et MDBList (fiche) quand les identifiants sont connus."""
+    """Liens discrets, uniformisés en petits badges avec info-bulle, vers :
+    JustWatch (où regarder), TMDB (fiche) et MDBList (fiche)."""
+    if not isinstance(ids, dict):
+        ids = {}
     title_text = quote(str(title or ""))
     justwatch = f"https://www.justwatch.com/fr/recherche?q={title_text}"
-    links = [f'<a href="{justwatch}" target="_blank" rel="noopener noreferrer" style="color:#CEDC00;text-decoration:none;">🔎 Où regarder</a>']
-    tmdb = ids.get("tmdb") if isinstance(ids, dict) else None
+    links = [
+        f'<a class="link-pill" href="{justwatch}" target="_blank" rel="noopener noreferrer" '
+        f'title="Où regarder sur JustWatch">🔎</a>'
+    ]
+    tmdb = ids.get("tmdb")
     if tmdb:
         base = "tv" if is_show else "movie"
         links.append(
-            f'<a href="https://www.themoviedb.org/{base}/{int(tmdb)}" target="_blank" rel="noopener noreferrer" '
-            f'style="color:#9DC5BF;text-decoration:none;">TMDB</a>'
+            f'<a class="link-pill" href="https://www.themoviedb.org/{base}/{int(tmdb)}" '
+            f'target="_blank" rel="noopener noreferrer" title="Lien vers la fiche TMDB">TMDB</a>'
         )
-    imdb = ids.get("imdb") if isinstance(ids, dict) else None
+    imdb = ids.get("imdb")
     if imdb:
         base = "show" if is_show else "m"
         links.append(
-            f'<a href="https://mdblist.com/{base}/{str(imdb)}" target="_blank" rel="noopener noreferrer" '
-            f'style="color:#9DC5BF;text-decoration:none;">MDBList</a>'
+            f'<a class="link-pill" href="https://mdblist.com/{base}/{str(imdb)}" '
+            f'target="_blank" rel="noopener noreferrer" title="Lien vers la fiche MDBList">MDBL</a>'
         )
-    return f'<small style="margin-top:.3rem;">{" · ".join(links)}</small>'
+    return f'<div style="margin-top:.35rem;">{" ".join(links)}</div>'
 
 
 def _signal_pill(signal: dict) -> str:
@@ -2527,6 +2555,14 @@ def _refresh_calendar(horizon_days: int, include_favorite_cast: bool) -> tuple[b
         events = []
         mode = "local"
         calendar_error = str(getattr(provider, "calendar_error", None) or exc)
+    # Pas d'exception mais zéro événement : le service a répondu autre chose.
+    if not events and calendar_error is None:
+        calendar_error = getattr(provider, "calendar_error", None)
+    if not events and calendar_error is None:
+        calendar_error = (
+            "Le service calendrier MDBList a répondu mais n'a renvoyé aucun événement "
+            "sur cet horizon (réponse vide ou hors plage)."
+        )
 
     dataset = _dataset()
     # Les dates déjà chargées (Up Next et listes) alimentent un calendrier de
@@ -2681,10 +2717,11 @@ def render_calendar_page() -> None:
         extra.append(f"{counts['enriched']} date(s) à venir complétée(s)")
     extra_text = (" · " + " · ".join(extra)) if extra else ""
     if cache.get("mode") == "local":
+        erreur_texte = f" — {cache['calendar_error']}" if cache.get("calendar_error") else ""
         st.caption(
             f"Calendrier de secours construit le {checked} depuis les dates déjà disponibles "
             f"(Up Next et vos listes) sur tout l'horizon choisi{extra_text}. "
-            "Le service calendrier MDBList n'a pas répondu, mais les filtres et exports restent utilisables."
+            f"Le service calendrier MDBList n'a pas répondu{erreur_texte}, mais les filtres et exports restent utilisables."
         )
     else:
         st.caption(
@@ -3249,11 +3286,44 @@ def page_dashboard() -> None:
         st.markdown('<div class="page-title">🔐 Connexion MDBList</div>', unsafe_allow_html=True)
         render_mdblist_connector()
     elif st.session_state.get("pending_source") == "trakt_zip":
-        st.markdown(
-            '<div class="accent-callout"><strong>✓ ZIP TRAKT SÉLECTIONNÉ</strong> · '
-            'Le parseur sécurisé sera ajouté à l’étape suivante.</div>',
-            unsafe_allow_html=True,
+        st.divider()
+        st.markdown('<div class="page-title">📦 Import ZIP Trakt</div>', unsafe_allow_html=True)
+        st.caption(
+            "Dépose ton export ZIP Trakt (Settings → Your data → Export). "
+            "Lecture seule, aucune écriture, aucun appel API. Les protections ZIP sont actives."
         )
+        zip_file = st.file_uploader(
+            "Choisis le fichier ZIP Trakt",
+            type=["zip"],
+            key="trakt_zip_uploader",
+        )
+        if zip_file is not None:
+            st.caption(f"Fichier : **{zip_file.name}** · {zip_file.size // 1024} Ko")
+            if st.button("📥 Importer et charger mes données", type="primary", key="import_trakt_zip"):
+                with st.spinner("Analyse sécurisée du ZIP Trakt…"):
+                    try:
+                        raw_bytes = zip_file.getvalue()
+                        data = trakt_zip_provider.load_trakt_zip(raw_bytes)
+                    except trakt_zip_provider.TraktZipError as exc:
+                        st.error(f"Import impossible : {exc}")
+                        data = None
+                    except Exception as exc:
+                        st.error(f"Erreur inattendue pendant l'analyse : {exc}")
+                        data = None
+                if data:
+                    st.session_state["_normalized_dataset"] = data
+                    st.session_state.pop("_source_genre_cache", None)
+                    st.session_state.pop("pending_source", None)
+                    counts = trakt_zip_provider.summarize(data)
+                    st.markdown(
+                        f'<div class="accent-callout"><strong>✓ ZIP TRAKT IMPORTÉ</strong> · '
+                        f'{counts["films_vus"]} film(s) vu(s) · {counts["episodes_vus"]} épisode(s) vu(s) · '
+                        f'{counts["series_vues"]} série(s) · {counts["notes"]} note(s) · '
+                        f'{counts["watchlist"]} contenu(s) en watchlist · {counts["listes"]} liste(s). '
+                        f'Statistiques, calendrier, Succès, Wrapped et Sauvegarde sont disponibles.</div>',
+                        unsafe_allow_html=True,
+                    )
+                    st.rerun()
 
     if mdb_oauth.is_connected():
         st.divider()
@@ -3555,7 +3625,7 @@ def render_backup_page() -> None:
     # ── Export Excel multi-onglets ───────────────────────────────────────────
     st.markdown("#### 📊 Rapport Excel (tous les onglets)")
     st.caption(
-        "Un classeur avec un onglet par analyse : Résumé, Historique, Watchlist, "
+        "Un classeur avec un onglet par analyse : Résumé, Historique, Mes contenus (Watchlist + listes), "
         "Listes, Statistiques et Badges."
     )
     try:
@@ -3598,15 +3668,34 @@ def render_backup_page() -> None:
             )
         history_df = pd.DataFrame(history_values)
 
-        # Watchlist
-        watchlist_values = []
-        sections = dataset.get("sections") or {}
-        watchlist = sections.get("watchlist") or {}
-        for movie in watchlist.get("movies") or []:
-            watchlist_values.append({"Type": "Film", "Titre": movie.get("title") or "?", "Année": movie.get("release_year") or movie.get("year") or "—"})
-        for show in watchlist.get("shows") or []:
-            watchlist_values.append({"Type": "Série", "Titre": show.get("title") or "?", "Année": show.get("release_year") or show.get("year") or "—"})
-        watchlist_df = pd.DataFrame(watchlist_values)
+        # Mes contenus dans mes listes : tous les contenus de la Watchlist et
+        # de chaque liste (statique, dynamique, IA, flux), avec leur conteneur.
+        contents_values = []
+        for source in dataset.get("sources") or []:
+            if not isinstance(source, dict) or source.get("kind") == "aggregate":
+                continue
+            container = str(source.get("name") or source.get("label") or "?")
+            if source.get("kind") == "watchlist" or container == "Watchlist MDBList":
+                container = "Watchlist"
+            for movie in source.get("movies") or []:
+                contents_values.append(
+                    {
+                        "Liste": container,
+                        "Type": "Film",
+                        "Titre": movie.get("title") or movie.get("name") or "?",
+                        "Année": movie.get("release_year") or movie.get("year") or "—",
+                    }
+                )
+            for show in source.get("shows") or []:
+                contents_values.append(
+                    {
+                        "Liste": container,
+                        "Type": "Série",
+                        "Titre": show.get("title") or show.get("name") or "?",
+                        "Année": show.get("release_year") or show.get("year") or "—",
+                    }
+                )
+        contents_df = pd.DataFrame(contents_values)
 
         # Listes
         lists_values = []
@@ -3656,7 +3745,7 @@ def render_backup_page() -> None:
         achievements_df = pd.DataFrame(achievements_values)
 
         excel_bytes = excel_mod.build_excel(
-            summary_rows, history_df, watchlist_df, lists_df, stats_df, achievements_df
+            summary_rows, history_df, contents_df, lists_df, stats_df, achievements_df
         )
         st.download_button(
             "📥 Télécharger le rapport Excel",

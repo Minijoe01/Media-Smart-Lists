@@ -1,0 +1,80 @@
+================================================================
+MEDIA SMART LISTS — V27
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V27
+----------------------
+1. IMPORT ZIP TRAKT FONCTIONNEL : depuis le Tableau de bord →
+   « Importer un ZIP Trakt », dépose ton export Trakt (Settings →
+   Your data → Export). Lecture seule, sécurisé, toutes les pages
+   (Stats, Wrapped, Succès, Calendrier, Sauvegarde) fonctionnent
+   ensuite avec tes données Trakt — rewatches inclus.
+2. EXCEL : largeurs de colonnes automatiques + onglet « Mes
+   contenus » (Watchlist + toutes tes listes, avec colonne Liste).
+3. LIENS : les 3 liens (JustWatch / TMDB / MDBList) sont maintenant de
+   petits badges citron uniformes avec info-bulle.
+4. CONNEXION : lien direct avec code pré-rempli pour « sans
+   smartphone ».
+5. CALENDRIER : le message explique désormais pourquoi le service
+   officiel n'a pas répondu (erreur HTTP, réponse vide, structure…).
+6. DÉCONNEXION : espace ajouté dans la sidebar.
+
+LES FICHIERS À ENVOYER (3 modifiés, 2 nouveaux)
+-----------------------------------------------
+À REMPLACER :
+  • app.py
+  • mdblist_provider.py
+  • excel_export.py
+
+À AJOUTER (nouveaux fichiers) :
+  • trakt_zip_provider.py
+  • ETAPE-27.md
+  • INSTALLATION-V27.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER :
+  • calendar_engine.py, history_engine.py → versions en ligne.
+  • stats_engine.py, achievements_engine.py → versions en ligne.
+  • wrapped_engine.py, dashboard_engine.py → versions en ligne.
+  • Tous les autres fichiers restent inchangés.
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser CES 6 FICHIERS UNIQUEMENT :
+    app.py
+    mdblist_provider.py
+    excel_export.py
+    trakt_zip_provider.py
+    ETAPE-27.md
+    INSTALLATION-V27.txt
+GitHub vous proposera de remplacer les fichiers déjà existants :
+acceptez.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    feat: Trakt ZIP import, refined excel export, uniform content links
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io, votre application :
+    « Manage app » → ⋮ → « Reboot », PUIS « Clear cache ».
+
+POUR TESTER L'IMPORT ZIP TRAKT
+------------------------------
+1. Sur https://trakt.tv → Settings → Your Data → Export, télécharge
+   ton export ZIP.
+2. Dans l'application : Tableau de bord → « 📦 Importer un ZIP Trakt ».
+3. Dépose le ZIP → « 📥 Importer et charger mes données ».
+4. Un récapitulatif s'affiche, puis toutes les pages utilisent tes
+   données Trakt (Statistiques, Rendez-vous annuel, Succès,
+   Calendrier, Sauvegarde).
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+• L'import ZIP est en lecture seule : rien n'est modifié sur Trakt ni
+  sur MDBList.
+================================================================
