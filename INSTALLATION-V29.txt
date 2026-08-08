@@ -1,0 +1,73 @@
+================================================================
+MEDIA SMART LISTS — V29
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V29
+----------------------
+1. DURÉES CORRIGÉES : plus de « 22 ans de visionnage » pour les
+   émissions (la durée cumulée d'une série était prise pour la durée
+   d'un épisode). Ex. « L'amour est dans le pré » : ~22 jours au lieu
+   de 22 ans.
+2. IMPORT ZIP RÉPARÉ QUAND CONNECTÉ : l'encart ZIP ne disparaît plus
+   quand on est déjà connecté à MDBList.
+3. ENRICHISSEMENT AUTOMATIQUE : si tu es connecté à MDBList, l'import
+   ZIP enrichit automatiquement (genres, posters, durées, notes) —
+   quelques appels groupés seulement, lecture seule. Les posters
+   apparaissent aussi dans En cours et Fantôme.
+4. LOGIGRAMME SIMPLIFIÉ : une seule source à la fois sur le dashboard.
+5. SESSION EXPIRÉE : message clair + déconnexion propre au lieu d'un
+   « CHARGEMENT PARTIEL » silencieux. Avertissement de remplacement si
+   tu charges MDBList par-dessus un ZIP.
+
+LES FICHIERS À ENVOYER (2 modifiés, 2 nouveaux)
+-----------------------------------------------
+À REMPLACER :
+  • app.py
+  • normalized_model.py
+
+À AJOUTER (nouveaux fichiers) :
+  • ETAPE-29.md
+  • INSTALLATION-V29.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER : tous les autres fichiers (déjà à jour en ligne).
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser CES 4 FICHIERS UNIQUEMENT :
+    app.py
+    normalized_model.py
+    ETAPE-29.md
+    INSTALLATION-V29.txt
+GitHub vous proposera de remplacer app.py et normalized_model.py :
+acceptez.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    fix: sane episode runtimes, auto-enrich ZIP import, simpler dashboard flow
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io, votre application :
+    « Manage app » → ⋮ → « Reboot », PUIS « Clear cache ».
+
+POUR VÉRIFIER
+-------------
+1. « ▶️ En cours de lecture » : les durées sont maintenant réalistes
+   (plus de « 22 ans »).
+2. Connecté MDBList → « Importer un ZIP Trakt » : l'encart reste
+   visible, tu importes, l'enrichissement se fait automatiquement
+   (message « ✓ ZIP TRAKT IMPORTÉ … X fiche(s) »).
+3. « En cours » et « Fantôme » : les posters apparaissent après
+   l'import enrichi.
+4. Si ta session MDBList expire : message clair « Reconnecte-toi »
+   au lieu de « CHARGEMENT PARTIEL ».
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+• L'enrichissement MDBList est en lecture seule (rien n'est écrit).
+================================================================

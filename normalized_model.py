@@ -186,6 +186,39 @@ def _last_air_date(item: dict[str, Any]) -> str | None:
     return None
 
 
+def _episode_runtime_local(episode: dict[str, Any], show: dict[str, Any], total: int = 0) -> int:
+    """Durée réaliste d'un épisode (1 à 300 min).
+
+    Si la valeur dépasse 300 min, elle est probablement cumulée (toute la
+    série) ou en secondes : on la divise par le nombre d'épisodes connu, ou
+    par 60 (conversion secondes → minutes), sinon on retombe sur 45.
+    """
+    raw = None
+    try:
+        if episode.get("runtime"):
+            raw = int(round(float(episode["runtime"])))
+    except (TypeError, ValueError):
+        raw = None
+    if raw is None:
+        try:
+            if show.get("runtime"):
+                raw = int(round(float(show["runtime"])))
+        except (TypeError, ValueError):
+            raw = None
+    if raw is None:
+        return 45
+    if 1 <= raw <= 300:
+        return raw
+    if total and total > 0:
+        average = int(round(raw / total))
+        if 1 <= average <= 300:
+            return average
+    seconds = int(round(raw / 60))
+    if 1 <= seconds <= 300:
+        return seconds
+    return 45
+
+
 def build_progress(sections: dict[str, Any]) -> list[dict[str, Any]]:
     """Normalise Up Next et réutilise localement les métadonnées déjà chargées.
 
@@ -236,10 +269,10 @@ def build_progress(sections: dict[str, Any]) -> list[dict[str, Any]]:
         except (TypeError, ValueError):
             watched, total = 0, 0
         remaining = max(total - watched, 0)
-        try:
-            runtime = int(episode.get("runtime") or show.get("runtime") or 45)
-        except (TypeError, ValueError):
-            runtime = 45
+        # Durée réelle d'un épisode : le `runtime` d'une série peut être la
+        # durée CUMULÉE (ex. émissions quotidiennes) — on normalise comme dans
+        # history_engine pour éviter des « 22 ans de visionnage » aberrants.
+        runtime = _episode_runtime_local(episode, show, total)
         percent = round(watched / total * 100, 1) if total else 0.0
 
         exact_last_air = _last_air_date(item) or _last_air_date(show) or _last_air_date(progress)

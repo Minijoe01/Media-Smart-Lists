@@ -861,6 +861,19 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
             push(movie)
         for show in item.get("shows") or []:
             push(show)
+    # Séries en cours et reprises en pause : leurs médias doivent aussi être enrichis.
+    for row in sections.get("upnext") or []:
+        if isinstance(row, dict):
+            push(row.get("show"))
+    for row in sections.get("playback") or []:
+        if not isinstance(row, dict):
+            continue
+        push(row.get("movie"))
+        push(row.get("show"))
+        episode_obj = row.get("episode")
+        if isinstance(episode_obj, dict):
+            push(episode_obj.get("show"))
+            push(episode_obj)
 
     if not tmdb_ids:
         return False, "Aucun identifiant TMDb trouvé dans le ZIP pour l'enrichissement."
@@ -908,13 +921,33 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
         if meta.get("score") is not None and media.get("score") is None:
             media["score"] = meta["score"]
 
+    def apply_row_media(row: Any, key: str, nested_show: str | None = None) -> None:
+        """Applique les métadonnées au média d'une ligne, en suivant le show
+        imbriqué le cas échéant (ex. episode.show, upnext.show)."""
+        if not isinstance(row, dict):
+            return
+        media = row.get(key) if isinstance(row.get(key), dict) else row
+        if nested_show and isinstance(media, dict):
+            child = media.get(nested_show)
+            if isinstance(child, dict):
+                apply(child)
+        apply(media)
+
     for row in watched.get("movies") or []:
-        apply(row.get("movie") if isinstance(row.get("movie"), dict) else row)
+        apply_row_media(row, "movie")
     for row in watched.get("shows") or []:
-        apply(row.get("show") if isinstance(row.get("show"), dict) else row)
+        apply_row_media(row, "show")
     for row in watched.get("episodes") or []:
-        if isinstance(row.get("episode"), dict):
-            apply(row["episode"].get("show") if isinstance(row["episode"].get("show"), dict) else row)
+        apply_row_media(row, "episode", nested_show="show")
+        # Le show parent de l'épisode est aussi enrichi.
+        if isinstance(row.get("episode"), dict) and isinstance(row["episode"].get("show"), dict):
+            apply(row["episode"]["show"])
+    for row in sections.get("upnext") or []:
+        apply_row_media(row, "show")
+    for row in sections.get("playback") or []:
+        apply_row_media(row, "movie")
+        apply_row_media(row, "episode", nested_show="show")
+        apply_row_media(row, "show")
     for movie in watchlist.get("movies") or []:
         apply(movie)
     for show in watchlist.get("shows") or []:
@@ -1190,6 +1223,26 @@ def load_mdblist_dataset() -> None:
             unsafe_allow_html=True,
         )
         return
+    # Session révoquée/expirée : toutes les sections échouent. On déconnecte
+    # proprement au lieu d'afficher un « CHARGEMENT PARTIEL » silencieux.
+    errors = data.get("errors") or []
+    session_expired = any(
+        "expirée" in str(error.get("error") or "").lower()
+        or "révoquée" in str(error.get("error") or "").lower()
+        or "401" in str(error.get("error") or "")
+        for error in errors
+        if isinstance(error, dict)
+    )
+    if session_expired:
+        mdb_oauth.disconnect(cookies)
+        st.session_state.pop("_normalized_dataset", None)
+        st.markdown(
+            '<div class="accent-callout"><strong>SESSION EXPIRÉE</strong> · '
+            'La connexion MDBList n’est plus valide et a été déconnectée. '
+            'Reconnecte-toi depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
     st.session_state["_normalized_dataset"] = data
     account = mdb_oauth.account_summary()
     if data.get("rate_limit_remaining") is not None and account:
@@ -1202,12 +1255,20 @@ def render_data_loader() -> None:
     if not mdb_oauth.is_connected():
         return
     data = _dataset()
-    label = "Actualiser mes données MDBList" if data else "Charger mes données MDBList"
+    # Si des données d'une autre source sont chargées, prévenir du remplacement.
+    if data and str(data.get("source") or "") != "mdblist":
+        st.markdown(
+            '<div class="accent-callout"><strong>⚠️ REMPLACEMENT</strong> · '
+            'Charger les données MDBList remplacera les données Trakt (import ZIP) '
+            'actuellement affichées.</div>',
+            unsafe_allow_html=True,
+        )
+    label = "Actualiser mes données MDBList" if data and str(data.get("source") or "") == "mdblist" else "Charger mes données MDBList"
     if st.button(label, type="primary", key="load_mdblist_dataset"):
         with st.spinner("Chargement MDBList en lecture seule…"):
             load_mdblist_dataset()
         st.rerun()
-    if data:
+    if data and str(data.get("source") or "") == "mdblist":
         errors = data.get("errors") or []
         request_count = data.get("request_count", 0)
         loaded_at = str(data.get("loaded_at") or "").replace("T", " ").replace("Z", " UTC")
@@ -3450,16 +3511,19 @@ def page_dashboard() -> None:
         if st.button("Préparer l'import ZIP Trakt", type="primary", key="choose_zip"):
             st.session_state["pending_source"] = "trakt_zip"
 
-    if st.session_state.get("pending_source") == "mdblist":
+    # Une seule source à la fois : pas de mélange des blocs.
+    pending = st.session_state.get("pending_source")
+    if pending == "mdblist":
         st.divider()
         st.markdown('<div class="page-title">🔐 Connexion MDBList</div>', unsafe_allow_html=True)
         render_mdblist_connector()
-    elif st.session_state.get("pending_source") == "trakt_zip":
+        return
+    if pending == "trakt_zip":
         st.divider()
         st.markdown('<div class="page-title">📦 Import ZIP Trakt</div>', unsafe_allow_html=True)
         st.caption(
             "Dépose ton export ZIP Trakt (Settings → Your data → Export). "
-            "Lecture seule, aucune écriture, aucun appel API. Les protections ZIP sont actives."
+            "Lecture seule, aucune écriture sur aucun compte. Les protections ZIP sont actives."
         )
         zip_file = st.file_uploader(
             "Choisis le fichier ZIP Trakt",
@@ -3482,17 +3546,27 @@ def page_dashboard() -> None:
                 if data:
                     st.session_state["_normalized_dataset"] = data
                     st.session_state.pop("_source_genre_cache", None)
-                    st.session_state.pop("pending_source", None)
+                    st.session_state.pop("_mdblist_playback_poster_cache", None)
                     counts = trakt_zip_provider.summarize(data)
+                    enrich_msg = ""
+                    # Enrichissement AUTOMATIQUE si déjà connecté MDBList
+                    # (lecture seule, quelques appels groupés seulement).
+                    if mdb_oauth.is_connected():
+                        with st.spinner("Enrichissement automatique avec MDBList…"):
+                            ok_enrich, enrich_msg = _enrich_zip_dataset()
+                        if not ok_enrich:
+                            enrich_msg = f" (enrichissement : {enrich_msg})"
                     st.markdown(
                         f'<div class="accent-callout"><strong>✓ ZIP TRAKT IMPORTÉ</strong> · '
                         f'{counts["films_vus"]} film(s) vu(s) · {counts["episodes_vus"]} épisode(s) vu(s) · '
                         f'{counts["series_vues"]} série(s) · {counts["notes"]} note(s) · '
-                        f'{counts["watchlist"]} contenu(s) en watchlist · {counts["listes"]} liste(s). '
-                        f'Statistiques, calendrier, Succès, Wrapped et Sauvegarde sont disponibles.</div>',
+                        f'{counts["watchlist"]} contenu(s) en watchlist · {counts["listes"]} liste(s).'
+                        f'{enrich_msg}</div>',
                         unsafe_allow_html=True,
                     )
+                    st.session_state.pop("pending_source", None)
                     st.rerun()
+        return
 
     loaded = _dataset()
     source = str(loaded.get("source") or "mdblist") if isinstance(loaded, dict) else "mdblist"
@@ -3500,16 +3574,16 @@ def page_dashboard() -> None:
         st.divider()
         st.markdown('<div class="page-title">📥 Données Trakt (import ZIP)</div>', unsafe_allow_html=True)
         st.caption(
-            "Lecture seule · aucun appel API nécessaire. "
-            "Toutes les pages utilisent ces données."
+            "Lecture seule · aucune écriture. Toutes les pages utilisent ces données."
         )
         render_dataset_overview()
         if mdb_oauth.is_connected():
+            st.caption("Connecté à MDBList (lecture seule) : tu peux enrichir ces données avec les métadonnées MDBList.")
             if st.button(
                 "✨ Enrichir avec MDBList (genres, posters, durées, notes)",
                 type="primary",
                 key="enrich_zip",
-                help="Un appel groupé par lot de 200. Aucune écriture sur vos comptes.",
+                help="Quelques appels groupés (200 identifiants max par appel). Aucune écriture.",
             ):
                 with st.spinner("Fusion des métadonnées MDBList…"):
                     ok, message = _enrich_zip_dataset()
@@ -3518,11 +3592,12 @@ def page_dashboard() -> None:
                     st.rerun()
         else:
             st.caption(
-                "Connecte MDBList (lecture seule) pour enrichir ces données : "
+                "Connecte MDBList (lecture seule) puis clique « Enrichir » : "
                 "genres, posters, durées et notes apparaîtront."
             )
         render_dashboard_widgets()
-    elif mdb_oauth.is_connected():
+        return
+    if mdb_oauth.is_connected():
         st.divider()
         st.markdown('<div class="page-title">📥 Données MDBList</div>', unsafe_allow_html=True)
         render_data_loader()
@@ -4014,7 +4089,10 @@ def placeholder(page: str) -> None:
 
 restored, _restore_message = mdb_oauth.ensure_valid_session(cookies)
 if restored:
-    st.session_state["pending_source"] = "mdblist"
+    # N'écrase un choix explicite de source (ex. « Importer un ZIP Trakt »)
+    # que si l'utilisateur n'a rien choisi dans cette session.
+    if not st.session_state.get("pending_source"):
+        st.session_state["pending_source"] = "mdblist"
     if not mdb_oauth.account_summary():
         mdb_oauth.load_account_summary(cookies)
 
