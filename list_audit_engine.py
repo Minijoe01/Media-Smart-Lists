@@ -337,12 +337,17 @@ def audit_source(
             issue_labels = []
             if is_watched:
                 issue_keys.append("watched")
-                if added_after_watch:
-                    issue_keys.append("watched_torewatch")
-                    issue_labels.append("Vu · à revoir")
+                # La distinction « à retirer / à revoir » n'a de sens que si les
+                # deux dates (ajout et visionnage) sont connues.
+                if added_at is not None and last_watched_at is not None:
+                    if added_after_watch:
+                        issue_keys.append("watched_torewatch")
+                        issue_labels.append("Vu · à revoir")
+                    else:
+                        issue_keys.append("watched_toremove")
+                        issue_labels.append("Vu · à retirer")
                 else:
-                    issue_keys.append("watched_toremove")
-                    issue_labels.append("Vu · à retirer")
+                    issue_labels.append("Déjà vu")
             if is_duplicate:
                 issue_keys.append("duplicate")
                 issue_labels.append(f"{len(containers)} conteneurs")

@@ -76,13 +76,20 @@ def _media_key(ids: dict[str, Any], media: str) -> str:
 
 
 def _mdb_item(ids: dict[str, Any], title: Any, year: Any, media: str, listed_at: Any = None) -> dict[str, Any]:
-    """Item au format des listes MDBList (id à plat = id TMDB, ids, imdb_id)."""
+    """Item au format des listes MDBList (id à plat = id TMDB, ids, imdb_id).
+
+    L'`id` à plat n'est renseigné QUE si l'identifiant TMDb est connu : chez
+    MDBList, `id` == `id TMDB`, donc mettre un id Trakt à la place fausserait
+    l'enrichissement (un autre film recevrait son poster).
+    """
     item: dict[str, Any] = {"ids": dict(ids or {}), "title": str(title or "?"), "year": year}
     tmdb = ids.get("tmdb") if isinstance(ids, dict) else None
-    item["id"] = tmdb if tmdb is not None else (ids.get("trakt") or 0)
+    if tmdb is not None:
+        item["id"] = tmdb
     item["imdb_id"] = ids.get("imdb") or ""
     item["mediatype"] = "movie" if media == "movie" else "show"
     item["release_year"] = year
+    item["_from_trakt_zip"] = True
     if listed_at:
         item["listed_at"] = listed_at
     return item

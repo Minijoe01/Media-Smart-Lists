@@ -437,12 +437,17 @@ st.markdown(
         border-color: var(--am-lime);
     }
 
-    /* Boutons historiques : verre vert, sans ombre. */
+    /* Boutons historiques : verre vert, sans ombre.
+       Couvre toutes les structures de boutons de Streamlit 1.60. */
     .stButton > button,
     div[data-testid="stButton"] > button,
+    div[data-testid="stBaseButton-secondary"] > button,
+    div[data-testid="stBaseButton-primary"] > button,
     div[data-testid="stDownloadButton"] button,
     div[data-testid="stDownloadButton"] a,
-    div[data-testid="stFormSubmitButton"] > button {
+    div[data-testid="stFormSubmitButton"] > button,
+    button[data-testid="baseButton-secondary"],
+    button[data-testid="baseButton-primary"] {
         background: rgba(5, 38, 34, 0.75) !important;
         border: 1px solid rgba(0,163,146,0.30) !important;
         border-radius: 16px !important;
@@ -456,17 +461,23 @@ st.markdown(
     }
     .stButton > button:hover,
     div[data-testid="stButton"] > button:hover,
+    div[data-testid="stBaseButton-secondary"] > button:hover,
+    div[data-testid="stBaseButton-primary"] > button:hover,
     div[data-testid="stDownloadButton"] button:hover,
     div[data-testid="stDownloadButton"] a:hover,
-    div[data-testid="stFormSubmitButton"] > button:hover {
+    div[data-testid="stFormSubmitButton"] > button:hover,
+    button[data-testid="baseButton-secondary"]:hover,
+    button[data-testid="baseButton-primary"]:hover {
         background: rgba(8, 55, 50, 0.85) !important;
         border-color: rgba(0,163,146,0.50) !important;
         box-shadow: none !important;
     }
     .stButton > button[kind="primary"],
     div[data-testid="stButton"] > button[kind="primary"],
+    div[data-testid="stBaseButton-primary"] > button,
     div[data-testid="stDownloadButton"] button[kind="primary"],
-    div[data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"] {
+    div[data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"],
+    button[data-testid="baseButton-primary"] {
         background: linear-gradient(135deg, var(--am-green), var(--am-green-aston)) !important;
         border: none !important;
         color: #fff !important;
@@ -474,8 +485,10 @@ st.markdown(
     }
     .stButton > button[kind="primary"]:hover,
     div[data-testid="stButton"] > button[kind="primary"]:hover,
+    div[data-testid="stBaseButton-primary"] > button:hover,
     div[data-testid="stDownloadButton"] button[kind="primary"]:hover,
-    div[data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"]:hover {
+    div[data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"]:hover,
+    button[data-testid="baseButton-primary"]:hover {
         background: linear-gradient(135deg, #00B8A5, #006058) !important;
     }
 
@@ -824,9 +837,11 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
         return False, message or "Connecte MDBList pour enrichir (lecture seule)."
     sections = dataset.get("sections") or {}
 
-    # Collecte des identifiants TMDb (films et séries).
+    # Collecte des identifiants TMDb et IMDb (films et séries).
     tmdb_ids: list[int] = []
-    seen: set[int] = set()
+    imdb_ids: list[str] = []
+    seen_tmdb: set[int] = set()
+    seen_imdb: set[str] = set()
 
     def push(media: Any) -> None:
         if not isinstance(media, dict):
@@ -836,10 +851,14 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
         try:
             media_id = int(raw)
         except (TypeError, ValueError):
-            return
-        if media_id > 0 and media_id not in seen:
-            seen.add(media_id)
+            media_id = None
+        if media_id and media_id > 0 and media_id not in seen_tmdb:
+            seen_tmdb.add(media_id)
             tmdb_ids.append(media_id)
+        imdb = str(ids.get("imdb") or "").strip()
+        if imdb and imdb not in seen_imdb:
+            seen_imdb.add(imdb)
+            imdb_ids.append(imdb)
 
     watched = sections.get("watched") or {}
     for row in watched.get("movies") or []:
@@ -875,8 +894,8 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
             push(episode_obj.get("show"))
             push(episode_obj)
 
-    if not tmdb_ids:
-        return False, "Aucun identifiant TMDb trouvé dans le ZIP pour l'enrichissement."
+    if not tmdb_ids and not imdb_ids:
+        return False, "Aucun identifiant TMDb ou IMDb trouvé dans le ZIP pour l'enrichissement."
 
     # Enrichir TOUS les contenus : les appels groupés acceptent 200 ids max.
     # Le nombre d'appels reste raisonnable (1 appel par tranche de 200).
@@ -886,14 +905,16 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
         return False, f"MDBList n'a pas pu être interrogé : {exc}"
 
     metadata: list[dict[str, Any]] = []
-    for index in range(0, len(tmdb_ids), 200):
-        chunk = tmdb_ids[index:index + 200]
+    for index in range(0, max(len(tmdb_ids), len(imdb_ids), 1), 200):
+        tchunk = tmdb_ids[index:index + 200]
+        ichunk = imdb_ids[index:index + 200]
         try:
-            metadata.extend(provider.media_info_batch(tmdb_ids=chunk))
+            metadata.extend(provider.media_info_batch(tmdb_ids=tchunk or None, imdb_ids=ichunk or None))
         except Exception as exc:
             return False, f"MDBList a interrompu l'enrichissement (lot {index // 200 + 1}) : {exc}"
 
     by_tmdb: dict[int, dict[str, Any]] = {}
+    by_imdb: dict[str, dict[str, Any]] = {}
     for item in metadata:
         if not isinstance(item, dict):
             continue
@@ -902,19 +923,27 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
         try:
             media_id = int(raw)
         except (TypeError, ValueError):
-            continue
-        if media_id > 0:
+            media_id = None
+        if media_id and media_id > 0:
             by_tmdb[media_id] = item
+        raw_imdb = ids.get("imdb")
+        if raw_imdb:
+            by_imdb[str(raw_imdb).strip()] = item
 
     def apply(media: Any) -> None:
         if not isinstance(media, dict):
             return
         ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        meta = None
         try:
             media_id = int(ids.get("tmdb"))
         except (TypeError, ValueError):
-            return
-        meta = by_tmdb.get(media_id)
+            media_id = None
+        if media_id:
+            meta = by_tmdb.get(media_id)
+        if meta is None:
+            imdb = str(ids.get("imdb") or "").strip()
+            meta = by_imdb.get(imdb)
         if not meta:
             return
         if not media.get("genres") and meta.get("genres"):
@@ -1286,12 +1315,13 @@ def render_data_loader() -> None:
     if not mdb_oauth.is_connected():
         return
     data = _dataset()
-    # Si des données d'une autre source sont chargées, prévenir du remplacement.
-    if data and str(data.get("source") or "") != "mdblist":
+    # Si les données ZIP Trakt sont actuellement affichées, prévenir du remplacement.
+    if data and str(data.get("source") or "") == "trakt_zip":
         st.markdown(
             '<div class="accent-callout"><strong>⚠️ REMPLACEMENT</strong> · '
             'Charger les données MDBList remplacera les données Trakt (import ZIP) '
-            'actuellement affichées.</div>',
+            'actuellement affichées. Utilise « 🚪 Quitter les données ZIP Trakt » '
+            'pour les retirer d’abord.</div>',
             unsafe_allow_html=True,
         )
     is_mdblist_data = bool(data and str(data.get("source") or "") == "mdblist")
@@ -3571,11 +3601,13 @@ def page_dashboard() -> None:
         if mdb_oauth.is_connected():
             account = mdb_oauth.account_summary() or {}
             st.caption(f"✓ Connecté : **{account.get('username') or 'Compte MDBList'}**")
-            if st.button("🔐 Gérer la connexion MDBList", key="choose_mdblist"):
+            if st.button("🔐 Gérer la connexion MDBList", key="manage_mdblist", use_container_width=True):
                 st.session_state["pending_source"] = "mdblist"
+                st.rerun()
         else:
-            if st.button("Préparer la connexion MDBList", type="primary", key="choose_mdblist"):
+            if st.button("Préparer la connexion MDBList", type="primary", key="choose_mdblist", use_container_width=True):
                 st.session_state["pending_source"] = "mdblist"
+                st.rerun()
     with zip_col:
         st.markdown(
             """
@@ -3587,8 +3619,9 @@ def page_dashboard() -> None:
             """,
             unsafe_allow_html=True,
         )
-        if st.button("Préparer l'import ZIP Trakt", type="primary", key="choose_zip"):
+        if st.button("Préparer l'import ZIP Trakt", type="primary", key="choose_zip", use_container_width=True):
             st.session_state["pending_source"] = "trakt_zip"
+            st.rerun()
 
     # ── 3. Actions en attente (connexion ou import) ─────────────────────────
     pending = st.session_state.get("pending_source")
@@ -3646,6 +3679,13 @@ def page_dashboard() -> None:
         st.divider()
         st.markdown('<div class="page-title">📥 Vos données Trakt (import ZIP)</div>', unsafe_allow_html=True)
         st.caption("Lecture seule · aucune écriture. Toutes les pages utilisent ces données.")
+        # Permet de quitter les données ZIP pour revenir au choix de source
+        # (et basculer sur MDBList).
+        if st.button("🚪 Quitter les données ZIP Trakt", key="leave_zip_data", use_container_width=True):
+            st.session_state.pop("_normalized_dataset", None)
+            st.session_state.pop("_source_genre_cache", None)
+            st.session_state.pop("_mdblist_playback_poster_cache", None)
+            st.rerun()
         if mdb_oauth.is_connected():
             st.caption("Connecté à MDBList (lecture seule) : enrichis ces données avec les métadonnées MDBList.")
             if st.button(
