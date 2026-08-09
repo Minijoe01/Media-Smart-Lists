@@ -623,6 +623,10 @@ def navigation() -> str:
             st.markdown("<div style='height:1.2rem;'></div>", unsafe_allow_html=True)
             if st.button("🔌 Se déconnecter de MDBList", key="logout_sidebar", use_container_width=True):
                 mdb_oauth.disconnect(cookies)
+                try:
+                    cookies.remove("msl_mdblist_data_loaded")
+                except Exception:
+                    pass
                 st.session_state.pop("_normalized_dataset", None)
                 st.session_state.pop("_source_genre_cache", None)
                 st.rerun()
@@ -930,20 +934,44 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
         if raw_imdb:
             by_imdb[str(raw_imdb).strip()] = item
 
+    def _titles_coherent(expected: str, candidate: Any) -> bool:
+        """Vérifie que la fiche reçue correspond au titre attendu (anti-mauvais
+        poster quand un identifiant du ZIP est erroné, ex. The Middle ↔ The
+        Departed). Comparaison souple : mots significatifs en commun."""
+        candidate_title = ""
+        if isinstance(candidate, dict):
+            candidate_title = str(candidate.get("title") or candidate.get("name") or "")
+        if not candidate_title:
+            return True  # pas de fiche exploitable → on n'applique rien
+        import unicodedata
+        def norm(text: str) -> str:
+            return "".join(c for c in unicodedata.normalize("NFD", text.lower()) if not unicodedata.combining(c))
+        words_a = {w for w in norm(str(expected)).split() if len(w) > 3}
+        words_b = {w for w in norm(candidate_title).split() if len(w) > 3}
+        if not words_a or not words_b:
+            return True  # titres trop courts → ne pas bloquer
+        return bool(words_a & words_b)
+
     def apply(media: Any) -> None:
         if not isinstance(media, dict):
             return
         ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
         meta = None
+        expected_title = str(media.get("title") or media.get("name") or "")
         try:
             media_id = int(ids.get("tmdb"))
         except (TypeError, ValueError):
             media_id = None
         if media_id:
             meta = by_tmdb.get(media_id)
+            if meta is not None and not _titles_coherent(expected_title, meta):
+                meta = None  # id TMDb probablement faux → on ignore
         if meta is None:
             imdb = str(ids.get("imdb") or "").strip()
-            meta = by_imdb.get(imdb)
+            if imdb:
+                meta = by_imdb.get(imdb)
+                if meta is not None and not _titles_coherent(expected_title, meta):
+                    meta = None
         if not meta:
             return
         if not media.get("genres") and meta.get("genres"):
@@ -1247,13 +1275,14 @@ def _mdblist_cache_key(access_token: str) -> str:
     return hashlib.sha256((access_token or "").encode("utf-8")).hexdigest()[:16]
 
 
-@st.cache_data(ttl=3600, show_spinner=False, hash_funcs={str: lambda _: "token"})
+@st.cache_data(ttl=3600, show_spinner=False)
 def _load_mdblist_cached(cache_key: str, access_token: str) -> dict[str, Any]:
     """Charge le dataset MDBList avec un cache persistant (1 h).
 
-    La clé de cache est dérivée du token (jamais le token lui-même) : chaque
-    utilisateur a sa propre entrée, et un simple rechargement de page ne
-    rejoue pas tous les appels API. Le bouton « Actualiser » vide ce cache.
+    La clé de cache (`cache_key`) est un hash SHA-256 dérivé du token : chaque
+    utilisateur a sa propre entrée, le token n'est jamais utilisé comme clé ni
+    stocké en clair dans le cache. Un simple rechargement de page (F5) ne
+    rejoue donc pas les appels API. Le bouton « Actualiser » vide ce cache.
     """
     provider = MDBListProvider(access_token)
     raw_data = provider.load_dataset()
@@ -1304,6 +1333,11 @@ def load_mdblist_dataset() -> None:
         )
         return
     st.session_state["_normalized_dataset"] = data
+    # Marqueur cookie : permet de recharger depuis le cache après un F5.
+    try:
+        cookies.set("msl_mdblist_data_loaded", "1", expires=datetime.now() + timedelta(days=30))
+    except Exception:
+        pass
     account = mdb_oauth.account_summary()
     if data.get("rate_limit_remaining") is not None and account:
         account["rate_limit_remaining"] = data["rate_limit_remaining"]
@@ -1332,7 +1366,7 @@ def render_data_loader() -> None:
     else:
         label = "📥 Charger mes données MDBList"
         help_text = "Un chargement complet (historique, Watchlist, listes, notes, progression)."
-    if st.button(label, type="primary", key="load_mdblist_dataset", help=help_text):
+    if st.button(label, key="load_mdblist_dataset", help=help_text, use_container_width=True):
         with st.spinner("Chargement MDBList en lecture seule…"):
             # L'actualisation ignore le cache persistant.
             _load_mdblist_cached.clear()
@@ -3159,62 +3193,20 @@ def render_calendar_page() -> None:
         )
 
 
-def render_detailed_stats_page(dataset: dict[str, Any]) -> None:
-    """Statistiques détaillées — même disposition et mêmes couleurs que la page
-    Statistiques de l'ancienne application Trakt Smart Lists."""
-    rows = normalize_history(dataset, timezone_name="Europe/Paris")
-    if not rows:
-        st.caption("Aucun visionnage disponible pour les statistiques détaillées.")
-        return
-    df = stats_mod.build_frame(rows)
-    if df.empty:
-        st.caption("Aucune donnée datée pour les statistiques détaillées.")
+def render_detailed_stats_page(filtered: "pd.DataFrame", period_label: str) -> None:
+    """Statistiques détaillées — reçoit le DataFrame DÉJÀ filtré par les
+    slicers uniques de la page, plus aucun filtre ni tableau dupliqué."""
+    if filtered.empty:
+        st.warning("Aucun résultat pour ces filtres.")
         return
 
     st.divider()
     st.markdown('<div class="page-title">📊 Statistiques détaillées</div>', unsafe_allow_html=True)
     st.caption(
-        "Toutes vos données de visionnage. Les valeurs sont exprimées en **heures** sauf indication contraire. "
-        "Note : un contenu avec plusieurs genres est compté dans chaque genre, la somme peut donc être supérieure au total."
+        f"Graphiques et analyses sur la sélection filtrée ({period_label}). "
+        "Les valeurs sont exprimées en **heures** sauf indication contraire. "
+        "Note : un contenu avec plusieurs genres est compté dans chaque genre."
     )
-
-    f1, f2, f3 = st.columns(3)
-    type_choice = f1.selectbox("Type de contenu", stats_mod.TYPE_OPTIONS, key="stats_type")
-    period = f2.selectbox("Période", stats_mod.PERIOD_OPTIONS, index=0, key="stats_period")
-    all_genres = sorted(
-        {genre for raw in df["genre"].astype(str) for genre in raw.split(" · ") if genre != "Inconnu"},
-        key=str.casefold,
-    )
-    genre_choice = f3.selectbox("Genre", ["Tous"] + all_genres, key="stats_genre")
-
-    custom_start = custom_end = None
-    if period == "Période personnalisée":
-        months = stats_mod.available_months(df)
-        if len(months) >= 2:
-            pair = st.select_slider(
-                "Sélectionne la période (mois)",
-                options=months,
-                value=(months[0], months[-1]),
-                key="stats_months",
-            )
-            custom_start = datetime.strptime(pair[0], "%m-%Y").replace(tzinfo=PARIS_TZ).date()
-            custom_end = (
-                datetime.strptime(pair[1], "%m-%Y").replace(day=28) + timedelta(days=4)
-            ).replace(tzinfo=PARIS_TZ).date()
-        else:
-            custom_start = df["date_dt"].min().date()
-            custom_end = df["date_dt"].max().date()
-
-    filtered = df.copy()
-    if type_choice != "Tous":
-        wanted = "Film" if type_choice == "Films" else "Épisode"
-        filtered = filtered[filtered["type"] == wanted]
-    filtered = stats_mod.apply_period(filtered, period, datetime.now(PARIS_TZ), custom_start, custom_end)
-    if genre_choice != "Tous":
-        filtered = filtered[filtered["genre"].str.contains(genre_choice, na=False)]
-    if filtered.empty:
-        st.warning("Aucun résultat pour ces filtres.")
-        return
 
     total_lectures = int(filtered["lectures"].sum())
     total_minutes = int(filtered["duree"].sum())
@@ -3240,8 +3232,6 @@ def render_detailed_stats_page(dataset: dict[str, Any]) -> None:
     )
     heat_html = stats_mod.heatmap_html(filtered)
     if heat_html:
-        # Markdown unsafe : les info-bulles natives (title) fonctionnent comme
-        # dans l'ancienne application.
         st.markdown(heat_html, unsafe_allow_html=True)
         nb_jours_actifs = int((daily > 0).sum())
         st.caption(
@@ -3329,23 +3319,6 @@ def render_detailed_stats_page(dataset: dict[str, Any]) -> None:
     else:
         st.caption("La période filtrée couvre moins de 2 années — élargis la période (« Tout ») pour voir l'évolution.")
 
-    # ── Détail des visionnages ───────────────────────────────────────────────
-    with st.expander("📋 Détail des visionnages"):
-        table = []
-        for row in filtered.itertuples():
-            table.append(
-                {
-                    "Date": row.date_dt.strftime("%d/%m/%Y %H:%M"),
-                    "Type": row.type,
-                    "Titre": row.titre,
-                    "Année": f"{int(row.annee)}" if pd.notna(row.annee) else "—",
-                    "Genres": row.genre,
-                    "Durée": _format_minutes(int(row.duree)),
-                    "Note": f"{row.note:.1f}/10" if row.note > 0 else "—",
-                }
-            )
-        st.dataframe(table, width="stretch", hide_index=True)
-
 
 def render_basic_stats_page() -> None:
     st.markdown('<div class="page-title">📊 Statistiques</div>', unsafe_allow_html=True)
@@ -3357,51 +3330,71 @@ def render_basic_stats_page() -> None:
             unsafe_allow_html=True,
         )
         return
-    render_dataset_overview()
 
+    # ── Vue d'ensemble : ALL-TIME (non filtrée par les slicers) ──────────────
+    render_dataset_overview()
+    st.caption(
+        "👆 La vue d'ensemble ci-dessus est **non filtrée** (toutes périodes confondues). "
+        "Les slicers ci-dessous s'appliquent à l'historique, aux graphiques et aux analyses."
+    )
+
+    rows = normalize_history(dataset, timezone_name="Europe/Paris")
+    if not rows:
+        st.caption("Aucun visionnage n’est disponible dans le dataset actuel.")
+        return
+    df = stats_mod.build_frame(rows)
+    if df.empty:
+        st.caption("Aucune donnée datée pour les statistiques.")
+        return
+
+    # ── Slicers UNIQUES (appliqués à toute la page) ──────────────────────────
+    dated_values = [row["watched_at"].date() for row in rows if row.get("watched_at")]
+    earliest = min(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
+    latest = max(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
+
+    period_col, type_col, genre_col = st.columns([0.32, 0.22, 0.46])
+    period = period_col.selectbox("Période", stats_mod.PERIOD_OPTIONS, key="stats_period")
+    media_filter = type_col.selectbox("Type", stats_mod.TYPE_OPTIONS, key="stats_type")
+    all_genres = sorted(
+        {genre for raw in df["genre"].astype(str) for genre in raw.split(" · ") if genre != "Inconnu"},
+        key=str.casefold,
+    )
+    genre_choice = genre_col.selectbox("Genre", ["Tous"] + all_genres, key="stats_genre")
+
+    custom_start = custom_end = None
+    if period == "Période personnalisée":
+        months = stats_mod.available_months(df)
+        if len(months) >= 2:
+            pair = st.select_slider(
+                "Sélectionne la période (mois)",
+                options=months,
+                value=(months[0], months[-1]),
+                key="stats_months",
+            )
+            custom_start = datetime.strptime(pair[0], "%m-%Y").replace(tzinfo=PARIS_TZ).date()
+            custom_end = (
+                datetime.strptime(pair[1], "%m-%Y").replace(day=28) + timedelta(days=4)
+            ).replace(tzinfo=PARIS_TZ).date()
+        else:
+            custom_start = df["date_dt"].min().date()
+            custom_end = df["date_dt"].max().date()
+
+    filtered = df.copy()
+    if media_filter != "Tous":
+        wanted = "Film" if media_filter == "Films" else "Épisode"
+        filtered = filtered[filtered["type"] == wanted]
+    filtered = stats_mod.apply_period(filtered, period, datetime.now(PARIS_TZ), custom_start, custom_end)
+    if genre_choice != "Tous":
+        filtered = filtered[filtered["genre"].str.contains(genre_choice, na=False)]
+
+    period_label = period if period != "Période personnalisée" else f"Période personnalisée {custom_start} → {custom_end}"
+    st.caption(f"🎯 Filtres appliqués : **{media_filter}** · **{genre_choice}** · **{period_label}** — {len(filtered)} visionnage(s).")
+
+    # ── Historique des vues (filtré, UNE seule fois) ─────────────────────────
     with st.expander("📜 Historique des vues", expanded=False):
         st.caption(
-            "Films et épisodes connus de MDBList, avec filtres temporels, genres, durées et notes personnelles. "
-            "Toute l’analyse ci-dessous utilise les données déjà chargées."
+            "Films et épisodes de la sélection filtrée ci-dessus, avec recherche et export CSV/JSON."
         )
-        rows = normalize_history(dataset, timezone_name="Europe/Paris")
-        if not rows:
-            st.caption("Aucun visionnage n’est disponible dans le dataset actuel.")
-            return
-
-        dated_values = [row["watched_at"].date() for row in rows if row.get("watched_at")]
-        earliest = min(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
-        latest = max(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
-        period_col, type_col, genre_col, sort_col = st.columns([0.25, 0.18, 0.25, 0.32])
-        period = period_col.selectbox("Période", HISTORY_PERIOD_OPTIONS, key="history_period")
-        media_filter = type_col.selectbox("Type", ["Tous", "Films", "Épisodes"], key="history_type")
-        genre_filter = genre_col.selectbox(
-            "Genre",
-            ["Tous les genres", *available_history_genres(rows)],
-            key="history_genre",
-        )
-        sort_mode = sort_col.selectbox("Trier par", HISTORY_SORT_OPTIONS, key="history_sort")
-
-        custom_start = custom_end = None
-        if period == "Période personnalisée":
-            start_col, end_col = st.columns(2)
-            custom_start = start_col.date_input(
-                "Du",
-                value=max(earliest, latest - timedelta(days=30)),
-                min_value=earliest,
-                max_value=latest,
-                key="history_start",
-            )
-            custom_end = end_col.date_input(
-                "Au",
-                value=latest,
-                min_value=earliest,
-                max_value=latest,
-                key="history_end",
-            )
-            if custom_start > custom_end:
-                custom_start, custom_end = custom_end, custom_start
-
         search_col, limit_col = st.columns([0.75, 0.25])
         search = search_col.text_input(
             "Recherche",
@@ -3413,36 +3406,38 @@ def render_basic_stats_page() -> None:
             [100, 500, 1000, "Tout"],
             key="history_limit",
         )
-        visible = filter_history(
+        query = str(search or "").strip().casefold()
+        visible = [
+            row for row in rows
+            if row.get("type") in (("Film", "Épisode") if media_filter == "Tous" else ("Film",) if media_filter == "Films" else ("Épisode",))
+            and (not query or query in f"{row.get('title', '')} {row.get('episode_label', '')}".casefold())
+            and (genre_choice == "Tous" or genre_choice in (row.get("genres") or []))
+        ]
+        # Appliquer la période sur les rows (via les dates)
+        from history_engine import filter_history as _fh
+        visible = _fh(
             rows,
             period=period,
-            media_filter=media_filter,
-            genre_filter=genre_filter,
+            media_filter="Tous",
+            genre_filter="Tous les genres",
             search=search,
-            sort_mode=sort_mode,
+            sort_mode="Plus récents d’abord",
             start_date=custom_start,
             end_date=custom_end,
             now=datetime.now(PARIS_TZ),
         )
+        if media_filter != "Tous":
+            wanted = "Film" if media_filter == "Films" else "Épisode"
+            visible = [r for r in visible if r.get("type") == wanted]
+        if genre_choice != "Tous":
+            visible = [r for r in visible if genre_choice in (r.get("genres") or [])]
 
         total_plays = sum(int(row.get("plays") or 1) for row in visible)
         total_minutes = sum(int(row.get("total_minutes") or 0) for row in visible)
-        metrics = st.columns(4)
+        metrics = st.columns(3)
         metrics[0].metric("Entrées", len(visible))
         metrics[1].metric("Lectures connues", total_plays)
-        metrics[2].metric("Films", sum(row.get("type") == "Film" for row in visible))
-        metrics[3].metric("Temps estimé", _format_minutes(total_minutes) if total_minutes else "—")
-
-        top_genres = genre_minutes(visible)[:6]
-        if top_genres:
-            st.markdown("#### Vos genres les plus regardés")
-            total_genre_minutes = sum(minutes for _, minutes in top_genres) or 1
-            genre_columns = st.columns(2)
-            for index, (genre, minutes) in enumerate(top_genres):
-                with genre_columns[index % 2]:
-                    fraction = minutes / total_genre_minutes
-                    st.markdown(f"**{escape(genre)}** · {_format_minutes(minutes)}")
-                    st.progress(min(fraction, 1.0))
+        metrics[2].metric("Temps estimé", _format_minutes(total_minutes) if total_minutes else "—")
 
         display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
         table = []
@@ -3463,7 +3458,7 @@ def render_basic_stats_page() -> None:
             )
         st.markdown(f"#### Détail des visionnages ({len(visible)})")
         if table:
-            st.dataframe(table, use_container_width=True, hide_index=True)
+            st.dataframe(table, width="stretch", hide_index=True)
         else:
             st.caption("Aucun visionnage ne correspond à ces filtres.")
         if len(visible) > display_limit:
@@ -3489,12 +3484,8 @@ def render_basic_stats_page() -> None:
                 key="download_history_json",
             )
 
-        st.caption(
-            "MDBList fournit principalement la dernière date connue par film ou épisode. "
-            "Les événements de revisionnage détaillés seront disponibles avec le futur import ZIP Trakt."
-        )
-
-    render_detailed_stats_page(dataset)
+    # ── Analyses détaillées (mêmes slicers) ──────────────────────────────────
+    render_detailed_stats_page(filtered, period_label)
 
 
 def render_dashboard_widgets() -> None:
@@ -3555,6 +3546,10 @@ def render_dashboard_widgets() -> None:
             )
 
 
+def pending_source_now() -> bool:
+    return bool(st.session_state.get("pending_source"))
+
+
 def _source_badge_html(source: str, has_data: bool) -> str:
     """Badge indiquant clairement la source des données consultées."""
     if not has_data:
@@ -3584,6 +3579,23 @@ def page_dashboard() -> None:
 
     # ── 1. Quelle source consulte-t-on ? ─────────────────────────────────────
     st.markdown(_source_badge_html(source, has_data), unsafe_allow_html=True)
+
+    # ── 0. Auto-restore : après un F5, recharger depuis le cache (0 API si chaud).
+    if (
+        not has_data
+        and not pending_source_now()
+        and mdb_oauth.is_connected()
+        and not st.session_state.get("_auto_restore_tried")
+    ):
+        st.session_state["_auto_restore_tried"] = True
+        try:
+            has_flag = str(cookies.get("msl_mdblist_data_loaded") or "") == "1"
+        except Exception:
+            has_flag = False
+        if has_flag:
+            with st.spinner("🔄 Rechargement de vos données MDBList (cache)…"):
+                load_mdblist_dataset()
+            st.rerun()
 
     # ── 2. Choix de la source ────────────────────────────────────────────────
     mdb_col, zip_col = st.columns(2, gap="large")
@@ -3690,8 +3702,8 @@ def page_dashboard() -> None:
             st.caption("Connecté à MDBList (lecture seule) : enrichis ces données avec les métadonnées MDBList.")
             if st.button(
                 "✨ Enrichir avec MDBList (genres, posters, durées, notes)",
-                type="primary",
                 key="enrich_zip",
+                use_container_width=True,
                 help="Quelques appels groupés (200 identifiants max par appel). Aucune écriture.",
             ):
                 with st.spinner("Fusion des métadonnées MDBList…"):
