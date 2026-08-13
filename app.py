@@ -1386,7 +1386,8 @@ def render_data_loader() -> None:
     else:
         label = "📥 Charger mes données MDBList"
         help_text = "Un chargement complet (historique, Watchlist, listes, notes, progression)."
-    if st.button(label, type="primary", key="load_mdblist_dataset", help=help_text, use_container_width=True):
+    st.caption(help_text)
+    if st.button(label, type="primary", key="load_mdblist_dataset", use_container_width=True):
         with st.spinner("Chargement MDBList en lecture seule…"):
             # L'actualisation ignore le cache persistant.
             _load_mdblist_cached.clear()
@@ -3717,12 +3718,12 @@ def page_dashboard() -> None:
             st.rerun()
         if mdb_oauth.is_connected():
             st.caption("Connecté à MDBList (lecture seule) : enrichis ces données avec les métadonnées MDBList.")
+            st.caption("Quelques appels groupés (200 identifiants max par appel). Aucune écriture.")
             if st.button(
                 "✨ Enrichir avec MDBList (genres, posters, durées, notes)",
                 type="primary",
                 key="enrich_zip",
                 use_container_width=True,
-                help="Quelques appels groupés (200 identifiants max par appel). Aucune écriture.",
             ):
                 with st.spinner("Fusion des métadonnées MDBList…"):
                     ok, message = _enrich_zip_dataset()

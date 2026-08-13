@@ -27,6 +27,7 @@ DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 COOKIE_NAME = "media_smart_lists_mdblist_oauth_v1"
 LOGOUT_COOKIE_NAME = "media_smart_lists_mdblist_logged_out_v1"
 LOGOUT_COOKIE_DAYS = 365
+LOGOUT_QUERY_KEY = "msl_logged_out"
 COOKIE_DAYS = 365
 REQUEST_TIMEOUT = 20
 USER_AGENT = "Media-Smart-Lists/0.7"
@@ -185,8 +186,13 @@ def save_tokens(cookies: Any, token_data: dict[str, Any]) -> bool:
     st.session_state[REFRESH_KEY] = refresh_token
     st.session_state[EXPIRES_KEY] = int(time.time()) + max(expires_in, 60)
     # Nouvelle connexion réussie : lever la déconnexion durable.
+    # (Écrasement par `set()` plutôt que `remove()` : fiable partout.)
     try:
-        cookies.remove(LOGOUT_COOKIE_NAME)
+        st.query_params.pop(LOGOUT_QUERY_KEY, None)
+    except Exception:
+        pass
+    try:
+        cookies.set(LOGOUT_COOKIE_NAME, "", expires=datetime.now() - timedelta(days=1))
     except Exception:
         pass
     return persist_cookie(cookies)
@@ -318,12 +324,17 @@ def ensure_valid_session(cookies: Any) -> tuple[bool, str]:
 
     refresh_token = str(st.session_state.get(REFRESH_KEY) or "")
     if not refresh_token:
-        # Déconnexion durable : si le cookie logout est présent, on ne restaure
-        # JAMAIS depuis le cookie OAuth (l'utilisateur a cliqué « Se déconnecter »).
+        # Déconnexion durable : si le marqueur d'URL ou le cookie logout est
+        # présent, on ne restaure JAMAIS la session (F5 → on reste déconnecté).
         try:
-            logged_out = str(cookies.get(LOGOUT_COOKIE_NAME) or "") == "1"
+            url_logged_out = str(st.query_params.get(LOGOUT_QUERY_KEY) or "") == "1"
         except Exception:
-            logged_out = False
+            url_logged_out = False
+        try:
+            cookie_logged_out = str(cookies.get(LOGOUT_COOKIE_NAME) or "") == "1"
+        except Exception:
+            cookie_logged_out = False
+        logged_out = url_logged_out or cookie_logged_out
         if not logged_out:
             try:
                 encrypted_cookie = str(cookies.get(COOKIE_NAME) or "")
@@ -451,9 +462,15 @@ def disconnect(cookies: Any) -> None:
             )
         except requests.RequestException:
             pass
-    # Écrasement du cookie OAuth par une valeur expirée : c'est la méthode la
-    # plus fiable (cookies.remove() n'est pas garanti selon les navigateurs),
-    # et `cookies.set()` est déjà prouvé fonctionnel (la connexion persiste).
+    # Marqueur de déconnexion DANS L'URL (st.query_params) : c'est l'approche
+    # la plus fiable — l'URL survit à un F5, c'est synchrone côté serveur, et
+    # ça ne dépend pas du composant cookie JS (dont l'écriture peut être
+    # interrompue par le st.rerun immédiat).
+    try:
+        st.query_params[LOGOUT_QUERY_KEY] = "1"
+    except Exception:
+        pass
+    # Filet : écraser le cookie OAuth (expiré) + cookie logout.
     try:
         cookies.set(
             COOKIE_NAME,
@@ -463,8 +480,6 @@ def disconnect(cookies: Any) -> None:
     except Exception:
         pass
     _remove_cookie(cookies)
-    # Cookie de déconnexion durable : bloque la restauration automatique
-    # depuis le cookie OAuth au prochain rechargement de page (F5).
     try:
         cookies.set(
             LOGOUT_COOKIE_NAME,

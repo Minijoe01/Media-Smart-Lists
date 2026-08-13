@@ -1,0 +1,65 @@
+================================================================
+MEDIA SMART LISTS — V35
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V35
+----------------------
+1. BOUTONS AU THÈME : « 📥 Charger mes données MDBList » et
+   « ✨ Enrichir avec MDBList » sont maintenant identiques à
+   « Quitter » et « Actualiser les compteurs » (même dégradé vert).
+   La cause était le paramètre info-bulle (help=) qui changeait la
+   structure du bouton — il a été retiré, l'explication est affichée
+   en texte juste au-dessus.
+2. DÉCONNEXION DURABLE — NOUVELLE MÉTHODE (URL) : à la déconnexion,
+   un marqueur est posé dans l'adresse (?msl_logged_out=1). L'adresse
+   survit au F5 (c'est le navigateur qui la garde) : après F5, tu
+   restes déconnecté. À la reconnexion, le marqueur est retiré.
+   Vérifié par tests : déconnexion → F5 (déconnecté) → reconnexion →
+   F5 (reconnecté).
+
+LES FICHIERS À ENVOYER (2 modifiés, 2 nouveaux)
+-----------------------------------------------
+À REMPLACER :
+  • app.py
+  • mdblist_oauth.py
+
+À AJOUTER (nouveaux fichiers) :
+  • ETAPE-35.md
+  • INSTALLATION-V35.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER : tous les autres fichiers (déjà à jour en ligne).
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser CES 4 FICHIERS UNIQUEMENT :
+    app.py
+    mdblist_oauth.py
+    ETAPE-35.md
+    INSTALLATION-V35.txt
+GitHub vous proposera de remplacer app.py et mdblist_oauth.py :
+acceptez.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    fix: primary buttons without tooltip, URL-based durable logout
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io : « Manage app » → ⋮ → « Reboot »,
+PUIS « Clear cache ».
+
+POUR VÉRIFIER
+-------------
+1. Tous les boutons du tableau de bord ont le même dégradé vert.
+2. « Se déconnecter de MDBList » → l'adresse devient
+   ...?msl_logged_out=1 → F5 → tu restes déconnecté.
+3. Reconnecte-toi → F5 → tu restes connecté (retour à la normale).
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+================================================================
