@@ -1386,7 +1386,7 @@ def render_data_loader() -> None:
     else:
         label = "📥 Charger mes données MDBList"
         help_text = "Un chargement complet (historique, Watchlist, listes, notes, progression)."
-    if st.button(label, key="load_mdblist_dataset", help=help_text, use_container_width=True):
+    if st.button(label, type="primary", key="load_mdblist_dataset", help=help_text, use_container_width=True):
         with st.spinner("Chargement MDBList en lecture seule…"):
             # L'actualisation ignore le cache persistant.
             _load_mdblist_cached.clear()
@@ -3710,7 +3710,7 @@ def page_dashboard() -> None:
         st.caption("Lecture seule · aucune écriture. Toutes les pages utilisent ces données.")
         # Permet de quitter les données ZIP pour revenir au choix de source
         # (et basculer sur MDBList).
-        if st.button("🚪 Quitter les données ZIP Trakt", key="leave_zip_data", use_container_width=True):
+        if st.button("🚪 Quitter les données ZIP Trakt", type="primary", key="leave_zip_data", use_container_width=True):
             st.session_state.pop("_normalized_dataset", None)
             st.session_state.pop("_source_genre_cache", None)
             st.session_state.pop("_mdblist_playback_poster_cache", None)
@@ -3719,6 +3719,7 @@ def page_dashboard() -> None:
             st.caption("Connecté à MDBList (lecture seule) : enrichis ces données avec les métadonnées MDBList.")
             if st.button(
                 "✨ Enrichir avec MDBList (genres, posters, durées, notes)",
+                type="primary",
                 key="enrich_zip",
                 use_container_width=True,
                 help="Quelques appels groupés (200 identifiants max par appel). Aucune écriture.",

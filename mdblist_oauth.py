@@ -329,6 +329,10 @@ def ensure_valid_session(cookies: Any) -> tuple[bool, str]:
                 encrypted_cookie = str(cookies.get(COOKIE_NAME) or "")
             except Exception:
                 encrypted_cookie = ""
+            # Cookie écrasé par la déconnexion : ne jamais le restaurer.
+            if encrypted_cookie == "expired":
+                _remove_cookie(cookies)
+                return False, "Session MDBList déconnectée."
             if encrypted_cookie:
                 bundle = _decrypt_bundle(encrypted_cookie)
                 if not bundle:
@@ -447,6 +451,17 @@ def disconnect(cookies: Any) -> None:
             )
         except requests.RequestException:
             pass
+    # Écrasement du cookie OAuth par une valeur expirée : c'est la méthode la
+    # plus fiable (cookies.remove() n'est pas garanti selon les navigateurs),
+    # et `cookies.set()` est déjà prouvé fonctionnel (la connexion persiste).
+    try:
+        cookies.set(
+            COOKIE_NAME,
+            "expired",
+            expires=datetime.now() - timedelta(days=1),
+        )
+    except Exception:
+        pass
     _remove_cookie(cookies)
     # Cookie de déconnexion durable : bloque la restauration automatique
     # depuis le cookie OAuth au prochain rechargement de page (F5).
