@@ -1,0 +1,72 @@
+================================================================
+MEDIA SMART LISTS — V33
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V33
+----------------------
+1. BOUTONS AU THÈME : tous les boutons (Charger, Enrichir, Quitter,
+   Préparer, Se déconnecter…) ont enfin le même style « verre vert ».
+   Le CSS couvrait mal la structure Streamlit 1.60 — corrigé.
+2. « GÉRER LA CONNEXION » SUPPRIMÉ : le ruban compte/quota/listes
+   (avec « Actualiser les compteurs » et « Se déconnecter ») est
+   maintenant TOUJOURS visible dans « Vos données MDBList ».
+3. DÉCONNEXION DURABLE : après « Se déconnecter », un F5 ne te
+   reconnecte plus automatiquement. Le cookie de déconnexion bloque la
+   restauration de session, et une nouvelle connexion le lève.
+4. « QUE REGARDER » : tous les signaux de notation de l'ancienne app
+   sont restaurés (⭐ Note, 🔥 Populaire, 🌍 Cinéma, 🆕 Récent,
+   ⏱️ Durée, 💎 Pépite, 📥 Ajout, 🚪 Zéro effort…). Pour le ZIP Trakt,
+   l'enrichissement copie maintenant les métadonnées qui les
+   alimentent (votes, pays, certification, statut, studios) et lit la
+   date d'ajout `listed_at`.
+
+LES FICHIERS À ENVOYER (3 modifiés, 2 nouveaux)
+-----------------------------------------------
+À REMPLACER :
+  • app.py
+  • mdblist_oauth.py
+  • recommendation_engine.py
+
+À AJOUTER (nouveaux fichiers) :
+  • ETAPE-33.md
+  • INSTALLATION-V33.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER : tous les autres fichiers (déjà à jour en ligne).
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser CES 5 FICHIERS UNIQUEMENT :
+    app.py
+    mdblist_oauth.py
+    recommendation_engine.py
+    ETAPE-33.md
+    INSTALLATION-V33.txt
+GitHub vous proposera de remplacer les fichiers existants : acceptez.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    fix: unified button theme, durable logout, full recommendation signals
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io : « Manage app » → ⋮ → « Reboot »,
+PUIS « Clear cache ».
+
+POUR VÉRIFIER
+-------------
+1. Tous les boutons du tableau de bord ont le même style verre vert.
+2. « Se déconnecter » → F5 → tu restes déconnecté (puis reconnecte-toi
+   pour la suite).
+3. Connecté : le ruban compte/quota/listes est visible sous « Vos
+   données MDBList », avec « Actualiser les compteurs ».
+4. Importe un ZIP : dans « Que regarder », les pastilles d'explication
+   (⭐ note, 🔥 populaire, 🌍 pays, 🆕 récent, 📥 ajouté…) apparaissent.
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+================================================================

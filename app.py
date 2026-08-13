@@ -438,16 +438,18 @@ st.markdown(
     }
 
     /* Boutons historiques : verre vert, sans ombre.
-       Couvre toutes les structures de boutons de Streamlit 1.60. */
+       Sélecteurs universels : le data-testid est porté par le bouton
+       lui-même (ou une div wrapper) selon la version de Streamlit. */
     .stButton > button,
     div[data-testid="stButton"] > button,
-    div[data-testid="stBaseButton-secondary"] > button,
-    div[data-testid="stBaseButton-primary"] > button,
-    div[data-testid="stDownloadButton"] button,
-    div[data-testid="stDownloadButton"] a,
-    div[data-testid="stFormSubmitButton"] > button,
-    button[data-testid="baseButton-secondary"],
-    button[data-testid="baseButton-primary"] {
+    [data-testid="stButton"] button,
+    [data-testid="stBaseButton-secondary"],
+    [data-testid="stBaseButton-primary"],
+    [data-testid="baseButton-secondary"],
+    [data-testid="baseButton-primary"],
+    [data-testid="stDownloadButton"] button,
+    [data-testid="stDownloadButton"] a,
+    [data-testid="stFormSubmitButton"] button {
         background: rgba(5, 38, 34, 0.75) !important;
         border: 1px solid rgba(0,163,146,0.30) !important;
         border-radius: 16px !important;
@@ -461,23 +463,24 @@ st.markdown(
     }
     .stButton > button:hover,
     div[data-testid="stButton"] > button:hover,
-    div[data-testid="stBaseButton-secondary"] > button:hover,
-    div[data-testid="stBaseButton-primary"] > button:hover,
-    div[data-testid="stDownloadButton"] button:hover,
-    div[data-testid="stDownloadButton"] a:hover,
-    div[data-testid="stFormSubmitButton"] > button:hover,
-    button[data-testid="baseButton-secondary"]:hover,
-    button[data-testid="baseButton-primary"]:hover {
+    [data-testid="stButton"] button:hover,
+    [data-testid="stBaseButton-secondary"]:hover,
+    [data-testid="stBaseButton-primary"]:hover,
+    [data-testid="baseButton-secondary"]:hover,
+    [data-testid="baseButton-primary"]:hover,
+    [data-testid="stDownloadButton"] button:hover,
+    [data-testid="stDownloadButton"] a:hover,
+    [data-testid="stFormSubmitButton"] button:hover {
         background: rgba(8, 55, 50, 0.85) !important;
         border-color: rgba(0,163,146,0.50) !important;
         box-shadow: none !important;
     }
     .stButton > button[kind="primary"],
     div[data-testid="stButton"] > button[kind="primary"],
-    div[data-testid="stBaseButton-primary"] > button,
-    div[data-testid="stDownloadButton"] button[kind="primary"],
-    div[data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"],
-    button[data-testid="baseButton-primary"] {
+    [data-testid="stBaseButton-primary"],
+    [data-testid="baseButton-primary"],
+    [data-testid="stDownloadButton"] button[kind="primary"],
+    [data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"] {
         background: linear-gradient(135deg, var(--am-green), var(--am-green-aston)) !important;
         border: none !important;
         color: #fff !important;
@@ -485,10 +488,10 @@ st.markdown(
     }
     .stButton > button[kind="primary"]:hover,
     div[data-testid="stButton"] > button[kind="primary"]:hover,
-    div[data-testid="stBaseButton-primary"] > button:hover,
-    div[data-testid="stDownloadButton"] button[kind="primary"]:hover,
-    div[data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"]:hover,
-    button[data-testid="baseButton-primary"]:hover {
+    [data-testid="stBaseButton-primary"]:hover,
+    [data-testid="baseButton-primary"]:hover,
+    [data-testid="stDownloadButton"] button[kind="primary"]:hover,
+    [data-testid="stDownloadButton"] button[data-testid="stBaseButton-primary"]:hover {
         background: linear-gradient(135deg, #00B8A5, #006058) !important;
     }
 
@@ -986,6 +989,23 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
             media["score_average"] = meta["score_average"]
         if meta.get("score") is not None and media.get("score") is None:
             media["score"] = meta["score"]
+        # Métadonnées qui alimentent les signaux de recommandation :
+        # votes (👥 Apprécié du public, 💎 Pépite), pays (🌍 Cinéma),
+        # certification (👨‍👩‍👧 Famille), statut (✅ Terminée), studios (🏢).
+        if not media.get("ratings") and meta.get("ratings"):
+            media["ratings"] = meta["ratings"]
+        if not media.get("country") and meta.get("country"):
+            media["country"] = meta["country"]
+        if not media.get("certification") and meta.get("certification"):
+            media["certification"] = meta["certification"]
+        if not media.get("status") and meta.get("status"):
+            media["status"] = meta["status"]
+        if not media.get("network") and meta.get("network"):
+            media["network"] = meta["network"]
+        if not media.get("studios") and meta.get("studios"):
+            media["studios"] = meta["studios"]
+        if not media.get("year") and meta.get("year"):
+            media["year"] = meta["year"]
 
     def apply_row_media(row: Any, key: str, nested_show: str | None = None) -> None:
         """Applique les métadonnées au média d'une ligne, en suivant le show
@@ -3613,9 +3633,6 @@ def page_dashboard() -> None:
         if mdb_oauth.is_connected():
             account = mdb_oauth.account_summary() or {}
             st.caption(f"✓ Connecté : **{account.get('username') or 'Compte MDBList'}**")
-            if st.button("🔐 Gérer la connexion MDBList", key="manage_mdblist", use_container_width=True):
-                st.session_state["pending_source"] = "mdblist"
-                st.rerun()
         else:
             if st.button("Préparer la connexion MDBList", type="primary", key="choose_mdblist", use_container_width=True):
                 st.session_state["pending_source"] = "mdblist"
@@ -3724,6 +3741,12 @@ def page_dashboard() -> None:
         st.divider()
         st.markdown('<div class="page-title">📥 Vos données MDBList</div>', unsafe_allow_html=True)
         render_data_loader()
+        # Ruban compte/quota/listes toujours visible (avec Actualiser les
+        # compteurs et Se déconnecter) — plus besoin d'un bouton « Gérer ».
+        try:
+            _render_connected_mdblist()
+        except Exception:
+            pass
         if has_data:
             render_dataset_overview()
             render_dashboard_widgets()

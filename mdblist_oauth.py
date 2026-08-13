@@ -25,6 +25,8 @@ TOKEN_URL = f"{API_BASE}/oauth/token/"
 REVOKE_URL = f"{API_BASE}/oauth/revoke_token/"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 COOKIE_NAME = "media_smart_lists_mdblist_oauth_v1"
+LOGOUT_COOKIE_NAME = "media_smart_lists_mdblist_logged_out_v1"
+LOGOUT_COOKIE_DAYS = 365
 COOKIE_DAYS = 365
 REQUEST_TIMEOUT = 20
 USER_AGENT = "Media-Smart-Lists/0.7"
@@ -182,6 +184,11 @@ def save_tokens(cookies: Any, token_data: dict[str, Any]) -> bool:
     st.session_state[ACCESS_KEY] = access_token
     st.session_state[REFRESH_KEY] = refresh_token
     st.session_state[EXPIRES_KEY] = int(time.time()) + max(expires_in, 60)
+    # Nouvelle connexion réussie : lever la déconnexion durable.
+    try:
+        cookies.remove(LOGOUT_COOKIE_NAME)
+    except Exception:
+        pass
     return persist_cookie(cookies)
 
 
@@ -311,22 +318,29 @@ def ensure_valid_session(cookies: Any) -> tuple[bool, str]:
 
     refresh_token = str(st.session_state.get(REFRESH_KEY) or "")
     if not refresh_token:
+        # Déconnexion durable : si le cookie logout est présent, on ne restaure
+        # JAMAIS depuis le cookie OAuth (l'utilisateur a cliqué « Se déconnecter »).
         try:
-            encrypted_cookie = str(cookies.get(COOKIE_NAME) or "")
+            logged_out = str(cookies.get(LOGOUT_COOKIE_NAME) or "") == "1"
         except Exception:
-            encrypted_cookie = ""
-        if encrypted_cookie:
-            bundle = _decrypt_bundle(encrypted_cookie)
-            if not bundle:
-                _remove_cookie(cookies)
-                return False, "La connexion mémorisée est illisible et a été supprimée."
-            _restore_bundle_to_session(bundle)
-            token = access_token()
-            expires_at = int(st.session_state.get(EXPIRES_KEY) or 0)
-            # Chemin rapide : aucun appel réseau tant que l'access token est valide.
-            if token and expires_at and time.time() < expires_at - 300:
-                return True, "Connexion MDBList restaurée instantanément."
-            refresh_token = str(st.session_state.get(REFRESH_KEY) or "")
+            logged_out = False
+        if not logged_out:
+            try:
+                encrypted_cookie = str(cookies.get(COOKIE_NAME) or "")
+            except Exception:
+                encrypted_cookie = ""
+            if encrypted_cookie:
+                bundle = _decrypt_bundle(encrypted_cookie)
+                if not bundle:
+                    _remove_cookie(cookies)
+                    return False, "La connexion mémorisée est illisible et a été supprimée."
+                _restore_bundle_to_session(bundle)
+                token = access_token()
+                expires_at = int(st.session_state.get(EXPIRES_KEY) or 0)
+                # Chemin rapide : aucun appel réseau tant que l'access token est valide.
+                if token and expires_at and time.time() < expires_at - 300:
+                    return True, "Connexion MDBList restaurée instantanément."
+                refresh_token = str(st.session_state.get(REFRESH_KEY) or "")
 
     if not refresh_token:
         return False, ""
@@ -434,4 +448,14 @@ def disconnect(cookies: Any) -> None:
         except requests.RequestException:
             pass
     _remove_cookie(cookies)
+    # Cookie de déconnexion durable : bloque la restauration automatique
+    # depuis le cookie OAuth au prochain rechargement de page (F5).
+    try:
+        cookies.set(
+            LOGOUT_COOKIE_NAME,
+            "1",
+            expires=datetime.now() + timedelta(days=LOGOUT_COOKIE_DAYS),
+        )
+    except Exception:
+        pass
     _clear_session()

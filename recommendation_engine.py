@@ -118,7 +118,13 @@ def _votes(item: dict[str, Any]) -> int:
 
 
 def _added_days(item: dict[str, Any], now: datetime) -> int | None:
-    value = item.get("watchlist_at") or item.get("added_at") or item.get("added") or item.get("created_at")
+    value = (
+        item.get("watchlist_at")
+        or item.get("added_at")
+        or item.get("added")
+        or item.get("created_at")
+        or item.get("listed_at")
+    )
     if not value:
         return None
     try:
