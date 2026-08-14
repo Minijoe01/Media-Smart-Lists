@@ -1,223 +1,122 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 7 août 2026  
-> Dépôt : https://github.com/Minijoe01/Media-Smart-Lists  
-> Application : https://media-smart-lists.streamlit.app  
-> Ancienne application conservée : https://github.com/Minijoe01/Trakt-Smart-Lists
-
-Ce fichier est la feuille de route active. Les anciens documents `Trakt-Smart-Lists-TODO-Migration.md` et `Smart-Lists-Hub-Guide.md` restent des archives de conception mais contiennent des décisions dépassées.
+> Dernière mise à jour : 13 août 2026 · Dernière version déployée : V35.
+> Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
+> Application : https://media-smart-lists.streamlit.app
+> Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
+> Transmission IA : voir `AI-HANDOFF.md` (à donner à un agent de remplacement).
 
 ---
 
 ## Règles permanentes
 
-- [x] Application fournisseur-neutre : `MDBListProvider` et futur `TraktZipProvider` produisent le même `NormalizedDataset`.
+- [x] Application fournisseur-neutre : `MDBListProvider` et `TraktZipProvider` produisent le même `NormalizedDataset`.
 - [x] Aucun accès API Trakt requis.
-- [x] OAuth Device Code MDBList : URL, QR, code, polling, refresh et déconnexion.
-- [x] Tokens chiffrés dans un cookie Fernet ; aucune vraie clé dans GitHub.
+- [x] OAuth Device Code MDBList : URL, QR, lien direct code pré-rempli, polling, refresh et déconnexion.
+- [x] Tokens chiffrés dans un cookie ; aucune vraie clé dans GitHub.
 - [x] Ne jamais demander à l'utilisateur ses secrets dans une conversation.
-- [x] Quota MDBList Free pris en compte : 1000 appels/jour, reset à minuit UTC.
+- [x] Quota MDBList pris en compte : cache persistant 1 h, appels groupés, « Actualiser » pour forcer.
 - [x] Calculs, filtres, tris, recommandations et audits locaux dès que possible.
 - [x] Aucune suppression distante sans aperçu, sauvegarde et confirmation explicite.
-- [x] Thème legacy conservé : fond radial Aston Martin, boutons legacy, menu latéral et badges validés.
+- [x] Thème legacy conservé : fond radial Aston Martin, boutons dégradé vert, badges citron.
+- [x] Déconnexion durable via `?msl_logged_out=1` dans l'URL (F5 → on reste déconnecté).
 
 ---
 
-## Fonctionnalités terminées
+## Fonctionnalités terminées (V35 — tout est en ligne)
 
-### Migration personnelle Trakt → MDBList
+### Sources de données
+- [x] Connexion MDBList (OAuth device code) + déconnexion durable.
+- [x] Chargement MDBList : watched, ratings, Watchlist, listes, playback, Up Next, dropped, genres.
+- [x] Cache persistant 1 h (rechargé au F5, 0 appel API si chaud) + bouton Actualiser.
+- [x] Session MDBList expirée → déconnexion propre + message clair.
+- [x] Import ZIP Trakt sécurisé (zip-slip, tailles) → même NormalizedDataset, rewatches inclus.
+- [x] Enrichissement ZIP automatique (si connecté) : genres, posters, durées, notes, ratings, pays, certification, statut, studios — par lots de 200, avec vérification de cohérence du titre (anti mauvais poster).
+- [x] Bascule Trakt ↔ MDBList : bouton « 🚪 Quitter les données ZIP Trakt ».
 
-- [x] ZIP analysé et sauvegardé localement.
-- [x] 308 films vus importés.
-- [x] 6276 épisodes finalement représentés, dont les incompatibilités corrigées manuellement.
-- [x] 127 notes films, 89 séries, 2 saisons et 6 épisodes.
-- [x] Watchlist native MDBList : films uniquement.
-- [x] Liste statique `Séries`.
-- [x] Liste statique `Films familiaux`.
-- [x] Audit exclusif sans doublon entre conteneurs : PASS.
-- [x] Historique complet et dates de revisionnage conservés dans les sauvegardes locales.
+### Pages (10)
+- [x] Tableau de bord : badge de source, widgets rythme (bilan mois, ép./semaine, date de fin projetée), compteurs à vie, digest 7 j, derniers visionnages, métriques temps total/séries/films.
+- [x] En cours de lecture : cartes aérées, progression (MDBList) ou nb épisodes vus (ZIP), liens badges (JustWatch/TMDB/MDBList).
+- [x] Progression Fantôme : reprises en pause, filtres, temps restant, liens.
+- [x] Nettoyage des listes : audit local, doublons, « Vu · à retirer » / « Vu · à revoir », conteneurs exacts, exports.
+- [x] Que regarder ? : 21 presets, scores 0-100, signaux avec info-bulles (restaurés à 100 %), une carte sous l'autre.
+- [x] Calendrier des sorties : 3 sources fusionnées, horizons longs, diagnostics visibles.
+- [x] Statistiques : slicers uniques, vue d'ensemble « non filtrée » mentionnée, heatmap, graphiques, mois triés.
+- [x] Rendez-vous annuel (Wrapped) : indicateurs annuels + image PNG partageable.
+- [x] Succès : 61 badges avec progression.
+- [x] Sauvegarde : JSON restaurable (même sans connexion) + Excel 6 onglets (Résumé, Historique, Mes contenus, Listes, Statistiques, Badges).
 
-### Application Media Smart Lists
-
-- [x] Nouveau dépôt autonome et déploiement Streamlit.
-- [x] Sécurité initiale : `.gitignore`, CORS/XSRF par défaut, exemple de secrets.
-- [x] OAuth MDBList persistant et déconnexion avec révocation.
-- [x] Compteur de quota et nombre d'appels d'un chargement.
-- [x] Chargement MDBList : watched, ratings, Watchlist, listes, playback, Up Next, dropped et genres.
-- [x] Watchlist et chaque liste statique/dynamique séparément.
-- [x] Agrégats : toutes statiques, toutes dynamiques, toutes personnelles, Watchlist + toutes listes.
-- [x] `En cours` : posters, épisodes suivants, temps vu/restant, progression, genres et tris locaux.
-- [x] `Que regarder ?` : profil de goûts, score explicable, friction, infobulles, presets, filtres, tris et roulettes.
-- [x] `Progression Fantôme` : reprises en pause, filtres, temps restant et tentative ciblée Now Playing.
-- [x] `Nettoyage des listes` : audit local, doublons fusionnés, conteneurs exacts, rapports CSV/JSON.
-- [x] Types MDBList affichés clairement : Watchlist, liste statique, dynamique, IA et flux.
-- [x] Enrichissement facultatif de posters par lot de 200 maximum.
-- [x] `Calendrier` : requête ciblée, cache, filtres, export CSV/ICS et calendrier local de secours.
-- [x] `Statistiques` : historique repliable, filtres, durées corrigées, genres et exports CSV/JSON.
-- [x] Historique des ajouts aux listes avec horodatage, conteneur, tri et export.
+### Divers
+- [x] Liens contenus : badges discrets « 🔎 Où regarder · TMDB · MDBL » avec info-bulles.
+- [x] Durées d'épisode corrigées (fini les « 22 ans » de visionnage).
+- [x] Export Excel : largeurs auto, onglet « Mes contenus » avec colonne Liste.
+- [x] Connexion « sans smartphone » : lien direct avec code pré-rempli.
+- [x] Boutons tous au thème (type=primary sans help=).
 
 ---
 
-## Priorité immédiate — vérifier l'étape 21
+## Priorité immédiate — ÉCRITURES MDBList (demandé par l'utilisateur)
 
-- [ ] Vérifier qu'un épisode DBZ affiche environ 20 minutes et non la durée cumulée de la série.
-- [ ] Vérifier que le temps global est exprimé intelligemment en heures, jours, mois ou années.
-- [ ] Vérifier que l'historique des vues est fermé par défaut dans un menu déroulant.
-- [ ] Vérifier le calendrier de secours lorsque `/calendar/events` MDBList échoue.
-- [ ] Vérifier l'historique des ajouts : date/heure, liste et tri décroissant.
+L'utilisateur veut retrouver le pouvoir de l'ancienne app Trakt :
+**sélectionner un contenu (ex. doublon) dans une liste et le supprimer
+directement**, et plus largement gérer ses données MDBList.
 
----
-
-## Prochaines fonctionnalités legacy
-
-### Statistiques
-
-- [ ] Restaurer les graphiques mensuels et annuels.
-- [ ] Restaurer la répartition jour de semaine / heure de journée.
-- [ ] Restaurer l'évolution des goûts par année.
-- [ ] Restaurer les marathons de séries.
-- [ ] Restaurer les records personnels.
-- [ ] Vérifier toutes les conversions de runtime sur de gros comptes.
-
-### Rendez-vous annuel / Wrapped
-
-- [ ] Reconnecter la page `Rendez-vous annuel` au modèle normalisé.
-- [ ] Générer les indicateurs annuels films, épisodes, heures, genres et records.
-- [ ] Restaurer l'image PNG partageable legacy.
-- [ ] Préserver les dates complètes du ZIP Trakt lorsqu'il est utilisé.
-
-### Succès
-
-- [ ] Reconnecter les badges legacy.
-- [ ] Films, épisodes, diversité, marathons, nocturne et rewatches.
-- [ ] Ne pas attribuer de badge sur une donnée absente du fournisseur.
-
-### Sauvegarde
-
-- [ ] Export JSON neutre et versionné du `NormalizedDataset`.
-- [ ] Exports CSV par catégorie.
-- [ ] Ne jamais inclure token, cookie, clé, e-mail ou secret.
-- [ ] Ajouter une restauration testée avant toute écriture distante.
-
----
-
-## TraktZipProvider — priorité produit
-
-- [ ] Intégrer le bouton `Importer un ZIP Trakt` actuellement présent mais non fonctionnel.
-- [ ] Réutiliser les parseurs sécurisés du script de migration.
-- [ ] Protéger contre zip-slip, zip bomb, liens et tailles excessives.
-- [ ] Produire exactement le même modèle que MDBList.
-- [ ] Conserver chaque événement de visionnage et chaque rewatch.
-- [ ] Afficher la date de l'export et le badge `IMPORT LOCAL · LECTURE SEULE`.
-- [ ] Faire fonctionner Dashboard, recommandations, calendrier, historique, statistiques, Wrapped et succès.
-- [ ] Ne conserver aucun ZIP côté serveur après la session.
-
-Architecture cible :
-
-```text
-MDBListProvider ──┐
-                  ├── NormalizedDataset ── mêmes pages/widgets
-TraktZipProvider ─┘
-```
-
----
-
-## Écritures MDBList — uniquement après stabilisation lecture
-
-- [ ] Ajouter/retirer de la Watchlist.
-- [ ] Ajouter/retirer d'une liste statique.
-- [ ] Marquer vu/non vu.
-- [ ] Notes personnelles.
-- [ ] Dropped.
-- [ ] Ne jamais écrire dans une liste dynamique/IA/flux.
+- [ ] Supprimer un contenu d'une liste statique (`POST /lists/{id}/items/remove`).
+- [ ] Retirer de la Watchlist (`POST /watchlist/items/remove`).
+- [ ] Marquer vu / non-vu (`POST /sync/watched` / `/sync/watched/remove`).
+- [ ] Ajouter des notes (`POST /sync/ratings`).
+- [ ] Marquer / dé-marquer « abandonné » (`POST /sync/dropped` / remove).
+- [ ] Ne JAMAIS écrire dans une liste dynamique/IA/flux.
 - [ ] Chaque opération : aperçu → export de sauvegarde → confirmation explicite → écriture → vérification GET.
 - [ ] Aucun delete en lot par défaut.
 - [ ] Journal local nettoyé de tous les secrets.
 
----
-
-## Métadonnées et quota
-
-- [ ] Construire un cache générique de métadonnées par identifiants canoniques.
-- [ ] Enrichissement MDBList batch, maximum 200 médias par appel.
-- [ ] Ne jamais faire un appel par carte.
-- [ ] Studios et acteurs : activer seulement lorsque le fournisseur les fournit ou via une source groupée sûre.
-- [ ] Vérifier la qualité de `calendar/events` et de `sync/now-playing` avec de futures versions MDBList.
-- [ ] Étudier `last_activities` pour actualiser uniquement les sections réellement modifiées.
-- [ ] Passer progressivement de pagination offset à cursor lorsque nécessaire.
+Règles d'implémentation (leçons des étapes précédentes) :
+- ajouter les méthodes d'écriture dans `mdblist_provider.py` (POST) ;
+- UI dans « Nettoyage des listes » (sélection + suppression doublon) et dans
+  la Watchlist ; garder le thème (boutons type=primary sans help=) ;
+- toujours montrer un résumé AVANT écriture et proposer un export JSON de
+  sauvegarde ;
+- tester avec AppTest + mock.
 
 ---
 
-## Outil communautaire Trakt ZIP → MDBList
+## Dépôt communautaire Trakt ZIP → MDBList
 
-Dépôt prévu :
+Dépôt prévu : `Minijoe01/Trakt-ZIP-to-MDBList` — script `migrate_trakt_zip_to_mdblist.py` déjà fonctionnel.
 
-```text
-Minijoe01/Trakt-ZIP-to-MDBList
-```
-
-Fichier principal déjà fonctionnel :
-
-```text
-migrate_trakt_zip_to_mdblist.py
-```
-
-État du script :
-
-- [x] bibliothèque standard Python uniquement ;
-- [x] dry-run par défaut ;
-- [x] aucune suppression ;
-- [x] clé MDBList demandée de façon masquée ou via variable d'environnement ;
-- [x] protections ZIP ;
-- [x] sauvegarde des rewatches et données non représentables ;
-- [x] préflight GET ;
-- [x] confirmation exacte `IMPORTER` avant écriture ;
-- [x] import watched, ratings, Watchlist, collection et listes statiques ;
-- [x] organisation exclusive Watchlist/Séries/Films familiaux ;
-- [ ] créer le dépôt séparé ;
-- [ ] ajouter `README.md`, `SECURITY.md` et `requirements.txt` ;
-- [ ] ajouter `start_windows.bat` ;
-- [ ] publier une première Release ZIP avec SHA-256 ;
-- [ ] ajouter des fixtures anonymisées et tests automatiques ;
-- [ ] ne jamais accepter ni enregistrer les clés d'un utilisateur sur un serveur public.
-
-Utilisation sûre :
-
-```text
-python migrate_trakt_zip_to_mdblist.py export-trakt.zip
-python migrate_trakt_zip_to_mdblist.py export-trakt.zip --check-api
-python migrate_trakt_zip_to_mdblist.py export-trakt.zip --apply
-```
-
----
-
-## Kodi
-
-- [ ] Reprendre plus tard les tests du MDBList Scrobbler avec journal DEBUG ciblé.
-- [ ] Vérifier les versions réellement distribuées par les dépôts Kodi.
-- [ ] Identifier un seul auteur principal de scrobble par lecture pour éviter les doublons.
-- [ ] Garder Media Smart Lists indépendant de Plex et Kometa ; seules leurs bonnes idées d'architecture sont réutilisées.
+- [x] bibliothèque standard uniquement ; dry-run par défaut ; aucune suppression ; clé masquée ; protections ZIP ; préflight ; confirmation `IMPORTER` ; import watched/ratings/watchlist/collection/listes.
+- [ ] créer le dépôt séparé.
+- [ ] README.md, SECURITY.md, requirements.txt.
+- [ ] start_windows.bat.
+- [ ] Release ZIP avec SHA-256.
+- [ ] Fixtures anonymisées + tests automatiques.
+- [ ] Ne jamais accepter ni enregistrer les clés d'un utilisateur sur un serveur public.
 
 ---
 
 ## Documentation et qualité
 
-- [ ] Mettre à jour le README du nouveau dépôt et toutes les anciennes mentions Trakt Smart Lists.
-- [ ] Corriger définitivement `.streamlit/secrets.example.toml` si l'ancienne version est encore en ligne.
-- [ ] Ajouter licence, politique de confidentialité et `SECURITY.md`.
-- [ ] Ajouter tests unitaires au dépôt, pas uniquement dans l'espace de travail Arena.
-- [ ] Ajouter CI : compilation, tests, scan de secrets et dépendances.
-- [ ] Ajouter changelog synthétique plutôt qu'accumuler uniquement `ETAPE-*.md`.
-- [ ] Revoir les messages encore trop techniques dans les pages non restaurées.
+- [ ] Mettre à jour le README du dépôt (l'ancien est obsolète, encore très Trakt Smart Lists).
+- [ ] Ajouter licence, politique de confidentialité et SECURITY.md.
+- [ ] Ajouter tests unitaires au dépôt (pas seulement dans l'espace de travail Arena).
+- [ ] CI GitHub Actions : compilation, tests, scan de secrets, dépendances.
+- [ ] Changelog synthétique (les ETAPE-*.md s'accumulent ; un CHANGELOG.md résumant les versions serait utile).
+- [ ] Archiver `legacy_trakt_app.py` (ancienne app, plus utilisée) hors de la racine.
 
 ---
 
-## Définition de la prochaine version stable
+## Kodi (optionnel, plus tard)
 
-- [ ] Toutes les pages du menu legacy sont fonctionnelles ou clairement marquées indisponibles.
-- [ ] MDBList lecture stable avec cache et budget de quota.
-- [ ] ZIP Trakt lecture seule fonctionnel.
-- [ ] Sauvegarde neutre téléchargeable.
+- [ ] Tests du MDBList Scrobbler avec journal DEBUG ciblé.
+- [ ] Vérifier les versions réellement distribuées par les dépôts Kodi.
+- [ ] Identifier un seul auteur principal de scrobble par lecture pour éviter les doublons.
+
+---
+
+## Définition de la prochaine version stable (V36+)
+
+- [ ] Écritures MDBList derrière aperçu + sauvegarde + confirmation (priorité 1).
+- [ ] README et docs à jour.
 - [ ] Tests reproductibles dans GitHub Actions.
 - [ ] Aucun secret dans le dépôt ou les exports.
-- [ ] Écritures MDBList derrière aperçu et confirmation.

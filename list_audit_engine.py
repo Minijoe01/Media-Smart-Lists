@@ -376,6 +376,7 @@ def audit_source(
                     "kind": kind,
                     "title": _title(item, kind),
                     "year": _year(item, kind),
+                    "item": item,
                     "note": note,
                     "added_at": added_at.isoformat() if added_at else None,
                     "added_days": days,

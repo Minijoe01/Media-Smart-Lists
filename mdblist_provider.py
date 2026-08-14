@@ -211,6 +211,62 @@ class MDBListProvider:
             ("shows",),
         )
 
+    # ── Écritures (toujours derrière aperçu + sauvegarde + confirmation) ─────
+
+    def _write_payload(self, movies: list[dict[str, Any]], shows: list[dict[str, Any]]) -> dict[str, Any]:
+        """Construit le corps {movies, shows} avec {tmdb, imdb} pour les écritures."""
+        def items(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            output = []
+            for row in rows:
+                ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+                item: dict[str, Any] = {}
+                if ids.get("tmdb") is not None:
+                    item["tmdb"] = int(ids["tmdb"])
+                if ids.get("imdb"):
+                    item["imdb"] = str(ids["imdb"])
+                if item:
+                    output.append(item)
+            return output
+        return {"movies": items(movies), "shows": items(shows)}
+
+    def remove_watchlist_items(self, movies: list[dict[str, Any]] | None = None, shows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        payload = self._write_payload(movies or [], shows or [])
+        response = self._post("/watchlist/items/remove", payload)
+        return response if isinstance(response, dict) else {"response": response}
+
+    def remove_list_items(self, list_id: int, movies: list[dict[str, Any]] | None = None, shows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        payload = self._write_payload(movies or [], shows or [])
+        response = self._post(f"/lists/{int(list_id)}/items/remove", payload)
+        return response if isinstance(response, dict) else {"response": response}
+
+    def set_watched(self, movies: list[dict[str, Any]] | None = None, shows: list[dict[str, Any]] | None = None, watched: bool = True) -> dict[str, Any]:
+        """Marque vu (ou non-vu si watched=False)."""
+        payload = self._write_payload(movies or [], shows or [])
+        path = "/sync/watched" if watched else "/sync/watched/remove"
+        response = self._post(path, payload)
+        return response if isinstance(response, dict) else {"response": response}
+
+    def set_rating(self, movies: list[dict[str, Any]] | None = None, shows: list[dict[str, Any]] | None = None, rating: float = 0.0) -> dict[str, Any]:
+        """Dépose (ou retire si rating<=0) une note /10."""
+        payload = self._write_payload(movies or [], shows or [])
+        # Le format de rating de MDBList : score 0-100 (rating * 10).
+        for section in ("movies", "shows"):
+            for item in payload[section]:
+                if rating > 0:
+                    item["rating"] = max(0, min(int(round(rating * 10)), 100))
+                else:
+                    item["rating"] = 0
+        path = "/sync/ratings" if rating > 0 else "/sync/ratings/remove"
+        response = self._post(path, payload)
+        return response if isinstance(response, dict) else {"response": response}
+
+    def set_dropped(self, shows: list[dict[str, Any]] | None = None, dropped: bool = True) -> dict[str, Any]:
+        """Marque (ou dé-marque) une série comme abandonnée."""
+        payload = self._write_payload([], shows or [])
+        path = "/sync/dropped" if dropped else "/sync/dropped/remove"
+        response = self._post(path, payload)
+        return response if isinstance(response, dict) else {"response": response}
+
     def playback(self) -> list[dict[str, Any]]:
         """Reprises mises en pause, distinctes des lectures réellement actives."""
         response = self._get("/sync/playback")

@@ -2555,6 +2555,101 @@ def render_static_lists_page() -> None:
         "Aperçu uniquement : rien n’est supprimé et les rapports ne contiennent aucune donnée de connexion."
     )
 
+    # ── Suppression sécurisée (listes statiques / Watchlist uniquement) ──────
+    writable_type = str(selected_source.get("type") or "")
+    is_writable = writable_type in {"native", "static"}
+    if is_writable and mdb_oauth.is_connected():
+        st.divider()
+        st.markdown("#### 🗑️ Suppression sécurisée dans cette liste")
+        st.caption(
+            "Sélectionne un contenu ci-dessous : un **aperçu** s'affiche, puis une "
+            "**sauvegarde de sécurité** est téléchargeable avant confirmation. "
+            "L'écriture est faite une seule fois, puis vérifiée."
+        )
+        # Contenus réellement présents dans ce conteneur (pas les vues combinées).
+        container_movies = selected_source.get("movies") or []
+        container_shows = selected_source.get("shows") or []
+        writable_rows = [
+            row for row in all_rows
+            if row.get("source_key") == selected_source.get("key")
+        ]
+        options = []
+        option_index = {}
+        for row in writable_rows:
+            label = f"{row.get('type')} — {row.get('title')} ({row.get('year') or '?'})"
+            option_index[label] = row
+            options.append(label)
+        if not options:
+            st.caption("Aucun contenu individuel supprimable dans cette vue (vue combinée ou liste vide).")
+        else:
+            chosen = st.selectbox(
+                "Contenu à retirer de cette liste",
+                options,
+                key="audit_remove_choice",
+            )
+            target = option_index[chosen]
+            ids = target.get("item", {}).get("ids") if isinstance(target.get("item"), dict) else {}
+            target_kind = "movie" if target.get("kind") == "movie" else "show"
+            st.markdown(
+                f"**Aperçu** : retirer « {escape(str(target.get('title')))} » "
+                f"({target.get('year') or '?'}) de **{escape(str(selected_source.get('label') or selected_label))}**."
+            )
+            if st.button(
+                "💾 Télécharger la sauvegarde de sécurité (JSON)",
+                key="audit_remove_backup",
+            ):
+                backup = {
+                    "action": "remove_from_list",
+                    "list": selected_source.get("key"),
+                    "list_label": selected_source.get("label"),
+                    "removed": [target],
+                    "export_date": datetime.now(PARIS_TZ).isoformat(),
+                }
+                st.download_button(
+                    "⬇️ Enregistrer le fichier de sauvegarde",
+                    data=json.dumps(backup, ensure_ascii=False, default=str, indent=2),
+                    file_name=f"sauvegarde-avant-retrait-{datetime.now(PARIS_TZ).strftime('%Y%m%d-%H%M%S')}.json",
+                    mime="application/json",
+                    key="audit_remove_backup_dl",
+                    type="primary",
+                )
+                st.caption("Conserve ce fichier : il permet de ré-ajouter le contenu si besoin.")
+            confirm = st.checkbox(
+                "✅ Je confirme : je veux retirer ce contenu de cette liste (opération réversible via la sauvegarde)",
+                key="audit_remove_confirm",
+            )
+            if confirm:
+                if st.button("🗑️ Retirer définitivement de la liste", type="primary", key="audit_remove_go"):
+                    with st.spinner("Écriture MDBList…"):
+                        try:
+                            provider = MDBListProvider(mdb_oauth.access_token())
+                            if selected_source.get("kind") == "watchlist":
+                                if target_kind == "movie":
+                                    result = provider.remove_watchlist_items(movies=[target.get("item") or {}])
+                                else:
+                                    result = provider.remove_watchlist_items(shows=[target.get("item") or {}])
+                            else:
+                                list_id = selected_source.get("id")
+                                if list_id is None:
+                                    st.error("Liste sans identifiant : impossible d'écrire.")
+                                    list_id = None
+                                if list_id is not None:
+                                    if target_kind == "movie":
+                                        result = provider.remove_list_items(int(list_id), movies=[target.get("item") or {}])
+                                    else:
+                                        result = provider.remove_list_items(int(list_id), shows=[target.get("item") or {}])
+                        except Exception as exc:
+                            st.error(f"Écriture impossible : {exc}")
+                            result = None
+                        if result is not None:
+                            st.markdown(
+                                f'<div class="accent-callout"><strong>✓ RETIRÉ</strong> · '
+                                f'« {escape(str(target.get("title")))} » a été retiré de '
+                                f'{escape(str(selected_source.get("label") or selected_label))}. '
+                                f'Recharge tes données (Actualiser) pour voir la liste à jour.</div>',
+                                unsafe_allow_html=True,
+                            )
+
     with st.expander("🕒 Historique des ajouts aux listes", expanded=False):
         additions = addition_history(dataset)
         containers = sorted({row["container"] for row in additions}, key=str.casefold)
