@@ -60,6 +60,7 @@ from list_audit_engine import (
     auditable_sources,
     filter_addition_history,
     filter_audit_rows,
+    membership_index,
     rows_to_csv,
     rows_to_json,
     source_display_label,
@@ -794,7 +795,16 @@ def render_mdblist_connector() -> None:
         return
 
     if mdb_oauth.is_connected():
-        _render_connected_mdblist()
+        # Déjà connecté : ne PAS réafficher le ruban compte/quota (il est
+        # affiché dans la section « Vos données MDBList » du dashboard).
+        # Ici on montre simplement l'état + un lien vers le dashboard.
+        account = mdb_oauth.account_summary() or {}
+        st.markdown(
+            f'<div class="accent-callout"><strong>✓ CONNECTÉ À MDBLIST</strong> · '
+            f'{escape(str(account.get("username") or "Compte MDBList"))} — '
+            'tu peux charger tes données dans la section « Vos données MDBList » ci-dessous.</div>',
+            unsafe_allow_html=True,
+        )
         return
 
     flow = mdb_oauth.current_flow()
@@ -2562,93 +2572,141 @@ def render_static_lists_page() -> None:
         st.divider()
         st.markdown("#### 🗑️ Suppression sécurisée dans cette liste")
         st.caption(
-            "Sélectionne un contenu ci-dessous : un **aperçu** s'affiche, puis une "
-            "**sauvegarde de sécurité** est téléchargeable avant confirmation. "
-            "L'écriture est faite une seule fois, puis vérifiée."
+            "Coche un contenu ci-dessous : des **actions intelligentes** s'affichent "
+            "selon les listes où il se trouve (retirer d'une liste précise, de la "
+            "Watchlist, ou partout). Une **sauvegarde de sécurité** est téléchargeable "
+            "avant chaque confirmation. Les écritures se font une à une."
         )
-        # Contenus réellement présents dans ce conteneur (pas les vues combinées).
-        container_movies = selected_source.get("movies") or []
-        container_shows = selected_source.get("shows") or []
+
+        # Lignes réellement présentes dans ce conteneur (pas les vues combinées).
         writable_rows = [
             row for row in all_rows
             if row.get("source_key") == selected_source.get("key")
         ]
-        options = []
-        option_index = {}
-        for row in writable_rows:
-            label = f"{row.get('type')} — {row.get('title')} ({row.get('year') or '?'})"
-            option_index[label] = row
-            options.append(label)
-        if not options:
+        if not writable_rows:
             st.caption("Aucun contenu individuel supprimable dans cette vue (vue combinée ou liste vide).")
         else:
-            chosen = st.selectbox(
-                "Contenu à retirer de cette liste",
-                options,
-                key="audit_remove_choice",
+            # Index des appartenances par contenu (quelles listes le contiennent).
+            members = membership_index(dataset)
+            # Sélection par cases à cocher (une action à la fois, comme demandé).
+            checked = st.multiselect(
+                "Cocher le contenu à traiter",
+                [f"{row.get('type')} — {row.get('title')} ({row.get('year') or '?'})" for row in writable_rows],
+                key="audit_remove_check",
+                placeholder="Choisis UN contenu à la fois",
             )
-            target = option_index[chosen]
-            ids = target.get("item", {}).get("ids") if isinstance(target.get("item"), dict) else {}
-            target_kind = "movie" if target.get("kind") == "movie" else "show"
-            st.markdown(
-                f"**Aperçu** : retirer « {escape(str(target.get('title')))} » "
-                f"({target.get('year') or '?'}) de **{escape(str(selected_source.get('label') or selected_label))}**."
-            )
-            if st.button(
-                "💾 Télécharger la sauvegarde de sécurité (JSON)",
-                key="audit_remove_backup",
-            ):
-                backup = {
-                    "action": "remove_from_list",
-                    "list": selected_source.get("key"),
-                    "list_label": selected_source.get("label"),
-                    "removed": [target],
-                    "export_date": datetime.now(PARIS_TZ).isoformat(),
-                }
-                st.download_button(
-                    "⬇️ Enregistrer le fichier de sauvegarde",
-                    data=json.dumps(backup, ensure_ascii=False, default=str, indent=2),
-                    file_name=f"sauvegarde-avant-retrait-{datetime.now(PARIS_TZ).strftime('%Y%m%d-%H%M%S')}.json",
-                    mime="application/json",
-                    key="audit_remove_backup_dl",
-                    type="primary",
-                )
-                st.caption("Conserve ce fichier : il permet de ré-ajouter le contenu si besoin.")
-            confirm = st.checkbox(
-                "✅ Je confirme : je veux retirer ce contenu de cette liste (opération réversible via la sauvegarde)",
-                key="audit_remove_confirm",
-            )
-            if confirm:
-                if st.button("🗑️ Retirer définitivement de la liste", type="primary", key="audit_remove_go"):
-                    with st.spinner("Écriture MDBList…"):
-                        try:
-                            provider = MDBListProvider(mdb_oauth.access_token())
-                            if selected_source.get("kind") == "watchlist":
-                                if target_kind == "movie":
-                                    result = provider.remove_watchlist_items(movies=[target.get("item") or {}])
-                                else:
-                                    result = provider.remove_watchlist_items(shows=[target.get("item") or {}])
-                            else:
-                                list_id = selected_source.get("id")
-                                if list_id is None:
-                                    st.error("Liste sans identifiant : impossible d'écrire.")
-                                    list_id = None
-                                if list_id is not None:
-                                    if target_kind == "movie":
-                                        result = provider.remove_list_items(int(list_id), movies=[target.get("item") or {}])
-                                    else:
-                                        result = provider.remove_list_items(int(list_id), shows=[target.get("item") or {}])
-                        except Exception as exc:
-                            st.error(f"Écriture impossible : {exc}")
-                            result = None
-                        if result is not None:
-                            st.markdown(
-                                f'<div class="accent-callout"><strong>✓ RETIRÉ</strong> · '
-                                f'« {escape(str(target.get("title")))} » a été retiré de '
-                                f'{escape(str(selected_source.get("label") or selected_label))}. '
-                                f'Recharge tes données (Actualiser) pour voir la liste à jour.</div>',
-                                unsafe_allow_html=True,
-                            )
+            if len(checked) > 1:
+                st.caption("⚠️ Une seule action à la fois : ne coche qu'un contenu, puis traite les autres un par un.")
+            if len(checked) == 1:
+                label = checked[0]
+                target = next((row for row in writable_rows if f"{row.get('type')} — {row.get('title')} ({row.get('year') or '?'})" == label), None)
+                if target is None:
+                    st.caption("Contenu introuvable.")
+                else:
+                    target_kind = "movie" if target.get("kind") == "movie" else "show"
+                    identity = target.get("key") or ""
+                    record = members.get(identity) or {}
+                    member_sources = record.get("memberships") or []
+                    target_item = target.get("item") or {}
+                    # Actions intelligentes : les conteneurs où le contenu existe.
+                    writable_members = [
+                        m for m in member_sources
+                        if m.get("type") in {"native", "static"} and m.get("writable")
+                    ]
+                    st.markdown(
+                        f"**Aperçu** : « {escape(str(target.get('title')))} » ({target.get('year') or '?'}) "
+                        f"est présent dans **{len(member_sources)}** conteneur(s) : "
+                        + (" · ".join(escape(m["label"]) for m in member_sources) if member_sources else selected_label)
+                        + "."
+                    )
+                    action_options = []
+                    action_map = {}
+                    for m in writable_members:
+                        action_options.append(f"Retirer de « {m['label']} »")
+                        action_map[f"Retirer de « {m['label']} »"] = m
+                    if len(writable_members) >= 2:
+                        action_options.append("Retirer de TOUS les conteneurs (cette action en fera plusieurs)")
+                        action_map["Retirer de TOUS les conteneurs (cette action en fera plusieurs)"] = "all"
+                    if not action_options:
+                        action_options.append("Aucune action possible (conteneurs non modifiables)")
+                        action_map["Aucune action possible (conteneurs non modifiables)"] = None
+                    chosen_action = st.selectbox("Action à effectuer", action_options, key="audit_remove_action")
+                    st.caption(
+                        "💡 Exemple : si « Titanic » est dans « Gros films » ET la Watchlist, "
+                        "tu peux le retirer des « Gros films » seulement, ou des deux."
+                    )
+                    backup_payload = {
+                        "action": "remove_content",
+                        "content": {
+                            "type": target.get("type"),
+                            "title": target.get("title"),
+                            "year": target.get("year"),
+                            "item": target_item,
+                        },
+                        "targets": [
+                            {
+                                "kind": "watchlist" if m.get("key", "").startswith("watchlist") else "list",
+                                "list_key": m.get("key"),
+                                "list_label": m.get("label"),
+                            }
+                            for m in (writable_members if chosen_action != "Retirer de TOUS les conteneurs (cette action en fera plusieurs)" else writable_members)
+                        ] if chosen_action and chosen_action != "Aucune action possible (conteneurs non modifiables)" else [],
+                        "export_date": datetime.now(PARIS_TZ).isoformat(),
+                    }
+                    if st.button("💾 Télécharger la sauvegarde de sécurité (JSON)", key="audit_remove_backup"):
+                        st.download_button(
+                            "⬇️ Enregistrer le fichier de sauvegarde",
+                            data=json.dumps(backup_payload, ensure_ascii=False, default=str, indent=2),
+                            file_name=f"sauvegarde-avant-retrait-{datetime.now(PARIS_TZ).strftime('%Y%m%d-%H%M%S')}.json",
+                            mime="application/json",
+                            key="audit_remove_backup_dl",
+                            type="primary",
+                        )
+                        st.caption("Conserve ce fichier : il permet de ré-ajouter le contenu si besoin.")
+                    confirm = st.checkbox(
+                        "✅ Je confirme : je veux exécuter cette action (réversible via la sauvegarde)",
+                        key="audit_remove_confirm",
+                    )
+                    if confirm and chosen_action and chosen_action != "Aucune action possible (conteneurs non modifiables)":
+                        if st.button("🗑️ Exécuter la suppression", type="primary", key="audit_remove_go"):
+                            targets = writable_members if chosen_action == "Retirer de TOUS les conteneurs (cette action en fera plusieurs)" else [action_map[chosen_action]]
+                            done = []
+                            with st.spinner("Écriture MDBList…"):
+                                try:
+                                    provider = MDBListProvider(mdb_oauth.access_token())
+                                    for m in targets:
+                                        is_watchlist = str(m.get("key") or "").startswith("watchlist") or m.get("type") == "native"
+                                        if is_watchlist:
+                                            if target_kind == "movie":
+                                                provider.remove_watchlist_items(movies=[target_item])
+                                            else:
+                                                provider.remove_watchlist_items(shows=[target_item])
+                                        else:
+                                            list_id = None
+                                            # retrouver l'id de la liste via les sources
+                                            for source in sources:
+                                                if source.get("key") == m.get("key") and source.get("id") is not None:
+                                                    list_id = source.get("id")
+                                                    break
+                                            if list_id is not None:
+                                                if target_kind == "movie":
+                                                    provider.remove_list_items(int(list_id), movies=[target_item])
+                                                else:
+                                                    provider.remove_list_items(int(list_id), shows=[target_item])
+                                            else:
+                                                st.warning(f"Liste {m.get('label')} sans identifiant : ignorée.")
+                                        done.append(m.get("label"))
+                                except Exception as exc:
+                                    st.error(f"Écriture impossible : {exc}")
+                                    done = []
+                            if done:
+                                st.markdown(
+                                    f'<div class="accent-callout"><strong>✓ RETIRÉ</strong> · '
+                                    f'« {escape(str(target.get("title")))} » a été retiré de : '
+                                    f'{escape(" · ".join(done))}. '
+                                    f'Recharge tes données (Actualiser) pour voir les listes à jour.</div>',
+                                    unsafe_allow_html=True,
+                                )
 
     with st.expander("🕒 Historique des ajouts aux listes", expanded=False):
         additions = addition_history(dataset)
@@ -3760,9 +3818,35 @@ def page_dashboard() -> None:
         st.divider()
         st.markdown('<div class="page-title">📦 Import ZIP Trakt</div>', unsafe_allow_html=True)
         st.caption(
-            "Dépose ton export ZIP Trakt (Settings → Your data → Export). "
+            "Dépose ton export ZIP Trakt ci-dessous. "
             "Lecture seule, aucune écriture sur aucun compte. Les protections ZIP sont actives."
         )
+        with st.expander("❓ Comment obtenir mon ZIP Trakt ? (guide pas à pas)", expanded=False):
+            st.markdown(
+                """
+                **1. Ouvre ton export Trakt**  
+                Va sur [app.trakt.tv/settings/data?mode=media](https://app.trakt.tv/settings/data?mode=media)
+                (connecte-toi avec ton compte Trakt).
+
+                **2. Scrolle jusqu'à « Export »**  
+                Clique sur **« Exporter maintenant »** (ou « Export now »).
+
+                **3. Attends quelques minutes**  
+                Trakt prépare ton export : ça peut prendre quelques minutes
+                (le bouton « Exporter » peut rester actif le temps du calcul).
+
+                **4. Télécharge le fichier ZIP**  
+                Une fois prêt, Trakt te donne un lien de téléchargement
+                (`export-trakt-*.zip`). Enregistre-le sur ton ordinateur.
+
+                **5. Importe-le ici**  
+                Reviens sur cette page et dépose le fichier ZIP dans la zone
+                ci-dessous, puis clique sur **« 📥 Importer et charger mes données »**.
+
+                > 🔒 L'import est **lecture seule** : tes données Trakt ne sont
+                > jamais modifiées, et le ZIP n'est pas conservé après la session.
+                """
+            )
         zip_file = st.file_uploader("Choisis le fichier ZIP Trakt", type=["zip"], key="trakt_zip_uploader")
         if zip_file is not None:
             st.caption(f"Fichier : **{zip_file.name}** · {zip_file.size // 1024} Ko")

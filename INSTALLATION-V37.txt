@@ -1,0 +1,65 @@
+================================================================
+MEDIA SMART LISTS — V37
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V37
+----------------------
+1. RUBAN COMPTE : plus de doublon. Quand tu es connecté et que tu
+   charges tes données, le ruban « CONNECTÉ À MDBLIST » ne s'affiche
+   plus deux fois (il n'apparaît que dans « Vos données MDBList »).
+2. GUIDE ZIP TRAKT : quand tu cliques sur « Préparer l'import ZIP
+   Trakt », un panneau « ❓ Comment obtenir mon ZIP Trakt ? » explique
+   pas à pas : trakt.tv/settings/data → Exporter maintenant → attendre
+   → télécharger → déposer ici.
+3. SUPPRESSION INTELLIGENTE (user-friendly) : dans « Nettoyage des
+   listes », coche un contenu → l'app affiche dans combien de listes
+   il se trouve → choisis l'action : « Retirer de [cette liste] »,
+   « Retirer de [l'autre liste] », ou « Retirer de TOUS les
+   conteneurs ». Sauvegarde de sécurité + confirmation avant chaque
+   écriture, une action à la fois.
+
+LES FICHIERS À ENVOYER (1 modifié, 2 nouveaux)
+-----------------------------------------------
+À REMPLACER :
+  • app.py
+
+À AJOUTER (nouveaux fichiers) :
+  • ETAPE-37.md
+  • INSTALLATION-V37.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER : tous les autres fichiers (déjà à jour en ligne).
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser CES 3 FICHIERS :
+    app.py
+    ETAPE-37.md
+    INSTALLATION-V37.txt
+GitHub vous proposera de remplacer app.py : acceptez.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    feat: dedup account ribbon, trakt zip guide, smart multi-list removal
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io : « Manage app » → ⋮ → « Reboot »,
+PUIS « Clear cache ».
+
+POUR VÉRIFIER
+-------------
+1. Connecte-toi puis charge tes données : le ruban compte n'apparaît
+   qu'une seule fois.
+2. « Préparer l'import ZIP Trakt » : le guide pas à pas est là.
+3. « 🧹 Nettoyage des listes » → liste statique : coche un contenu →
+   l'aperçu montre ses conteneurs → choisis l'action.
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+• Les écritures restent réversibles : garde la sauvegarde JSON.
+================================================================
