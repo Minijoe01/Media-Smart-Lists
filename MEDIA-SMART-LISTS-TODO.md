@@ -61,15 +61,15 @@ L'utilisateur veut retrouver le pouvoir de l'ancienne app Trakt :
 **sélectionner un contenu (ex. doublon) dans une liste et le supprimer
 directement**, et plus largement gérer ses données MDBList.
 
-- [ ] Supprimer un contenu d'une liste statique (`POST /lists/{id}/items/remove`).
-- [ ] Retirer de la Watchlist (`POST /watchlist/items/remove`).
-- [ ] Marquer vu / non-vu (`POST /sync/watched` / `/sync/watched/remove`).
-- [ ] Ajouter des notes (`POST /sync/ratings`).
-- [ ] Marquer / dé-marquer « abandonné » (`POST /sync/dropped` / remove).
-- [ ] Ne JAMAIS écrire dans une liste dynamique/IA/flux.
-- [ ] Chaque opération : aperçu → export de sauvegarde → confirmation explicite → écriture → vérification GET.
-- [ ] Aucun delete en lot par défaut.
-- [ ] Journal local nettoyé de tous les secrets.
+- [x] Supprimer un contenu d'une liste statique (`POST /lists/{id}/items/remove`) — fait (V36, amélioré V37).
+- [x] Retirer de la Watchlist (`POST /watchlist/items/remove`) — fait.
+- [x] Marquer vu / non-vu (`POST /sync/watched` / `/sync/watched/remove`) — fait (V38).
+- [x] Marquer « abandonné » (`POST /sync/dropped`) — fait (V38).
+- [ ] Ajouter des notes (`POST /sync/ratings`) — API prête mais UI retirée (V38) : les notes MDBList se gèrent côté MDBList ; à réintégrer si besoin avec des entiers 0-10.
+- [x] Ne JAMAIS écrire dans une liste dynamique/IA/flux.
+- [x] Chaque opération : aperçu → export de sauvegarde → confirmation explicite → écriture.
+- [x] Aucun delete en lot par défaut.
+- [x] Journal local nettoyé de tous les secrets.
 
 Règles d'implémentation (leçons des étapes précédentes) :
 - ajouter les méthodes d'écriture dans `mdblist_provider.py` (POST) ;
@@ -97,12 +97,15 @@ Dépôt prévu : `Minijoe01/Trakt-ZIP-to-MDBList` — script `migrate_trakt_zip_
 
 ## Documentation et qualité
 
-- [ ] Mettre à jour le README du dépôt (l'ancien est obsolète, encore très Trakt Smart Lists).
-- [ ] Ajouter licence, politique de confidentialité et SECURITY.md.
-- [ ] Ajouter tests unitaires au dépôt (pas seulement dans l'espace de travail Arena).
-- [ ] CI GitHub Actions : compilation, tests, scan de secrets, dépendances.
-- [ ] Changelog synthétique (les ETAPE-*.md s'accumulent ; un CHANGELOG.md résumant les versions serait utile).
-- [ ] Archiver `legacy_trakt_app.py` (ancienne app, plus utilisée) hors de la racine.
+- [x] README du dépôt réécrit (V38) — complet, wordmark, fonctionnalités, sources, sécurité, installation.
+- [x] Changelog synthétique créé (CHANGELOG.md).
+- [x] Social card régénérée (docs/social_card.png).
+- [x] Guide communauté Alkodiques (docs/guide-alkodiques.md).
+- [x] CI GitHub Actions (compilation + scan de secrets).
+- [ ] Licence MIT ajoutée (LICENSE) — voir ci-dessous.
+- [ ] Nettoyage du dépôt : supprimer les fichiers obsolètes (voir INSTALLATION-V39.txt).
+- [ ] SECURITY.md et politique de confidentialité.
+- [ ] Tests unitaires versionnés dans le dépôt.
 
 ---
 

@@ -3,7 +3,14 @@
 > À transmettre avec `MEDIA-SMART-LISTS-TODO.md` si la conversation Arena
 > arrive à sa limite. Copie-colle l'URL de cette conversation à l'agent de
 > remplacement, ou donne-lui ce fichier.
-> **Dernière mise à jour : 13 août 2026 · version déployée : V35.**
+> **Dernière mise à jour : 14 août 2026 · version déployée : V38.**
+>
+> ⚠️ **V38/V39** : la « déconnexion durable » a été RETIRÉE (elle causait des
+> fausses déconnexions). Comportement actuel : on reste connecté au F5 ; la
+> déconnexion ne vaut que pour la session en cours. Voir `mdblist_oauth.py`.
+> Écritures disponibles : suppression sécurisée (listes/Watchlist), vu/non-vu,
+> abandonnée. La note a été retirée de l'UI (les notes MDBList se gèrent côté
+> MDBList). Docs publiées : README, CHANGELOG, social card, guide Alkodiques, CI.
 
 ## Mission
 

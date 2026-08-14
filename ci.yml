@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Compilation & secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupération du code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installation des dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compilation de tous les fichiers Python
+        run: |
+          python -m compileall -q app.py
+          python -m compileall -q -f . -x '/(\.git|\.venv|__pycache__)/'
+
+      - name: Scan de secrets (aucune vraie clé autorisée)
+        run: |
+          python - <<'EOF'
+          import pathlib, re
+          root = pathlib.Path(".")
+          patterns = [
+              re.compile(r"MDBLIST_CLIENT_ID\s*=\s*[\"'](?!\"\")[^\"']+", re.I),
+              re.compile(r"MDBLIST_CLIENT_SECRET\s*=\s*[\"'](?!\"\")[^\"']+", re.I),
+              re.compile(r"TOKEN_ENCRYPTION_KEY\s*=\s*[\"'](?!\"\")[^\"']+", re.I),
+              re.compile(r"(ghp|github_pat)_[A-Za-z0-9_]{20,}"),
+          ]
+          errors = []
+          for path in root.rglob("*"):
+              if any(part in {".git", ".venv", "__pycache__", "node_modules"} for part in path.parts):
+                  continue
+              if not path.is_file():
+                  continue
+              try:
+                  text = path.read_text(encoding="utf-8", errors="ignore")
+              except Exception:
+                  continue
+              for pat in patterns:
+                  for match in pat.finditer(text):
+                      value = match.group(0)
+                      # Ignore les fichiers d'exemple et le README.
+                      if "example" in path.name or "README" in path.name:
+                          continue
+                      errors.append(f"{path}: {value[:40]}…")
+          if errors:
+              print("SECRETS DÉTECTÉS :")
+              for e in errors:
+                  print(" -", e)
+              raise SystemExit(1)
+          print("✅ Aucun secret détecté")
+          EOF

@@ -25,9 +25,8 @@ TOKEN_URL = f"{API_BASE}/oauth/token/"
 REVOKE_URL = f"{API_BASE}/oauth/revoke_token/"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 COOKIE_NAME = "media_smart_lists_mdblist_oauth_v1"
-LOGOUT_COOKIE_NAME = "media_smart_lists_mdblist_logged_out_v1"
-LOGOUT_COOKIE_DAYS = 365
-LOGOUT_QUERY_KEY = "msl_logged_out"
+# (Déconnexion durable retirée : le comportement attendu est « toujours
+# connecté au F5 ». La déconnexion ne vaut que pour la session en cours.)
 COOKIE_DAYS = 365
 REQUEST_TIMEOUT = 20
 USER_AGENT = "Media-Smart-Lists/0.7"
@@ -185,16 +184,6 @@ def save_tokens(cookies: Any, token_data: dict[str, Any]) -> bool:
     st.session_state[ACCESS_KEY] = access_token
     st.session_state[REFRESH_KEY] = refresh_token
     st.session_state[EXPIRES_KEY] = int(time.time()) + max(expires_in, 60)
-    # Nouvelle connexion réussie : lever la déconnexion durable.
-    # (Écrasement par `set()` plutôt que `remove()` : fiable partout.)
-    try:
-        st.query_params.pop(LOGOUT_QUERY_KEY, None)
-    except Exception:
-        pass
-    try:
-        cookies.set(LOGOUT_COOKIE_NAME, "", expires=datetime.now() - timedelta(days=1))
-    except Exception:
-        pass
     return persist_cookie(cookies)
 
 
@@ -324,27 +313,13 @@ def ensure_valid_session(cookies: Any) -> tuple[bool, str]:
 
     refresh_token = str(st.session_state.get(REFRESH_KEY) or "")
     if not refresh_token:
-        # Déconnexion durable : si le marqueur d'URL ou le cookie logout est
-        # présent, on ne restaure JAMAIS la session (F5 → on reste déconnecté).
+        # Restauration depuis le cookie OAuth (comportement « toujours
+        # connecté » au rechargement de page).
         try:
-            url_logged_out = str(st.query_params.get(LOGOUT_QUERY_KEY) or "") == "1"
+            encrypted_cookie = str(cookies.get(COOKIE_NAME) or "")
         except Exception:
-            url_logged_out = False
-        try:
-            cookie_logged_out = str(cookies.get(LOGOUT_COOKIE_NAME) or "") == "1"
-        except Exception:
-            cookie_logged_out = False
-        logged_out = url_logged_out or cookie_logged_out
-        if not logged_out:
-            try:
-                encrypted_cookie = str(cookies.get(COOKIE_NAME) or "")
-            except Exception:
-                encrypted_cookie = ""
-            # Cookie écrasé par la déconnexion : ne jamais le restaurer.
-            if encrypted_cookie == "expired":
-                _remove_cookie(cookies)
-                return False, "Session MDBList déconnectée."
-            if encrypted_cookie:
+            encrypted_cookie = ""
+        if encrypted_cookie and encrypted_cookie != "expired":
                 bundle = _decrypt_bundle(encrypted_cookie)
                 if not bundle:
                     _remove_cookie(cookies)
@@ -464,49 +439,20 @@ def disconnect(cookies: Any) -> None:
             )
         except requests.RequestException:
             pass
-    # Marqueur de déconnexion DANS L'URL (st.query_params) : c'est l'approche
-    # la plus fiable — l'URL survit à un F5, c'est synchrone côté serveur, et
-    # ça ne dépend pas du composant cookie JS (dont l'écriture peut être
-    # interrompue par le st.rerun immédiat).
-    try:
-        st.query_params[LOGOUT_QUERY_KEY] = "1"
-    except Exception:
-        pass
-    # Filet : écraser le cookie OAuth (expiré) + cookie logout.
-    try:
-        cookies.set(
-            COOKIE_NAME,
-            "expired",
-            expires=datetime.now() - timedelta(days=1),
-        )
-    except Exception:
-        pass
+    # Déconnexion de session : on supprime le cookie et la session en cours.
+    # (Comportement voulu : sans ce cookie, un F5 ne re-connecte pas
+    # automatiquement ; si la suppression du cookie échoue côté navigateur,
+    # l'utilisateur restera connecté — c'est le comportement « toujours
+    # connecté » demandé.)
     _remove_cookie(cookies)
-    try:
-        cookies.set(
-            LOGOUT_COOKIE_NAME,
-            "1",
-            expires=datetime.now() + timedelta(days=LOGOUT_COOKIE_DAYS),
-        )
-    except Exception:
-        pass
     _clear_session()
 
 
 def expire_local_session(cookies: Any) -> None:
-    """Efface la session et le cookie OAuth SANS marqueur de déconnexion.
+    """Efface la session (et tente de supprimer le cookie) sans révocation.
 
-    Utilisé quand la session MDBList est simplement EXPIRÉE (et non un logout
-    volontaire) : l'utilisateur pourra se reconnecter sans avoir à retirer un
-    marqueur `?msl_logged_out=1` de l'URL.
+    Utilisé quand la session MDBList est simplement EXPIRÉE : l'utilisateur
+    pourra se reconnecter simplement. Ne pose aucun marqueur.
     """
-    try:
-        cookies.set(
-            COOKIE_NAME,
-            "expired",
-            expires=datetime.now() - timedelta(days=1),
-        )
-    except Exception:
-        pass
     _remove_cookie(cookies)
     _clear_session()

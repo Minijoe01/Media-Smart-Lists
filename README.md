@@ -1,143 +1,139 @@
 <div align="center">
 
-<img src="static/wordmark.png" alt="Trakt Smart Lists" width="340">
+<img src="static/wordmark.png" alt="Media Smart Lists" width="340">
 
-**Range tes listes Trakt, retrouve tes progressions fantômes, et sache ENFIN quoi regarder ce soir.**
+**Range tes listes, retrouve tes séries en cours, et sache ENFIN quoi regarder ce soir.**
 
-[![Ouvrir l'app](https://img.shields.io/badge/🚀%20Ouvrir_l'app-Streamlit-00A392?style=for-the-badge)](https://trakt-smart-lists.streamlit.app/)
+[![Ouvrir l'app](https://img.shields.io/badge/🚀%20Ouvrir_l'app-Streamlit-00A392?style=for-the-badge)](https://media-smart-lists.streamlit.app/)
 [![Python](https://img.shields.io/badge/Python-3.9%2B-00524B?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-1.35%2B-CEDC00?style=for-the-badge&logo=streamlit&logoColor=black)](https://streamlit.io/)
-[![Trakt API](https://img.shields.io/badge/API-Trakt%20v2-ED2224?style=for-the-badge)](https://trakt.docs.apiary.io/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.60-CEDC00?style=for-the-badge&logo=streamlit&logoColor=black)](https://streamlit.io/)
+[![MDBList](https://img.shields.io/badge/Source-MDBList-00A392?style=for-the-badge)](https://mdblist.com/)
+[![Licence](https://img.shields.io/badge/Licence-MIT-00524B?style=for-the-badge)](LICENSE)
 
-*Une application web Streamlit qui croise votre historique Trakt avec vos listes, les nettoie et vous recommande quoi regarder ensuite grâce à un score personnalisé et transparent. Interface en français.*
+*Une application web Streamlit qui croise votre historique **MDBList** (ou votre export **ZIP Trakt**) avec vos listes, les nettoie, et vous recommande quoi regarder grâce à un score personnalisé et 100 % transparent. Interface en français.*
 
 </div>
 
 ---
 
-> 🎯 **Pour qui ?** Cette application est pensée d'abord pour les **utilisateurs FREE de Trakt**. Les membres **VIP** disposent déjà de statistiques et de suivi avancés sur trakt.tv (souvent plus poussés encore) : la plus-value de cet outil sera moindre pour eux.
+> 🎯 **Pour qui ?** Cette application est pensée pour les **utilisateurs FREE de Trakt** et plus largement pour tous ceux qui veulent reprendre le contrôle de leurs listes et de leurs statistiques de visionnage. Suite aux changements des conditions d'utilisation de Trakt pour les comptes gratuits, l'ancienne application **Trakt Smart Lists** n'est plus accessible : **Media Smart Lists** la remplace, avec le même esprit et encore plus de fonctionnalités.
 
-## 🤔 Le problème
+## ✨ Les sources de données
 
-Tu utilises Trakt depuis des années. Ta watchlist est pleine, tu as réparti tes envies dans plusieurs listes, tu ne sais plus :
+Media Smart Lists est **fournisseur-neutre** : quelle que soit l'origine de vos données, toutes les pages fonctionnent à l'identique.
 
-- ce que tu as **déjà vu** qui traîne encore dans tes listes ;
-- quels contenus sont **en double** d'une liste à l'autre ;
-- où sont passés ces films « repris plus tard » bloqués dans *Continuer à regarder* (les **fantômes** 👻 — les mêmes qui polluent ton widget « En cours » dans Kodi) ;
-- et surtout… **quoi regarder ce soir** sans scroller 40 minutes.
-
-Trakt Smart Lists répond à tout ça, en une analyse.
-
-## ✨ Fonctionnalités
-
-| Page | Ce qu'elle fait |
+| Source | Description |
 |---|---|
-| 🏠 **Tableau de bord** | Vue d'ensemble, digest de ta semaine, lecture en cours, état du nettoyage, **⏱️ ton rythme** (récap du mois, ép./semaine, compteurs à vie, **date de fin projetée** 📅), **📺 ta progression dans TOUTES tes séries** (%, temps vu/restant, **prochain épisode SxxEyy**, affiches TMDB optionnelles, séries à l'abandon 💤, derniers visionnages 🕘). Blocs d'info **repliés par défaut** : info proposée, jamais imposée |
-| ▶️ **En cours de lecture** | Ce que tu es EN TRAIN de regarder : progression réelle, temps écoulé/restant, heure de fin estimée |
-| 👻 **Progression fantôme** | Les entrées bloquées dans « Continuer à regarder » — supprime-les proprement, ou finis-les ce soir |
-| 🧹 **Nettoyage des listes** | Retire les contenus déjà vus de tes listes, avec garde-fou intelligent : distinction **ajouté avant le visionnage** (= à retirer) vs **ajouté après** (= tu veux le revoir, on le garde) |
-| 🔍 **Doublons** | Le même contenu dans plusieurs listes ? Retire les copies en un clic |
-| 🎯 **Que regarder ?** | Score personnel **100 % explicable** (/100 + indice de friction 🚪), 21 presets d'humeur, roulette pondérée **+ roulette 🧭 découverte** (hors zone de confort), pastilles à infobulles |
-| 📅 **Calendrier** | Les prochaines sorties de TES listes + ton calendrier perso d'épisodes (7/14/30 jours) |
-| 📊 **Statistiques** | Heatmap façon GitHub, évolution de tes goûts, ADN cinéphile, marathons, rythmes de visionnage — filtres combinables (période, genre, type) |
-| 🎬 **Rendez-vous annuel** | Ton « Wrapped » perso + image PNG partageable générée à la volée |
-| 🏆 **Succès** | 50+ badges à débloquer (marathons, streaks 🔥, rewatch master ♾️…) |
-| 📤 **Sauvegarde** | Export/import JSON complet de tes données d'analyse |
+| 🔗 **MDBList (temps réel)** | Connectez votre compte MDBList (OAuth, sans mot de passe). Historique, Watchlist, listes, notes, progression, séries abandonnées sont chargées en temps réel, avec un **cache 1 h** pour économiser votre quota API. |
+| 📦 **ZIP Trakt (local, lecture seule)** | Importez votre export ZIP Trakt (Settings → Your data → Export). Historique complet avec rewatches, notes, Watchlist, listes, reprises en pause — **sans aucune API Trakt**. Enrichissement optionnel par MDBList (genres, posters, durées, notes). |
 
-### 🎯 Le score « Que regarder ? » : transparent et personnel
+## 🧭 Les 10 pages
 
-Pas de boîte noire. Chaque recommandation affiche **pourquoi** elle est là, en points :
+### 🏠 Tableau de bord
+Un badge indique clairement la source consultée (🔵 MDBList / 🟢 Trakt ZIP). Vous y trouvez : votre **rythme de visionnage** (épisodes/semaine, bilan du mois), vos **compteurs à vie** (heures séries / films), la **date de fin projetée** de vos séries en cours (hors abandonnées), le digest des 7 derniers jours et vos derniers visionnages.
 
-- ❤️ Tes genres (pondérés par **récence** — tes goûts d'il y a 2 ans pèsent moins)
-- 🫶 Les genres que TOI tu notes haut… et **👎 tes propres ratages** (genre déjà noté ≤ 3/10 chez toi → léger doute, jamais éliminatoire)
-- ⏱️ Ta durée idéale, calculée sur TES films réellement regardés
-- 🌍 Tes pays de cinéma de prédilection · 🌱 Jeune série · 🏁 Presque finie
-- ⏳ « Déjà commencée, il te reste X ép. » · ▶️ « En pause chez toi »
-- 🔄 Anti-saturation **douce** (suggère de varier, ne pénalise jamais)
-- 🌙 Contenus courts favorisés après 22 h
-- 🚪 **Indice de friction** : la « facilité de lancement » ce soir, à côté du score
+### ▶️ En cours de lecture
+Vos séries en cours avec leur progression : épisodes vus, temps de visionnage, temps restant, prochain épisode à regarder. Cartes aérées avec liens discrets (🔎 Où regarder · TMDB · MDBList).
 
-Et pour choisir en 1 clic : **21 presets** (⚡ Rapide · 🍿 Soirée cinéma · 📺 Binge express · 🎯 Presque finies · 💎 Pépites confidentielles · 😄 Rire · 😱 Frissons · 🌍 Cinéma du monde · 🧭 Hors zone de confort…).
+### 👻 Progression Fantôme
+Les reprises mises en pause : % de progression, durée restante, dernière activité. Filtres, tris et recherche locaux.
 
-## ⚡ Pourquoi c'est rapide
+### 🧹 Nettoyage des listes
+L'audit local de vos listes :
+- **Vu · à retirer** (ajouté avant le visionnage → oublié de l'enlever) vs **Vu · à revoir** (ajouté après → remis exprès) ;
+- **doublons** entre conteneurs (avec chevauchements et listes dynamiques) ;
+- **suppression sécurisée** : cochez un contenu, choisissez l'action intelligente (retirer d'une liste précise, de la Watchlist, ou de tous les conteneurs), téléchargez une sauvegarde, confirmez ;
+- **marquer vu / non-vu** et **abandonnée** (séries) ;
+- historique des ajouts aux listes (date, conteneur, tri).
 
-- **Historique téléchargé en parallèle** (5 flux, retry automatique si Trakt limite)
-- **Synchronisation différentielle** `start_at` : aux visites suivantes, seules les **nouvelles** vues sont récupérées
-- **Cache serveur** de l'historique → reconnexion quasi instantanée
-- **Progressions des séries** via l'endpoint officiel `progress/watched` : affichage 100 % depuis le cache disque (0 appel), mise à jour **DELTA** sur simple bouton
-- « Que regarder ? » et le Calendrier puisent dans les données **déjà chargées par l'analyse** : 0 appel API de plus
-- Aucun appel API au rendu des pages ; les rapports (Excel, PNG) ne se génèrent **qu'au clic** ; les affiches TMDB ne se chargent **que si tu les actives**
+### 🎯 Que regarder ?
+Le cœur de l'application. À partir de votre historique, l'app construit votre **profil de visionnage** (genres fétiches, durées préférées, décennies, pays, studios…). Ensuite chaque contenu de vos listes est **scoré sur 100 avec une explication transparente** : chaque pastille (⭐ Note communauté, 👥 Apprécié du public, 🌍 Cinéma, 🆕 Récent, ⏱️ Durée idéale, 💎 Pépite confidentielle, 📥 Tout juste ajouté, 🚪 Zéro effort, 🏢 Studio fétiche…) affiche son influence exacte au survol. **21 presets** (« Film rapide », « Soirée cinéma », « Presque finies », « Pépites confidentielles », « Hors zone de confort »…) et une **🎲 roulette** pour les indécis.
 
-## 📸 Captures d'écran
+### 📅 Calendrier des sorties
+Les sorties futures de **vos** contenus : films à venir, premières de séries, prochains épisodes annoncés. Trois sources fusionnées (calendrier MDBList, dates déjà dans vos données, appels groupés) sur des horizons jusqu'à **1 an et demi**, avec filtres, recherche, export CSV et ICS. Un panneau « Pourquoi ce calendrier… » explique chaque résultat.
 
-<!--
-📸 NOTE MAINTENEUR — comment ajouter les captures :
-1. À la racine du repo : Add file → Upload files, crée le dossier docs/ et dépose tes PNG
-   (dashboard.png, series.png, quoi_regarder.png).
-2. Supprime ensuite ce bloc commentaire et dé-commente les lignes ci-dessous :-->
-<p align="center"><img src="docs/Dashboard.png" alt="Tableau de bord" width="820"></p>
-<p align="center"><img src="docs/series.png" alt="Progression des séries" width="820"></p>
-<p align="center"><img src="docs/Doublons.png" alt="Doublons entre vos listes" width="820"></p>
-<p align="center"><img src="docs/quoi_regarder.png" alt="Que regarder ?" width="820"></p>
-<p align="center"><img src="docs/statistiques.png" alt="Vos statistiques" width="820"></p>
+### 📊 Statistiques
+Des statistiques détaillées façon Trakt Smart Lists : **une seule série de filtres** (Période · Type · Genre) appliquée à toute la page, heatmap d'activité façon GitHub, heures par mois (triées chronologiquement), genres, répartition par heure/jour/année, ADN cinéphile, studios préférés, marathons, évolution des goûts. La vue d'ensemble en haut est explicitement « non filtrée ».
 
+### 🎬 Rendez-vous annuel (Wrapped)
+Votre récapitulatif annuel façon Spotify Wrapped : films, séries, épisodes, note moyenne, records, tops, genres, heures par mois — et une **image PNG 1080×1350 partageable** générée localement.
 
-## 🚀 Utiliser l'app
+### 🏆 Succès
+**61 badges** à débloquer : paliers de temps, films, épisodes, séries suivies, marathons, diversité, nocturne, rewatchs, rythme. Chaque badge verrouillé montre sa progression.
 
-👉 **[trakt-smart-lists.streamlit.app](https://trakt-smart-lists.streamlit.app/)** — connecte ton compte Trakt (code affiché + QR code), lance l'analyse, c'est parti.
+### 📤 Sauvegarde
+- **Sauvegarde JSON** neutre et versionnée, **restaurable** même sans connexion ;
+- **rapport Excel** multi-onglets (Résumé, Historique, Mes contenus, Listes, Statistiques, Badges) avec largeurs auto ;
+- aucun secret ni jeton dans les exports.
 
-> ⚠️ L'app **lit et écrit sur ton compte Trakt** uniquement quand tu cliques sur un bouton de suppression (avec confirmation à chaque fois). Elle ne partage rien avec personne.
+## 🚀 Démarrage rapide
 
-## 🛠️ Lancer en local
+1. Ouvrez 👉 **[media-smart-lists.streamlit.app](https://media-smart-lists.streamlit.app/)**
+2. Choisissez votre source :
+   - **🔗 MDBList** : cliquez « Préparer la connexion MDBList » → autorisez avec le code affiché (ou le QR code), puis « Charger mes données MDBList » ;
+   - **📦 ZIP Trakt** : cliquez « Préparer l'import ZIP Trakt » → suivez le guide (trakt.tv → Settings → Your data → Export) → déposez le ZIP.
+3. Explorez les 10 pages. 🍿
+
+## 🔒 Sécurité & confidentialité
+
+- **Open source** : le code est lisible par tous sur GitHub ;
+- connexion **OAuth directe** entre vous et MDBList (jamais de mot de passe) ;
+- tokens chiffrés dans un cookie ; **aucun secret dans le dépôt** (`.streamlit/secrets.toml` est ignoré par git) ;
+- les écritures (suppression, vu/non-vu, notes, abandon) ne se font **que sur vos clics, avec aperçu + sauvegarde + confirmation** ;
+- import ZIP **lecture seule** : rien n'est modifié sur Trakt, le ZIP n'est pas conservé ;
+- aucun serveur ne stocke vos données : tout est calculé dans votre navigateur/session.
+
+## 📦 Installation locale (optionnel)
 
 ```bash
-git clone https://github.com/Minijoe01/Trakt-Smart-Lists.git
-cd Trakt-Smart-Lists
+git clone https://github.com/Minijoe01/Media-Smart-Lists.git
+cd Media-Smart-Lists
+python -m venv .venv && source .venv/bin/activate   # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-Crée une application Trakt sur **[trakt.tv/oauth/applications](https://trakt.tv/oauth/applications)** (redirect URI : `urn:ietf:wg:oauth:2.0:oob`), puis renseigne `.streamlit/secrets.toml` :
-
-```toml
-TRAKT_CLIENT_ID = "ton_client_id"
-TRAKT_CLIENT_SECRET = "ton_client_secret"
-TMDB_API_KEY = "optionnel — pour les affiches de films/séries (clé v3 courte OU jeton v4 long, les 2 marchent)"
-```
-
-```bash
+cp .streamlit/secrets.example.toml .streamlit/secrets.toml
+# Renseigne tes secrets (client MDBList + clé de chiffrement) puis :
 streamlit run app.py
 ```
 
-## ☁️ Déployer ta propre instance (Streamlit Cloud)
+### Secrets requis (`.streamlit/secrets.toml`)
 
-1. Fork ce repo sur ton compte GitHub.
-2. Sur [share.streamlit.io](https://share.streamlit.io) : **New app** → ton repo, branche `main`, fichier `app.py`.
-3. Dans **Settings → Secrets**, colle le même bloc TOML que ci-dessus.
-4. Deploy. 🎉
+```toml
+MDBLIST_CLIENT_ID = "…"          # client_id de ton app OAuth MDBList
+MDBLIST_CLIENT_SECRET = "…"      # client_secret (optionnel selon le flux)
+TOKEN_ENCRYPTION_KEY = "…"       # clé Fernet 32 octets (base64 url-safe)
+```
 
-Le dossier `fonts/` (polices DejaVu) garantit les accents sur l'image Wrapped PNG ; `static/fonts/` embarque la police **Manrope** de l'en-tête (`enableStaticServing = true` dans `.streamlit/config.toml`) ; `logo.png` à la racine sert de favicon, `static/wordmark.png` d'en-tête.
+> 🔑 Jamais de vraies clés sur GitHub. Utilisez `.streamlit/secrets.example.toml` comme modèle.
 
-## 🔒 Vie privée
+## 🧱 Architecture
 
-- Aucune base de données, aucun compte à créer : l'authentification se fait directement entre toi et Trakt (OAuth device flow).
-- Les jetons ne quittent jamais le serveur Streamlit / ton navigateur, et ne sont **jamais** inclus dans les exports.
-- L'historique est mis en cache côté serveur (cloisonné par utilisateur, fichier temporaire) uniquement pour accélérer tes visites suivantes.
-- Les suppressions sur Trakt ne se font **que sur action explicite + confirmation**, élément par élément ou sélection.
+```text
+MDBListProvider ──┐
+                  ├── NormalizedDataset ── UI commune (10 pages)
+TraktZipProvider ─┘
+```
 
-## 💬 Communauté
+- `app.py` : toute l'interface + logigramme du tableau de bord + enrichissement ZIP ;
+- `mdblist_oauth.py` : OAuth device code, cookies, session ;
+- `mdblist_provider.py` : appels API MDBList (lecture + écritures sécurisées) ;
+- `trakt_zip_provider.py` : import ZIP Trakt sécurisé (zip-slip, tailles) ;
+- moteurs : `recommendation_engine.py`, `stats_engine.py`, `achievements_engine.py`, `wrapped_engine.py`, `dashboard_engine.py`, `excel_export.py`, `list_audit_engine.py`, `calendar_engine.py`, `history_engine.py`, `normalized_model.py`.
 
-- 🐛 **Un bug, une idée ?** → [Ouvre une issue](https://github.com/Minijoe01/Trakt-Smart-Lists/issues)
-- 💡 Discussions & entraide → onglet **Discussions** du repo
-- 🤝 Tu veux contribuer ? Fork → branche → Pull Request. Les PR sont lues et triées par le mainteneur.
+## 📖 Documentation
 
-## 🙏 Attributions & remerciements
+- [Changelog](CHANGELOG.md) — les versions de l'application ;
+- [TODO / feuille de route](MEDIA-SMART-LISTS-TODO.md) ;
+- [Dossier de reprise IA](AI-HANDOFF.md) ;
+- [Guide communauté Alkodiques](docs/guide-alkodiques.md) — article d'annonce.
 
-- Données : **[Trakt](https://trakt.tv)** ([API v2](https://trakt.docs.apiary.io/)) — *This product uses the Trakt API but is not endorsed or certified by Trakt.*
-- Affiches : **[TMDB](https://www.themoviedb.org/)** — *This product uses the TMDB API but is not endorsed or certified by TMDB.*
-- Construit avec [Streamlit](https://streamlit.io), [streamlit-echarts](https://github.com/andfanilo/streamlit-echarts), la police [Manrope](https://github.com/sharanda/manrope) (OFL) et beaucoup d'amour pour le cinéma et les séries.
+## 📸 Captures
 
----
+| | |
+|---|---|
+| [Social card](docs/social_card.png) | — |
 
-<div align="center">
-<sub>Fait avec 🍿 pour la communauté des Alkodiques et tous les fans de Trakt.</sub>
-</div>
+## 🐛 Bugs, idées, envies ?
+
+Les [issues GitHub](https://github.com/Minijoe01/Media-Smart-Lists/issues) sont ouvertes. Proposez une amélioration, signalez un bug, ou venez en parler.
+
+**Bonne analyse… et surtout : bon visionnage ! 🍿**
