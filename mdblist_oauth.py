@@ -448,6 +448,8 @@ def qr_png(url: str) -> bytes:
 
 
 def disconnect(cookies: Any) -> None:
+    """Déconnexion VOLONTAIRE : révoque les jetons + pose le marqueur
+    `?msl_logged_out=1` (déconnexion durable au F5)."""
     client_id = _client_id()
     # Tente de révoquer les deux jetons ; aucune erreur réseau ne bloque le logout local.
     for token in (access_token(), str(st.session_state.get(REFRESH_KEY) or "")):
@@ -488,4 +490,23 @@ def disconnect(cookies: Any) -> None:
         )
     except Exception:
         pass
+    _clear_session()
+
+
+def expire_local_session(cookies: Any) -> None:
+    """Efface la session et le cookie OAuth SANS marqueur de déconnexion.
+
+    Utilisé quand la session MDBList est simplement EXPIRÉE (et non un logout
+    volontaire) : l'utilisateur pourra se reconnecter sans avoir à retirer un
+    marqueur `?msl_logged_out=1` de l'URL.
+    """
+    try:
+        cookies.set(
+            COOKIE_NAME,
+            "expired",
+            expires=datetime.now() - timedelta(days=1),
+        )
+    except Exception:
+        pass
+    _remove_cookie(cookies)
     _clear_session()

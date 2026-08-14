@@ -1341,24 +1341,30 @@ def load_mdblist_dataset() -> None:
             unsafe_allow_html=True,
         )
         return
-    # Session révoquée/expirée : toutes les sections échouent. On déconnecte
-    # proprement au lieu d'afficher un « CHARGEMENT PARTIEL » silencieux.
+    # Session révoquée/expirée : SEULEMENT si la majorité des sections
+    # échouent avec une erreur d'authentification (un 401 ponctuel sur une
+    # section n'est pas une session expirée).
     errors = data.get("errors") or []
-    session_expired = any(
-        "expirée" in str(error.get("error") or "").lower()
-        or "révoquée" in str(error.get("error") or "").lower()
-        or "401" in str(error.get("error") or "")
-        for error in errors
+    auth_errors = [
+        error for error in errors
         if isinstance(error, dict)
-    )
+        and (
+            "expirée" in str(error.get("error") or "").lower()
+            or "révoquée" in str(error.get("error") or "").lower()
+            or "401" in str(error.get("error") or "")
+        )
+    ]
+    total_sections = 8  # watched, watchlist, genres, user_lists, ratings, playback, upnext, dropped
+    session_expired = len(auth_errors) >= max(2, total_sections // 2)
     if session_expired:
-        mdb_oauth.disconnect(cookies)
+        # Expiration (pas un logout volontaire) : on efface la session et le
+        # cookie SANS poser le marqueur ?msl_logged_out=1.
+        mdb_oauth.expire_local_session(cookies)
         _load_mdblist_cached.clear()
         st.session_state.pop("_normalized_dataset", None)
         st.markdown(
             '<div class="accent-callout"><strong>SESSION EXPIRÉE</strong> · '
-            'La connexion MDBList n’est plus valide et a été déconnectée. '
-            'Reconnecte-toi depuis le Tableau de bord.</div>',
+            'La connexion MDBList n’est plus valide. Reconnecte-toi depuis le Tableau de bord.</div>',
             unsafe_allow_html=True,
         )
         return
@@ -2578,11 +2584,15 @@ def render_static_lists_page() -> None:
             "avant chaque confirmation. Les écritures se font une à une."
         )
 
-        # Lignes réellement présentes dans ce conteneur (pas les vues combinées).
-        writable_rows = [
-            row for row in all_rows
-            if row.get("source_key") == selected_source.get("key")
-        ]
+        # Lignes réellement présentes dans ce conteneur (pas les vues combinées),
+        # triées par priorité de nettoyage décroissante (les plus urgentes d'abord).
+        writable_rows = sorted(
+            (
+                row for row in all_rows
+                if row.get("source_key") == selected_source.get("key")
+            ),
+            key=lambda row: (-(row.get("priority") or 0), str(row.get("title") or "").casefold()),
+        )
         if not writable_rows:
             st.caption("Aucun contenu individuel supprimable dans cette vue (vue combinée ou liste vide).")
         else:
@@ -2707,6 +2717,105 @@ def render_static_lists_page() -> None:
                                     f'Recharge tes données (Actualiser) pour voir les listes à jour.</div>',
                                     unsafe_allow_html=True,
                                 )
+
+    # ── Marquer vu / non-vu et noter (listes statiques / Watchlist) ──────────
+    if is_writable and mdb_oauth.is_connected():
+        st.divider()
+        st.markdown("#### ✍️ Marquer vu / non-vu et noter")
+        st.caption(
+            "Choisis un contenu de cette liste : tu peux le marquer **vu** ou **non-vu**, "
+            "lui mettre une **note** (0 à 10), et pour les séries le marquer **abandonnée**. "
+            "Ces opérations sont réversibles à tout moment."
+        )
+        all_writable = writable_rows
+        if all_writable:
+            label_opts = [
+                f"{row.get('type')} — {row.get('title')} ({row.get('year') or '?'})"
+                for row in all_writable
+            ]
+            chosen_op = st.selectbox("Contenu à gérer", label_opts, key="audit_manage_choice")
+            idx = label_opts.index(chosen_op)
+            target_op = all_writable[idx]
+            target_item = target_op.get("item") or {}
+            target_kind = "movie" if target_op.get("kind") == "movie" else "show"
+            st.markdown(
+                f"**Aperçu** : « {escape(str(target_op.get('title')))} » "
+                f"({target_op.get('year') or '?'}) — {escape(str(target_op.get('type')))}."
+            )
+            confirm_op = st.checkbox(
+                "✅ Je confirme l'action choisie ci-dessous",
+                key="audit_manage_confirm",
+            )
+            if confirm_op:
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    if st.button("✅ Marquer vu", type="primary", key="audit_set_watched"):
+                        with st.spinner("Écriture MDBList…"):
+                            try:
+                                provider = MDBListProvider(mdb_oauth.access_token())
+                                if target_kind == "movie":
+                                    provider.set_watched(movies=[target_item], watched=True)
+                                else:
+                                    provider.set_watched(shows=[target_item], watched=True)
+                                st.markdown(
+                                    f'<div class="accent-callout"><strong>✓ MARQUÉ VU</strong> · '
+                                    f'« {escape(str(target_op.get("title")))} » est maintenant vu. '
+                                    f'Actualise tes données pour voir le changement.</div>',
+                                    unsafe_allow_html=True,
+                                )
+                            except Exception as exc:
+                                st.error(f"Écriture impossible : {exc}")
+                with c2:
+                    if st.button("🔄 Marquer non-vu", key="audit_set_unwatched"):
+                        with st.spinner("Écriture MDBList…"):
+                            try:
+                                provider = MDBListProvider(mdb_oauth.access_token())
+                                if target_kind == "movie":
+                                    provider.set_watched(movies=[target_item], watched=False)
+                                else:
+                                    provider.set_watched(shows=[target_item], watched=False)
+                                st.markdown(
+                                    f'<div class="accent-callout"><strong>✓ MARQUÉ NON-VU</strong> · '
+                                    f"« {escape(str(target_op.get('title')))} » n'est plus vu. "
+                                    f"Actualise tes données pour voir le changement.</div>",
+                                    unsafe_allow_html=True,
+                                )
+                            except Exception as exc:
+                                st.error(f"Écriture impossible : {exc}")
+                with c3:
+                    rating = st.slider("Ma note /10", 0.0, 10.0, 0.0, 0.5, key="audit_rating")
+                    if st.button(f"💾 Enregistrer la note {rating:.1f}", key="audit_set_rating"):
+                        with st.spinner("Écriture MDBList…"):
+                            try:
+                                provider = MDBListProvider(mdb_oauth.access_token())
+                                if target_kind == "movie":
+                                    provider.set_rating(movies=[target_item], rating=rating)
+                                else:
+                                    provider.set_rating(shows=[target_item], rating=rating)
+                                st.markdown(
+                                    f'<div class="accent-callout"><strong>✓ NOTE ENREGISTRÉE</strong> · '
+                                    f'« {escape(str(target_op.get("title")))} » noté {rating:.1f}/10. '
+                                    f'Actualise tes données pour voir le changement.</div>',
+                                    unsafe_allow_html=True,
+                                )
+                            except Exception as exc:
+                                st.error(f"Écriture impossible : {exc}")
+                if target_kind == "show":
+                    if st.button("🚫 Marquer abandonnée", key="audit_set_dropped"):
+                        with st.spinner("Écriture MDBList…"):
+                            try:
+                                provider = MDBListProvider(mdb_oauth.access_token())
+                                provider.set_dropped(shows=[target_item], dropped=True)
+                                st.markdown(
+                                    f'<div class="accent-callout"><strong>✓ MARQUÉE ABANDONNÉE</strong> · '
+                                    f'« {escape(str(target_op.get("title")))} » est maintenant abandonnée. '
+                                    f'Actualise tes données pour voir le changement.</div>',
+                                    unsafe_allow_html=True,
+                                )
+                            except Exception as exc:
+                                st.error(f"Écriture impossible : {exc}")
+        else:
+            st.caption("Aucun contenu individuel dans cette vue.")
 
     with st.expander("🕒 Historique des ajouts aux listes", expanded=False):
         additions = addition_history(dataset)
@@ -3824,28 +3933,36 @@ def page_dashboard() -> None:
         with st.expander("❓ Comment obtenir mon ZIP Trakt ? (guide pas à pas)", expanded=False):
             st.markdown(
                 """
-                **1. Ouvre ton export Trakt**  
-                Va sur [app.trakt.tv/settings/data?mode=media](https://app.trakt.tv/settings/data?mode=media)
-                (connecte-toi avec ton compte Trakt).
-
-                **2. Scrolle jusqu'à « Export »**  
-                Clique sur **« Exporter maintenant »** (ou « Export now »).
-
-                **3. Attends quelques minutes**  
-                Trakt prépare ton export : ça peut prendre quelques minutes
-                (le bouton « Exporter » peut rester actif le temps du calcul).
-
-                **4. Télécharge le fichier ZIP**  
-                Une fois prêt, Trakt te donne un lien de téléchargement
-                (`export-trakt-*.zip`). Enregistre-le sur ton ordinateur.
-
-                **5. Importe-le ici**  
-                Reviens sur cette page et dépose le fichier ZIP dans la zone
-                ci-dessous, puis clique sur **« 📥 Importer et charger mes données »**.
-
-                > 🔒 L'import est **lecture seule** : tes données Trakt ne sont
-                > jamais modifiées, et le ZIP n'est pas conservé après la session.
-                """
+                <div class="source-card" style="margin-top:.3rem;">
+                    <span class="source-badge">ÉTAPE 1 · OBTENIR L'EXPORT</span>
+                    <p>Va sur <a href="https://app.trakt.tv/settings/data?mode=media" target="_blank"
+                    style="color:#CEDC00;font-weight:700;">app.trakt.tv/settings/data?mode=media</a>
+                    et connecte-toi avec ton compte Trakt.</p>
+                </div>
+                <div class="source-card">
+                    <span class="source-badge">ÉTAPE 2 · EXPORTER</span>
+                    <p>Scrolle jusqu'à la section <strong>« Export »</strong> puis clique sur
+                    <strong>« Exporter maintenant »</strong> (ou « Export now »).</p>
+                </div>
+                <div class="source-card">
+                    <span class="source-badge">ÉTAPE 3 · ATTENDRE</span>
+                    <p>Trakt prépare ton export : ça peut prendre <strong>quelques minutes</strong>
+                    (le bouton peut rester actif pendant le calcul).</p>
+                </div>
+                <div class="source-card">
+                    <span class="source-badge">ÉTAPE 4 · TÉLÉCHARGER</span>
+                    <p>Une fois prêt, Trakt te donne un lien de téléchargement
+                    (<code>export-trakt-*.zip</code>). Enregistre-le sur ton ordinateur.</p>
+                </div>
+                <div class="source-card">
+                    <span class="source-badge">ÉTAPE 5 · IMPORTER ICI</span>
+                    <p>Reviens sur cette page et dépose le fichier ZIP dans la zone
+                    ci-dessous, puis clique sur <strong>« 📥 Importer et charger mes données »</strong>.</p>
+                </div>
+                <div class="accent-callout"><strong>🔒 LECTURE SEULE</strong> ·
+                Tes données Trakt ne sont jamais modifiées, et le ZIP n'est pas conservé après la session.</div>
+                """,
+                unsafe_allow_html=True,
             )
         zip_file = st.file_uploader("Choisis le fichier ZIP Trakt", type=["zip"], key="trakt_zip_uploader")
         if zip_file is not None:

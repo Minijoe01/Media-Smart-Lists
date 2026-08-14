@@ -1,0 +1,74 @@
+================================================================
+MEDIA SMART LISTS — V38
+Fichiers à envoyer sur GitHub + marche à suivre
+================================================================
+
+CE QUE CONTIENT LA V38
+----------------------
+1. BUG CRITIQUE CORRIGÉ : plus de déconnexion quand tu cliques
+   « 📥 Charger mes données MDBList ». La session expirée n'était pas
+   un logout volontaire : elle posait à tort le marqueur
+   ?msl_logged_out=1. Désormais :
+   • une session expirée efface la session SANS marqueur (tu peux te
+     reconnecter simplement) ;
+   • il faut que la majorité des sections échouent pour la détecter
+     (un 401 ponctuel n'efface plus rien) ;
+   • « Se déconnecter » (volontaire) continue de fonctionner et de
+     rester durable au F5.
+2. NOUVEAU — MARQUER VU / NON-VU ET NOTER : dans « Nettoyage des
+   listes », choisis un contenu puis :
+   • ✅ Marquer vu
+   • 🔄 Marquer non-vu
+   • 💾 Enregistrer une note (0 à 10)
+   • 🚫 Marquer abandonnée (séries)
+3. TRI : la liste des contenus à supprimer est triée par priorité de
+   nettoyage (les plus urgents d'abord).
+4. GUIDE ZIP : le panneau d'aide utilise maintenant le thème (cartes
+   vertes, badges citron).
+
+LES FICHIERS À ENVOYER (2 modifiés, 2 nouveaux)
+-----------------------------------------------
+À REMPLACER :
+  • app.py
+  • mdblist_oauth.py
+
+À AJOUTER (nouveaux fichiers) :
+  • ETAPE-38.md
+  • INSTALLATION-V38.txt  (ce fichier, supprimable ensuite)
+
+À NE PAS TOUCHER : tous les autres fichiers (déjà à jour en ligne).
+
+AUCUN FICHIER À SUPPRIMER.
+
+MARCHE À SUIVRE
+---------------
+ÉTAPE 1 — Sur https://github.com/Minijoe01/Media-Smart-Lists,
+cliquez « Add file » puis « Upload files ».
+
+ÉTAPE 2 — Faites glisser CES 4 FICHIERS :
+    app.py
+    mdblist_oauth.py
+    ETAPE-38.md
+    INSTALLATION-V38.txt
+GitHub vous proposera de remplacer app.py et mdblist_oauth.py :
+acceptez.
+
+ÉTAPE 3 — Champ « Commit changes » :
+    fix: no false logout on data load, add watched/rating/dropped writes
+Puis « Commit changes ».
+
+ÉTAPE 4 — Sur share.streamlit.io : « Manage app » → ⋮ → « Reboot »,
+PUIS « Clear cache ».
+
+POUR VÉRIFIER
+-------------
+1. Connecte-toi → clique « Charger mes données MDBList » : tu ne dois
+   PLUS être déconnecté (l'URL ne contient plus ?msl_logged_out=1).
+2. « 🧹 Nettoyage des listes » → liste statique : panneau « Marquer vu
+   / non-vu et noter » avec les boutons et le slider de note.
+3. La liste des contenus à supprimer est triée par priorité.
+
+IMPORTANT
+---------
+• Ne mettez JAMAIS .streamlit/secrets.toml sur GitHub (il est ignoré).
+================================================================
