@@ -1,123 +1,92 @@
-# 🧹 Media Smart Lists : l'outil maison qui remet de l'ordre dans vos listes — et bien plus !
+# 🧹 Media Smart Lists : la relève de Trakt Smart Lists, pour MDBList (et votre ZIP Trakt)
 
-> **Article de communauté — Alkodiques** (adapté de l'article « Trakt Smart Lists »,
-> remplacée par Media Smart Lists suite aux changements des conditions d'utilisation
-> pour les comptes Trakt **free**).
+> **Article de communauté — Alkodiques** — suite de l'article
+> [« Trakt Smart Lists : l'outil maison qui remet de l'ordre dans vos listes Trakt ! »](https://lesalkodiques.com/portail/space/kodi/post/trakt-smart-lists-l-outil-maison-qui)
+> (voir plus bas pour la situation de l'ancienne app).
 
-Vous connaissez peut-être cette situation… 😅
+## ⚠️ Petite mise au point sur Trakt Smart Lists
 
-Vous avez une watchlist qui déborde, des listes dans tous les sens, et chaque soir la même question existentielle : **« mais QU'EST-CE que je regarde ce soir ?! »**
+Vous l'avez peut-être remarqué : **Trakt Smart Lists est pour le moment en stand-by** 🕓.
 
-👉 J'ai décidé de me pencher sur le problème et de proposer une solution, sous la forme d'une application !
+Le temps que je prenne une décision définitive, sachez que la seule façon de la
+réactiver serait de passer sur un compte **Trakt VIP** — et dans ce cas, seuls
+les utilisateurs **VIP** pourraient continuer à l'utiliser. C'est un choix que
+je ne fais pas à la légère, d'où la pause.
 
-Elle s'appelle **Media Smart Lists**, elle est **gratuite** et **open source**.
+➡️ **C'est là que Media Smart Lists entre en scène** : elle reprend l'esprit de
+Trakt Smart Lists, mais en s'appuyant sur **MDBList** (connexion directe) et
+sur votre **export ZIP Trakt** (lecture locale, sans API Trakt).
+
+---
+
+## 🚀 Media Smart Lists, c'est quoi ?
+
+**Media Smart Lists** est une application web **gratuite** et **open source**,
+en français, qui croise votre historique avec vos listes pour :
+
+- **éviter de dupliquer des contenus** dans vos listes (le même film dans 3
+  listes ? l'app vous montre où, et retire les copies en un clic, avec
+  sauvegarde et confirmation) ;
+- **faire le ménage** : contenus déjà vus encore présents (avec la distinction
+  maligne « ajouté avant d'être vu » → à retirer / « ajouté après » → conservé
+  pour un éventuel re-visionnage), doublons, et **fantômes 👻** (les entrées
+  plantées dans « Continuer à regarder ») ;
+- **répondre à « qu'est-ce que je regarde ce soir ? »** : chaque contenu est
+  **scoré sur 100 avec une explication transparente** (chaque pastille justifie
+  son influence), avec des **presets** (« Film rapide », « Soirée cinéma »,
+  « Presque finies », « Pépites confidentielles »…) et une **roulette** 🎲 ;
+- **suivre vos séries en cours** : progression, temps restant, prochain épisode,
+  rythme hebdomadaire et même une **date de fin projetée** ;
+- **statistiques** façon Trakt Smart Lists (heatmap, graphiques, ADN cinéphile,
+  studios, marathons, évolution des goûts) ;
+- **calendrier des sorties** de vos contenus (jusqu'à 1 an et demi), **61 badges**
+  à débloquer, **Wrapped annuel** en image partageable, **sauvegarde JSON**
+  restaurable et **rapport Excel** multi-onglets.
 
 **🚀 L'app en ligne :** [media-smart-lists.streamlit.app](https://media-smart-lists.streamlit.app)  
 **📁 Le code :** [github.com/Minijoe01/Media-Smart-Lists](https://github.com/Minijoe01/Media-Smart-Lists)
 
 ---
 
-## ℹ️ Pourquoi « Media » Smart Lists ?
+## 🔗 Deux façons de l'utiliser
 
-Vous connaissiez peut-être **Trakt Smart Lists**, l'application maison que j'avais conçue pour croiser l'historique Trakt avec les listes. Suite aux **modifications des conditions d'utilisation pour les utilisateurs Trakt free**, cette application n'est pour le moment plus accessible.
+### 1. Connexion directe MDBList (recommandé)
 
-**Media Smart Lists** prend le relais, dans le même esprit :
+1. Cliquez sur **« Préparer la connexion MDBList »** ;
+2. autorisez avec le **code affiché** (ou le **QR code** depuis votre téléphone) ;
+3. cliquez sur **« Charger mes données MDBList »** — c'est parti.
 
-- connexion **MDBList** (temps réel, sans mot de passe) **OU** import de votre **export ZIP Trakt** (local, lecture seule, sans aucune API Trakt) ;
-- toutes les fonctionnalités historiques, **plus** de nouvelles ;
-- toujours **gratuit, open source, en français**.
+Un **cache d'une heure** évite de recharger et de consommer votre quota à chaque
+visite.
+
+### 2. Import de votre ZIP Trakt (local, lecture seule)
+
+Vous avez encore un compte Trakt (ou un ancien export) ? Pas de souci : Trakt
+reste utilisable **via un fichier ZIP**, sans aucune API.
+
+**Comment obtenir ce ZIP ?**
+
+1. Rendez-vous sur [app.trakt.tv/settings/data?mode=media](https://app.trakt.tv/settings/data?mode=media) (connectez-vous) ;
+2. scrollez jusqu'à la section **« Export »** ;
+3. cliquez sur **« Exporter maintenant »** — l'export peut prendre **quelques minutes** ;
+4. téléchargez le fichier `export-trakt-*.zip` ;
+5. dans Media Smart Lists, cliquez sur **« Préparer l'import ZIP Trakt »**, déposez le ZIP, puis **« Importer et charger mes données »**.
+
+> 🔒 L'import est **100 % local et en lecture seule** : rien n'est modifié sur
+> Trakt, le ZIP n'est pas conservé. En option, si vous êtes connecté à MDBList,
+> l'app peut **enrichir** vos données ZIP avec les métadonnées MDBList
+> (genres, posters, durées, notes).
 
 ---
 
-## 📖 Tout est parti de la fin de TV Time…
+## 🔒 Côté confiance
 
-Comme beaucoup d'entre vous, j'étais un utilisateur fidèle de **TV Time**. J'y avais stocké à la main **plus de 500 contenus** (films et séries) dans ma liste « à regarder ».
+- **Open source** : le code est lisible par tous sur GitHub ;
+- connexion **OAuth directe** avec MDBList (jamais de mot de passe) ;
+- les écritures (suppressions, vu/non-vu, abandon) ne se font **que sur vos
+  clics, avec aperçu, sauvegarde de sécurité et confirmation** ;
+- aucun serveur ne stocke vos données.
 
-Quand TV Time a tiré sa révérence, il a fallu rebondir. Direction **Trakt**, que je n'utilisais jusque-là que pour le suivi « en cours » de mes visionnages, mon historique, et quelques contenus en watchlist pour du très court terme.
-
-**🔢 Petit point limites (version 2026) :**
-
-- Compte **FREE** Trakt : **5 listes de 250 contenus** chacune ;
-- la **watchlist** reste limitée à **250 contenus**.
-
-➡️ Mes 500+ contenus ne rentraient donc **pas** dans la seule watchlist. Il fallait détourner l'utilisation des Listes Trakt et répartir tous mes contenus dans plusieurs listes.
-
-**😱 Le problème : plus mes listes grossissaient, plus c'était le bazar**
-
-Et là, trois gros soucis que Trakt (en version free) ne gère pas pour vous :
-
-**① Mes listes ne sont PAS des watchlists aux yeux de Trakt.**  
-Quand je regarde un film ou que je démarre une série, Trakt marque le contenu comme « vu » ou « en cours » dans mon historique… mais il **reste dans ma liste** ! Résultat : doublons permanents entre mes listes et mes visionnages. 🤯
-
-**② Où ai-je rangé ce film déjà ?**  
-Plus de 500 contenus sur 5 listes : était-ce dans la liste A ? la B ? les deux ? Bonne chance pour retrouver un doublon à la main.
-
-**③ Les fantômes 👻**  
-Vous savez, ces contenus que vous avez lancés **même une milliseconde** (un essai, une fausse manip, votre neveu qui touche à tout…) et qui restent coincés dans « Continuer à regarder ». Sur Trakt c'est agaçant… **et ça vient aussi polluer le widget « En cours » de vos Kodi à la maison !**
-
-**🧹 La solution : Media Smart Lists**
-
-L'idée de l'outil : croiser **votre historique** avec **vos listes**, et faire le ménage **en quelques clics, directement dans l'application** — sans passer par les sites.
-
-**Ce que l'app fait pour vous :**
-
-✔️ **Nettoyage des listes** — repère les contenus déjà vus encore présents dans vos listes. Et malin en plus : il fait la distinction entre un contenu **ajouté avant d'être vu** (→ à retirer, il a fait son temps) et un contenu **ajouté après visionnage** (→ conservé : s'il est là malgré tout, c'est peut-être que vous voulez le **revoir** 😉)
-
-✔️ **Chasse aux doublons** — le même film dans trois listes ? L'app vous montre où, et **retire les copies en un clic** (avec aperçu, sauvegarde de sécurité et confirmation, comme il se doit).
-
-✔️ **Exorcisme des fantômes** 👻 — liste les entrées plantées dans « Continuer à regarder » avec leur vraie progression, pour les supprimer proprement… ou les finir ce soir (il vous dit même combien de temps il reste !).
-
-**🎯 « Que regarder ? » — fini les 40 minutes de scroll**
-
-C'est LA feature qui change les soirées.
-
-À partir de votre historique, l'app construit **votre profil de visionnage** : vos genres fétiches, vos longueurs favorites, vos décennies, vos pays de cinéma, vos studios, vos notes perso… (tout ça est aussi visible dans la partie **📊 Statistiques**, filtrable par période / genre / type comme bon vous semble 😄).
-
-Ensuite, sur n'importe laquelle de vos listes :
-
-- vous posez vos **filtres** (type, genre, note, durée, statut…) ;
-- l'app **score chaque contenu sur 100 en vous expliquant pourquoi** (aucune boîte noire : chaque pastille justifie son influence exacte, avec un indice « facilité de lancement » pour les soirs de flemme) ;
-- vous n'avez plus qu'à piocher !
-
-**⚡ Encore plus vite : les presets.** « Film rapide », « Soirée cinéma », « Presque finies », « Pépites confidentielles », « Hors zone de confort »… Un clic, et la présélection idéale sort instantanément. Et pour les indécis : une **🎲 roulette** (et sa variante **🧭 découverte** qui sort exprès de votre zone de confort).
-
-**📺 Le suivi en temps réel**
-
-- ▶️ **En cours de lecture** : pour chaque série commencée : le %, le temps déjà vu, le temps restant, et **le prochain épisode à regarder** (« S06E18 »), avec affiches ;
-- 👻 **Progression Fantôme** : les reprises mises en pause et leur temps restant ;
-- ⏱️ **Votre rythme** : récap du mois, épisodes par semaine, compteurs à vie… et même une **date de fin projetée** de vos séries en cours (si, si 😅) ;
-- 🔗 La plupart des contenus ont des **liens directs** (Où regarder, TMDB, MDBList).
-
-**🎁 Et dans la hotte :** un **calendrier des sorties** de vos listes (jusqu'à 1 an et demi), **61 badges** à débloquer (streaks, marathons, rewatch master…), votre **Wrapped annuel** en image partageable, l'export **sauvegarde JSON** (restaurable), un **rapport Excel** multi-onglets… et tout ça reste **rapide** grâce à un **cache malin** : pas de rechargement à rallonge.
-
-**🎯 À qui s'adresse cet outil ?**
-
-**💚 Principalement aux utilisateurs FREE de Trakt** (et à tous ceux qui veulent reprendre le contrôle de leurs listes).
-
-➡️ Si vous avez un compte **gratuit** avec des listes qui débordent : cet outil vous offre **justement** ce que Trakt ne vous montre pas — le ménage de vos listes, vos stats, et la réponse à « qu'est-ce que je regarde ce soir ? ».
-
-**🔒 Côté confiance :** l'app est **open source** (le code est lisible par tous sur GitHub). Vous vous connectez **directement** entre vous et MDBList (OAuth, sans mot de passe), ou vous importez votre ZIP Trakt en **lecture seule** — il n'y a ni compte à créer, ni serveur qui stocke vos données. Et les suppressions/écritures ne se font **que sur vos clics, avec aperçu, sauvegarde et confirmation**.
-
-**🚀 Pour démarrer**
-
-1. Ouvrez 👉 **[media-smart-lists.streamlit.app](https://media-smart-lists.streamlit.app)**
-2. Choisissez votre source :
-   - **🔗 MDBList** : « Préparer la connexion MDBList » → autorisez avec le code affiché (ou le QR code), puis « Charger mes données MDBList » ;
-   - **📦 ZIP Trakt** : « Préparer l'import ZIP Trakt » → suivez le guide (trakt.tv → Settings → Your data → Export → Exporter maintenant, quelques minutes, téléchargez le ZIP) → déposez le fichier.
-3. Explorez les 10 pages… et faites le ménage 🧹
-
-**📖 Envie de tout le détail ?** Le README du projet explique chaque fonctionnalité : [github.com/Minijoe01/Media-Smart-Lists](https://github.com/Minijoe01/Media-Smart-Lists)
-
-**✅ En résumé**
-
-✔️ Né de la disparition de TV Time et d'une watchlist de 500+ contenus devenue ingérable  
-✔️ Nettoie vos listes (vus, doublons, fantômes) **en quelques clics**  
-✔️ Sait enfin répondre à « **qu'est-ce que je regarde ce soir ?** » avec un score 100 % expliqué  
-✔️ **Gratuit, open source**, sans compte à créer, pensé pour les comptes **FREE** — MDBList **ou** ZIP Trakt  
-✔️ Succède à **Trakt Smart Lists** (devenue inaccessible pour les comptes free) avec les mêmes idées et plus
-
-👉 Après votre première analyse, laissez la magie du cache opérer : vos visites suivantes sont **quasi instantanées**.
-
-🐛 **Un bug, une idée, une envie ?** Les **issues GitHub** du projet sont ouvertes — ou venez en parler directement avec nous, comme d'habitude !
+**Envie du détail complet ?** Le [README du projet](https://github.com/Minijoe01/Media-Smart-Lists) documente chaque fonctionnalité. Et pour comprendre d'où vient tout ça, l'[article d'origine sur Trakt Smart Lists](https://lesalkodiques.com/portail/space/kodi/post/trakt-smart-lists-l-outil-maison-qui) reste disponible.
 
 **Bonne analyse… et surtout : bon visionnage ! 🍿**
