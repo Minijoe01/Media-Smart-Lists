@@ -16,7 +16,7 @@
 
 ---
 
-> 🎯 **Pour qui ?** En priorité pour les **utilisateurs MDBList**, mais aussi pour les **utilisateurs Trakt** qui veulent faire le ménage dans leurs listes : suite au renforcement des règles de Trakt (comptes gratuits), la connexion directe à Trakt n'est plus possible — **Media Smart Lists** la remplace, en lecture via votre export **ZIP Trakt** (voir plus bas comment l'obtenir).
+> 🎯 **Pour qui ?** En priorité pour les **utilisateurs MDBList**, mais aussi pour les **utilisateurs Trakt** qui veulent faire le ménage dans leurs listes : suite au renforcement des règles de Trakt (comptes gratuits), **Media Smart Lists** permet la lecture de vos données Trakt via votre export **ZIP Trakt** (voir plus bas comment l'obtenir).
 
 ## ✨ Les sources de données
 
@@ -53,7 +53,7 @@ Le cœur de l'application. À partir de votre historique, l'app construit votre 
 Les sorties futures de **vos** contenus : films à venir, premières de séries, prochains épisodes annoncés. Trois sources fusionnées (calendrier MDBList, dates déjà dans vos données, appels groupés) sur des horizons jusqu'à **1 an et demi**, avec filtres, recherche, export CSV et ICS. Un panneau « Pourquoi ce calendrier… » explique chaque résultat.
 
 ### 📊 Statistiques
-Des statistiques détaillées façon Trakt Smart Lists : **une seule série de filtres** (Période · Type · Genre) appliquée à toute la page, heatmap d'activité façon GitHub, heures par mois (triées chronologiquement), genres, répartition par heure/jour/année, ADN cinéphile, studios préférés, marathons, évolution des goûts. La vue d'ensemble en haut est explicitement « non filtrée ».
+Des statistiques détaillées : **une seule série de filtres** (Période · Type · Genre) appliquée à toute la page, heatmap d'activité façon GitHub, heures par mois (triées chronologiquement), genres, répartition par heure/jour/année, ADN cinéphile, studios préférés, marathons, évolution des goûts. La vue d'ensemble en haut est explicitement « non filtrée ».
 
 ### 🎬 Rendez-vous annuel (Wrapped)
 Votre récapitulatif annuel façon Spotify Wrapped : films, séries, épisodes, note moyenne, records, tops, genres, heures par mois — et une **image PNG 1080×1350 partageable** générée localement.
@@ -128,9 +128,7 @@ TraktZipProvider ─┘
 
 ## 📸 Captures
 
-| | |
-|---|---|
-| [Social card](docs/social_card.png) | — |
+<img src="docs/social_card.png" alt="Media Smart Lists — social card" width="760">
 
 ## 🐛 Bugs, idées, envies ?
 

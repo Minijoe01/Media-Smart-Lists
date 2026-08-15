@@ -1,83 +1,97 @@
-# 🧹 Media Smart Lists : la relève de Trakt Smart Lists, pour MDBList (et votre ZIP Trakt)
+# 🧹 Media Smart Lists : la suite de mon petit outil maison, maintenant pour MDBList (et votre ZIP Trakt) !
 
-> **Article de communauté — Alkodiques** — suite de l'article
-> [« Trakt Smart Lists : l'outil maison qui remet de l'ordre dans vos listes Trakt ! »](https://lesalkodiques.com/portail/space/kodi/post/trakt-smart-lists-l-outil-maison-qui)
-> (voir plus bas pour la situation de l'ancienne app).
+Salut à tous ! 👋
 
-## ⚠️ Petite mise au point sur Trakt Smart Lists
+Vous vous souvenez peut-être de mon article sur **Trakt Smart Lists**, mon petit
+outil maison pour remettre de l'ordre dans les listes ? Eh bien, il a un
+successeur ! 🎉
 
-Vous l'avez peut-être remarqué : **Trakt Smart Lists est pour le moment en stand-by** 🕓.
+## ⏸️ D'abord, une petite nouvelle sur Trakt Smart Lists
 
-Le temps que je prenne une décision définitive, sachez que la seule façon de la
-réactiver serait de passer sur un compte **Trakt VIP** — et dans ce cas, seuls
-les utilisateurs **VIP** pourraient continuer à l'utiliser. C'est un choix que
-je ne fais pas à la légère, d'où la pause.
+Pour ceux qui suivaient, **Trakt Smart Lists est pour le moment en pause** 🕓.
 
-➡️ **C'est là que Media Smart Lists entre en scène** : elle reprend l'esprit de
-Trakt Smart Lists, mais en s'appuyant sur **MDBList** (connexion directe) et
-sur votre **export ZIP Trakt** (lecture locale, sans API Trakt).
+Sans rentrer dans les détails, Trakt a durci ses conditions pour les comptes
+gratuits, et la seule façon de la réactiver serait de passer sur un compte
+**Trakt VIP** (auquel cas seuls les VIP pourraient l'utiliser). C'est une
+décision que je ne prends pas à la légère… donc pour l'instant, l'app reste en
+stand-by.
 
----
+➡️ Mais bonne nouvelle : je n'ai pas chômé ! J'ai créé **Media Smart Lists**,
+dans le même esprit, avec le même amour du détail — mais cette fois basée sur
+**MDBList** (connexion directe) et sur votre **export ZIP Trakt** (en local,
+sans aucune API Trakt).
 
-## 🚀 Media Smart Lists, c'est quoi ?
+## 🚀 Alors, c'est quoi Media Smart Lists ?
 
-**Media Smart Lists** est une application web **gratuite** et **open source**,
-en français, qui croise votre historique avec vos listes pour :
+**Media Smart Lists**, c'est une application web **gratuite**, **open source**,
+**en français**, qui croise votre historique avec vos listes pour vous éviter
+le grand bazar. Concrètement :
 
-- **éviter de dupliquer des contenus** dans vos listes (le même film dans 3
-  listes ? l'app vous montre où, et retire les copies en un clic, avec
-  sauvegarde et confirmation) ;
-- **faire le ménage** : contenus déjà vus encore présents (avec la distinction
-  maligne « ajouté avant d'être vu » → à retirer / « ajouté après » → conservé
-  pour un éventuel re-visionnage), doublons, et **fantômes 👻** (les entrées
-  plantées dans « Continuer à regarder ») ;
-- **répondre à « qu'est-ce que je regarde ce soir ? »** : chaque contenu est
-  **scoré sur 100 avec une explication transparente** (chaque pastille justifie
-  son influence), avec des **presets** (« Film rapide », « Soirée cinéma »,
-  « Presque finies », « Pépites confidentielles »…) et une **roulette** 🎲 ;
-- **suivre vos séries en cours** : progression, temps restant, prochain épisode,
-  rythme hebdomadaire et même une **date de fin projetée** ;
-- **statistiques** façon Trakt Smart Lists (heatmap, graphiques, ADN cinéphile,
-  studios, marathons, évolution des goûts) ;
-- **calendrier des sorties** de vos contenus (jusqu'à 1 an et demi), **61 badges**
-  à débloquer, **Wrapped annuel** en image partageable, **sauvegarde JSON**
-  restaurable et **rapport Excel** multi-onglets.
+- **Fini les doublons !** 🧹 Le même film dans trois listes ? L'app vous montre
+  exactement où, et vous pouvez le retirer **d'une liste précise ou de partout**
+  en un clic — avec une sauvegarde de sécurité et une confirmation avant chaque
+  écriture (parce que je vous respecte, moi 😄).
+
+- **Le ménage intelligent** : elle repère les contenus **déjà vus encore
+  présents** dans vos listes, avec la distinction maligne :
+  * ajouté **avant** d'être vu → à retirer (il a fait son temps) ;
+  * ajouté **après** visionnage → conservé (s'il est là malgré tout, c'est
+    peut-être que vous voulez le **revoir** 😉).
+  Et elle exorcise aussi les **fantômes 👻** — ces entrées plantées dans
+  « Continuer à regarder » qui polluent même le widget « En cours » de vos
+  Kodi à la maison !
+
+- **« Qu'est-ce que je regarde ce soir ? »** 🎯 — fini les 40 minutes de scroll !
+  L'app construit **votre profil de visionnage** (genres fétiches, durées
+  préférées, décennies, pays, studios…), puis **score chaque contenu sur 100
+  en vous expliquant pourquoi** (aucune boîte noire : chaque pastille justifie
+  son influence exacte). Et pour les indécis : des **presets** (« Film rapide »,
+  « Soirée cinéma », « Presque finies », « Pépites confidentielles »…) et une
+  **🎲 roulette** !
+
+- **Le suivi de vos séries** 📺 : progression, temps restant, prochain épisode,
+  votre **rythme** (épisodes/semaine, bilan du mois) et même une **date de fin
+  projetée** de vos séries en cours. Si, si 😅
+
+- **Et dans la hotte** 🎁 : un **calendrier des sorties** de vos contenus
+  (jusqu'à 1 an et demi !), des **statistiques** détaillées (heatmap,
+  graphiques, ADN cinéphile, marathons…), **61 badges** à débloquer, votre
+  **Wrapped annuel** en image partageable, une **sauvegarde JSON** restaurable
+  et un **rapport Excel** multi-onglets.
 
 **🚀 L'app en ligne :** [media-smart-lists.streamlit.app](https://media-smart-lists.streamlit.app)  
 **📁 Le code :** [github.com/Minijoe01/Media-Smart-Lists](https://github.com/Minijoe01/Media-Smart-Lists)
 
----
-
 ## 🔗 Deux façons de l'utiliser
 
-### 1. Connexion directe MDBList (recommandé)
+### 1. La connexion directe MDBList (recommandée) ⭐
 
 1. Cliquez sur **« Préparer la connexion MDBList »** ;
-2. autorisez avec le **code affiché** (ou le **QR code** depuis votre téléphone) ;
-3. cliquez sur **« Charger mes données MDBList »** — c'est parti.
+2. autorisez avec le **code affiché** (ou scannez le **QR code** avec votre
+   téléphone) ;
+3. cliquez sur **« Charger mes données MDBList »**… et c'est parti !
 
-Un **cache d'une heure** évite de recharger et de consommer votre quota à chaque
-visite.
+Un **cache d'une heure** évite de recharger et de consommer votre quota à
+chaque visite. Pratique, non ?
 
-### 2. Import de votre ZIP Trakt (local, lecture seule)
+### 2. Votre ZIP Trakt (local, lecture seule) 📦
 
-Vous avez encore un compte Trakt (ou un ancien export) ? Pas de souci : Trakt
-reste utilisable **via un fichier ZIP**, sans aucune API.
+Vous avez encore un compte Trakt, ou un vieil export qui traîne ? Pas de souci,
+Trakt reste utilisable **via un fichier ZIP**, sans aucune API.
 
-**Comment obtenir ce ZIP ?**
+**Comment obtenir ce ZIP ?** C'est simple :
 
-1. Rendez-vous sur [app.trakt.tv/settings/data?mode=media](https://app.trakt.tv/settings/data?mode=media) (connectez-vous) ;
+1. Allez sur [app.trakt.tv/settings/data?mode=media](https://app.trakt.tv/settings/data?mode=media) (connectez-vous) ;
 2. scrollez jusqu'à la section **« Export »** ;
-3. cliquez sur **« Exporter maintenant »** — l'export peut prendre **quelques minutes** ;
+3. cliquez sur **« Exporter maintenant »** — comptez **quelques minutes** ;
 4. téléchargez le fichier `export-trakt-*.zip` ;
-5. dans Media Smart Lists, cliquez sur **« Préparer l'import ZIP Trakt »**, déposez le ZIP, puis **« Importer et charger mes données »**.
+5. dans Media Smart Lists : **« Préparer l'import ZIP Trakt »** → déposez le
+   ZIP → **« Importer et charger mes données »**. Et voilà ! 🎉
 
 > 🔒 L'import est **100 % local et en lecture seule** : rien n'est modifié sur
-> Trakt, le ZIP n'est pas conservé. En option, si vous êtes connecté à MDBList,
-> l'app peut **enrichir** vos données ZIP avec les métadonnées MDBList
-> (genres, posters, durées, notes).
-
----
+> Trakt, le ZIP n'est pas conservé. Et si vous êtes connecté à MDBList, l'app
+> peut **enrichir** vos données ZIP avec les métadonnées MDBList (genres,
+> posters, durées, notes).
 
 ## 🔒 Côté confiance
 
@@ -87,6 +101,9 @@ reste utilisable **via un fichier ZIP**, sans aucune API.
   clics, avec aperçu, sauvegarde de sécurité et confirmation** ;
 - aucun serveur ne stocke vos données.
 
-**Envie du détail complet ?** Le [README du projet](https://github.com/Minijoe01/Media-Smart-Lists) documente chaque fonctionnalité. Et pour comprendre d'où vient tout ça, l'[article d'origine sur Trakt Smart Lists](https://lesalkodiques.com/portail/space/kodi/post/trakt-smart-lists-l-outil-maison-qui) reste disponible.
+**Envie du détail complet ?** Le [README du projet](https://github.com/Minijoe01/Media-Smart-Lists) documente chaque fonctionnalité. Et pour le contexte (et l'histoire de TV Time 😉), l'[article d'origine sur Trakt Smart Lists](https://lesalkodiques.com/portail/space/kodi/post/trakt-smart-lists-l-outil-maison-qui) reste disponible.
+
+Bref : c'est le même esprit que Trakt Smart Lists, en mieux et prêt pour
+MDBList. 🚀
 
 **Bonne analyse… et surtout : bon visionnage ! 🍿**
