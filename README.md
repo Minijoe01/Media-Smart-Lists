@@ -43,6 +43,7 @@ Media Smart Lists répond à tout ça, en une analyse.
 | 🎬 **Rendez-vous annuel** | Ton « Wrapped » perso + **image PNG partageable** générée à la volée |
 | 🏆 **Succès** | **61 badges** à débloquer (marathons, streaks 🔥, rewatch master ♾️, nocturne 🌙…) |
 | 📤 **Sauvegarde** | Export/import **JSON** complet (restaurable même sans connexion) + **rapport Excel** multi-onglets |
+| 📦 **Migration Trakt → MDBList** | Migre ton export ZIP Trakt vers MDBList **sans Python ni clé API** : historique (avec les **vraies dates**), notes, Watchlist, listes. Aperçu + **contenus sans correspondance**, sauvegarde, confirmation, écriture par lots, **rapport Excel** final (réussis/échecs). **Mode simulation par défaut** (aucune écriture) |
 
 ### 🎯 Le score « Que regarder ? » : transparent et personnel
 
@@ -98,6 +99,27 @@ Tu as encore un compte Trakt ? Trakt reste utilisable **via un fichier ZIP**, sa
 5. dans Media Smart Lists : **« Préparer l'import ZIP Trakt »** → dépose le ZIP → **« Importer et charger mes données »**.
 
 > 🔒 L'import est **100 % local et en lecture seule** : rien n'est modifié sur Trakt, le ZIP n'est pas conservé. En option (si connecté à MDBList), l'app peut **enrichir** tes données ZIP avec les métadonnées MDBList (genres, posters, durées, notes).
+
+### 🚚 Migration ZIP Trakt → MDBList (le grand transfert)
+
+Tu veux **basculer définitivement sur MDBList** en récupérant ton historique Trakt ?
+La page **« 📦 Migration Trakt → MDBList »** le fait **entièrement en ligne**, sans
+Python, sans clé API — juste ta session MDBList :
+
+1. **Dépose ton ZIP Trakt** (le même export que ci-dessus) ;
+2. **Aperçu** : films, épisodes (avec leurs **vraies dates de visionnage**),
+   séries, rewatches, et les **contenus sans correspondance** (sans id
+   TMDb/IMDb) listés séparément ;
+3. Choisis les sections à migrer (historique, notes, Watchlist, listes) —
+   **mode simulation par défaut** (rien n'est écrit) ;
+4. Télécharge la **sauvegarde JSON** et le **rapport Excel d'aperçu** ;
+5. Confirme → **écriture par lots** → **rapport Excel final** : Résumé,
+   Historique (avec les vraies dates), Sans correspondance, Watchlist,
+   Listes et Échecs.
+
+> ⚠️ C'est une **écriture massive** sur ton compte MDBList : l'aperçu, la
+> sauvegarde et la confirmation sont obligatoires, et tout passe par lots.
+> Fais d'abord un essai en **mode simulation** — aucun POST n'est envoyé.
 
 > ⚠️ L'app **écrit sur ton compte MDBList** uniquement quand tu cliques sur un bouton (suppression, vu/non-vu, abandon) — avec **aperçu, sauvegarde de sécurité et confirmation** à chaque fois. Elle ne partage rien avec personne.
 
