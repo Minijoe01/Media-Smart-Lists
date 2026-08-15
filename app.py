@@ -275,17 +275,18 @@ st.markdown(
     }
     .source-card { min-height: 185px; }
     .guide-step {
-        background: var(--am-bg-card);
-        border: 1px solid var(--am-border);
-        border-left: 3px solid var(--am-green);
+        background: rgba(206,220,0,.06);
+        border: 1px solid rgba(206,220,0,.30);
+        border-left: 3px solid var(--am-lime);
         border-radius: 10px;
-        color: var(--am-text);
+        color: var(--am-lime) !important;
         font-size: .86rem;
         line-height: 1.4;
         margin: .25rem 0;
         padding: .45rem .7rem;
     }
     .guide-step strong, .guide-step a { color: var(--am-lime); }
+    .guide-step a { text-decoration: underline; }
     .source-card h3 {
         color: var(--am-text);
         margin: .45rem 0 .5rem;
@@ -2743,88 +2744,88 @@ def render_static_lists_page() -> None:
         )
         all_writable = writable_rows
         if all_writable:
-            # Recherche + filtre par type, comme dans la suppression sécurisée.
-            f_search, f_type = st.columns([0.7, 0.3])
-            manage_search = f_search.text_input(
-                "Rechercher un contenu",
-                key="audit_manage_search",
-                placeholder="Titre…",
-            )
-            manage_type = f_type.selectbox(
+            # Recherche par frappe (comme la suppression sécurisée) : on tape
+            # des lettres et la liste se filtre instantanément.
+            f_type = st.selectbox(
                 "Type",
                 ["Tous", "Films", "Séries"],
                 key="audit_manage_type",
             )
-            query_m = str(manage_search or "").strip().casefold()
             available = []
             for row in all_writable:
-                if manage_type != "Tous":
-                    wanted = "Film" if manage_type == "Films" else "Série"
+                if f_type != "Tous":
+                    wanted = "Film" if f_type == "Films" else "Série"
                     if row.get("type") != wanted:
                         continue
-                if query_m and query_m not in str(row.get("title") or "").casefold():
-                    continue
                 available.append(row)
             if not available:
-                st.caption("Aucun contenu ne correspond à cette recherche / ce filtre.")
+                st.caption("Aucun contenu de ce type dans cette liste.")
             else:
                 label_opts = [
                     f"{row.get('type')} — {row.get('title')} ({row.get('year') or '?'})"
                     for row in available
                 ]
-                chosen_op = st.selectbox("Contenu à gérer", label_opts, key="audit_manage_choice")
-                idx = label_opts.index(chosen_op)
-                target_op = available[idx]
-                target_item = target_op.get("item") or {}
-                target_kind = "movie" if target_op.get("kind") == "movie" else "show"
-                st.markdown(
-                    f"**Aperçu** : « {escape(str(target_op.get('title')))} » "
-                    f"({target_op.get('year') or '?'}) — {escape(str(target_op.get('type')))}."
+                chosen_op = st.multiselect(
+                    "Contenu à gérer (tape pour filtrer)",
+                    label_opts,
+                    max_selections=1,
+                    key="audit_manage_choice",
+                    placeholder="Choisis UN contenu à la fois…",
                 )
-                # Choix de l'action AVANT la confirmation.
-                action_opts = ["✅ Marquer vu", "🔄 Marquer non-vu"]
-                if target_kind == "show":
-                    action_opts.append("🚫 Marquer abandonnée")
-                chosen_action = st.radio(
-                    "Action à effectuer",
-                    action_opts,
-                    horizontal=True,
-                    key="audit_manage_action",
-                )
-                confirm_op = st.checkbox(
-                    "✅ Je confirme l'action choisie ci-dessus",
-                    key="audit_manage_confirm",
-                )
-                if confirm_op and st.button("⚡ Exécuter l'action", type="primary", key="audit_manage_go"):
-                    with st.spinner("Écriture MDBList…"):
-                        try:
-                            provider = MDBListProvider(mdb_oauth.access_token())
-                            if chosen_action.startswith("✅"):
-                                if target_kind == "movie":
-                                    provider.set_watched(movies=[target_item], watched=True)
+                if len(chosen_op) != 1:
+                    st.caption("Sélectionne un contenu pour voir les actions.")
+                else:
+                    target_op = available[label_opts.index(chosen_op[0])]
+                    target_item = target_op.get("item") or {}
+                    target_kind = "movie" if target_op.get("kind") == "movie" else "show"
+                    st.markdown(
+                        f"**Aperçu** : « {escape(str(target_op.get('title')))} » "
+                        f"({target_op.get('year') or '?'}) — {escape(str(target_op.get('type')))}."
+                    )
+                    # Choix de l'action AVANT la confirmation.
+                    action_opts = ["✅ Marquer vu", "🔄 Marquer non-vu"]
+                    if target_kind == "show":
+                        action_opts.append("🚫 Marquer abandonnée")
+                    chosen_action = st.radio(
+                        "Action à effectuer",
+                        action_opts,
+                        horizontal=True,
+                        key="audit_manage_action",
+                    )
+                    confirm_op = st.checkbox(
+                        "✅ Je confirme l'action choisie ci-dessus",
+                        key="audit_manage_confirm",
+                    )
+                    if confirm_op and st.button("⚡ Exécuter l'action", type="primary", key="audit_manage_go"):
+                        with st.spinner("Écriture MDBList…"):
+                            try:
+                                provider = MDBListProvider(mdb_oauth.access_token())
+                                if chosen_action.startswith("✅"):
+                                    if target_kind == "movie":
+                                        provider.set_watched(movies=[target_item], watched=True)
+                                    else:
+                                        provider.set_watched(shows=[target_item], watched=True)
+                                    message = "MARQUÉ VU"
+                                    detail = "est maintenant vu"
+                                elif chosen_action.startswith("🔄"):
+                                    if target_kind == "movie":
+                                        provider.set_watched(movies=[target_item], watched=False)
+                                    else:
+                                        provider.set_watched(shows=[target_item], watched=False)
+                                    message = "MARQUÉ NON-VU"
+                                    detail = "n'est plus marqué vu (l'historique reste conservé)"
                                 else:
-                                    provider.set_watched(shows=[target_item], watched=True)
-                                message = "MARQUÉ VU"
-                                detail = "est maintenant vu"
-                            elif chosen_action.startswith("🔄"):
-                                if target_kind == "movie":
-                                    provider.set_watched(movies=[target_item], watched=False)
-                                else:
-                                    provider.set_watched(shows=[target_item], watched=False)
-                                message = "MARQUÉ NON-VU"
-                                detail = "n'est plus marqué vu (l'historique reste conservé)"
-                            else:
-                                provider.set_dropped(shows=[target_item], dropped=True)
-                                message = "MARQUÉE ABANDONNÉE"
-                                detail = "est maintenant marquée abandonnée"
-                            st.markdown(
-                                f'<div class="accent-callout"><strong>✓ {message}</strong> · '
-                                f'« {escape(str(target_op.get("title")))} » {detail}. '
-                                f'Actualise tes données pour voir le changement.</div>',
-                                unsafe_allow_html=True,
-                            )
-                        except Exception as exc:
-                            st.error(f"Écriture impossible : {exc}")
+                                    provider.set_dropped(shows=[target_item], dropped=True)
+                                    message = "MARQUÉE ABANDONNÉE"
+                                    detail = "est maintenant marquée abandonnée"
+                                st.markdown(
+                                    f'<div class="accent-callout"><strong>✓ {message}</strong> · '
+                                    f'« {escape(str(target_op.get("title")))} » {detail}. '
+                                    f'Actualise tes données pour voir le changement.</div>',
+                                    unsafe_allow_html=True,
+                                )
+                            except Exception as exc:
+                                st.error(f"Écriture impossible : {exc}")
         else:
             st.caption("Aucun contenu individuel dans cette vue.")
 
@@ -3944,18 +3945,17 @@ def page_dashboard() -> None:
         with st.expander("❓ Comment obtenir mon ZIP Trakt ? (guide pas à pas)", expanded=False):
             st.markdown(
                 """
-                <div class="guide-step">**1 · OBTENIR L'EXPORT** — Va sur
-                [app.trakt.tv/settings/data?mode=media](https://app.trakt.tv/settings/data?mode=media)
+                <div class="guide-step"><strong>1 · OBTENIR L'EXPORT</strong> — Va sur
+                <a href="https://app.trakt.tv/settings/data?mode=media" target="_blank" rel="noopener noreferrer">app.trakt.tv/settings/data?mode=media</a>
                 et connecte-toi avec ton compte Trakt.</div>
-                <div class="guide-step">**2 · EXPORTER** — Scrolle jusqu'à la section
-                **« Export »** puis clique sur **« Exporter maintenant »**.</div>
-                <div class="guide-step">**3 · ATTENDRE** — Trakt prépare ton export :
-                ça peut prendre **quelques minutes**.</div>
-                <div class="guide-step">**4 · TÉLÉCHARGER** — Une fois prêt, Trakt te
-                donne un lien de téléchargement (`export-trakt-*.zip`).</div>
-                <div class="guide-step">**5 · IMPORTER ICI** — Reviens sur cette page,
-                dépose le ZIP ci-dessous puis clique sur
-                **« 📥 Importer et charger mes données »**.</div>
+                <div class="guide-step"><strong>2 · EXPORTER</strong> — Scrolle jusqu'à la section
+                « Export » puis clique sur « Exporter maintenant ».</div>
+                <div class="guide-step"><strong>3 · ATTENDRE</strong> — Trakt prépare ton export :
+                ça peut prendre quelques minutes.</div>
+                <div class="guide-step"><strong>4 · TÉLÉCHARGER</strong> — Une fois prêt, Trakt te
+                donne un lien de téléchargement (<code>export-trakt-*.zip</code>).</div>
+                <div class="guide-step"><strong>5 · IMPORTER ICI</strong> — Reviens sur cette page,
+                dépose le ZIP ci-dessous puis clique sur « 📥 Importer et charger mes données ».</div>
                 <div class="accent-callout"><strong>🔒 LECTURE SEULE</strong> ·
                 Tes données Trakt ne sont jamais modifiées, et le ZIP n'est pas conservé après la session.</div>
                 """,

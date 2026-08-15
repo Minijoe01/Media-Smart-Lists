@@ -2,6 +2,15 @@
 
 Toutes les évolutions notables de Media Smart Lists.
 
+## [V39] — 14 août 2026
+
+- 🔴 Déconnexion stabilisée : retour au comportement « toujours connecté » au F5 (toute la mécanique de marqueur `?msl_logged_out=1` est retirée) ; la déconnexion ne vaut que pour la session en cours. Plus de fausse déconnexion au clic « Charger mes données MDBList ».
+- ✍️ « Marquer vu / non-vu » repensé : recherche par frappe (multiselect, comme la suppression), filtre par type, flux action → confirmation → exécuter, boutons au thème. Fonctionnalité de note retirée.
+- 🗑️ Titres des panneaux de nettoyage liés au « Conteneur à auditer ».
+- ❓ Guide ZIP Trakt : HTML pur (fini les `**` visibles) et texte jaune citron.
+- 📚 Documentation & qualité : README réécrit (MDBList prioritaire), CHANGELOG, licence MIT, social card régénérée, article Alkodiques, CI GitHub Actions.
+- 🧹 Nettoyage du dépôt : liste des fichiers obsolètes à supprimer (Excel d'audit fourni), toutes les ETAPE-* résumées dans ce changelog.
+
 ## [V38] — 14 août 2026
 
 - 🔴 **Bug critique corrigé** : plus de fausse déconnexion au clic « Charger mes données MDBList » (retour au comportement « toujours connecté » au rechargement de page ; la déconnexion ne vaut que pour la session en cours).

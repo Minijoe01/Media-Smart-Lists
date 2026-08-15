@@ -16,7 +16,7 @@
 
 ---
 
-> 🎯 **Pour qui ?** Cette application est pensée pour les **utilisateurs FREE de Trakt** et plus largement pour tous ceux qui veulent reprendre le contrôle de leurs listes et de leurs statistiques de visionnage. Suite aux changements des conditions d'utilisation de Trakt pour les comptes gratuits, l'ancienne application **Trakt Smart Lists** n'est plus accessible : **Media Smart Lists** la remplace, avec le même esprit et encore plus de fonctionnalités.
+> 🎯 **Pour qui ?** En priorité pour les **utilisateurs MDBList**, mais aussi pour les **utilisateurs Trakt** qui veulent faire le ménage dans leurs listes : suite au renforcement des règles de Trakt (comptes gratuits), la connexion directe à Trakt n'est plus possible — **Media Smart Lists** la remplace, en lecture via votre export **ZIP Trakt** (voir plus bas comment l'obtenir).
 
 ## ✨ Les sources de données
 
