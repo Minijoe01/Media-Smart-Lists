@@ -81,7 +81,30 @@ Règles d'implémentation (leçons des étapes précédentes) :
 
 ---
 
-## Dépôt communautaire Trakt ZIP → MDBList
+## Migration ZIP Trakt → MDBList
+
+### Nouvelle piste : directement depuis l'application web (sans Python)
+
+L'utilisateur ne peut pas lancer un script Python en local : il faut une
+**interface web**. C'est faisable en réutilisant :
+- `trakt_zip_provider.py` (parse le ZIP → NormalizedDataset) ;
+- les méthodes d'écriture **OAuth** déjà dans `mdblist_provider.py`
+  (`set_watched`, `set_rating`, `set_dropped`, `remove_*`, et à ajouter :
+  `add_watchlist_items`, `create_list`, `add_list_items`) ;
+- le flux sécurisé : aperçu des quantités → export de sauvegarde →
+  confirmation explicite → écriture par lots → vérification GET.
+
+Page proposée : « 📦 Migration ZIP Trakt → MDBList » (assistant en étapes).
+
+- [ ] Assistant web « Import ZIP Trakt → MDBList » (étapes : upload ZIP →
+      aperçu des quantités → choix (historique, notes, watchlist, listes) →
+      sauvegarde → confirmation → écriture par lots).
+- [ ] Ajouter les méthodes d'écriture manquantes : `add_watchlist_items`,
+      `create_list`, `add_list_items`, `add_collection`.
+- [ ] Ne jamais écrire dans une liste dynamique/IA/flux.
+- [ ] Journal local nettoyé de tous les secrets.
+
+### Dépôt communautaire (optionnel, outil CLI pour les initiés)
 
 Dépôt prévu : `Minijoe01/Trakt-ZIP-to-MDBList` — script `migrate_trakt_zip_to_mdblist.py` déjà fonctionnel.
 
