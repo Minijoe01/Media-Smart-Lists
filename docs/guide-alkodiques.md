@@ -93,6 +93,28 @@ Trakt reste utilisable **via un fichier ZIP**, sans aucune API.
 > peut **enrichir** vos données ZIP avec les métadonnées MDBList (genres,
 > posters, durées, notes).
 
+### 🚚 Et si vous voulez carrément passer à MDBList ? Le grand transfert !
+
+Vous hésitez encore à quitter Trakt parce que votre **historique de visionnage**
+(y pris les dates !) vous manquerait ? Bonne nouvelle : **Media Smart Lists**
+vous permet de **migrer tout votre historique Trakt vers MDBList, en ligne,
+sans Python ni clé API** — la page **« 📦 Migration Trakt → MDBList »** s'en
+charge :
+
+1. déposez votre **ZIP Trakt** (celui de l'export ci-dessus) ;
+2. l'app affiche l'**aperçu** : films, épisodes (avec leurs **vraies dates**),
+   séries, rewatches, et les **contenus sans correspondance** (sans id
+   TMDb/IMDb) listés séparément ;
+3. choisissez les sections (historique, notes, Watchlist, listes) — par défaut
+   c'est en **mode simulation**, donc rien n'est écrit ;
+4. téléchargez la **sauvegarde JSON** et le **rapport Excel d'aperçu** ;
+5. confirmez → **écriture par lots** → **rapport Excel final** avec le détail
+   de ce qui a été migré et ce qui a échoué.
+
+> ⚠️ C'est une **écriture massive** sur votre compte MDBList : aperçu +
+> sauvegarde + confirmation obligatoires. Testez d'abord en **mode simulation**
+> (aucun POST) — c'est fait pour ça !
+
 ## 🔒 Côté confiance
 
 - **Open source** : le code est lisible par tous sur GitHub ;
