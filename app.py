@@ -26,6 +26,7 @@ import achievements_engine as achievements_mod
 import dashboard_engine as dashboard_mod
 import excel_export as excel_mod
 import stats_engine as stats_mod
+import migration_engine as mig_mod
 import trakt_zip_provider
 import wrapped_engine as wrapped_mod
 from calendar_engine import (
@@ -102,6 +103,7 @@ PAGES = [
     "🎬 Rendez-vous annuel",
     "🏆 Succès",
     "📤 Sauvegarde",
+    "📦 Migration Trakt → MDBList",
 ]
 
 st.set_page_config(
@@ -4061,6 +4063,210 @@ def page_dashboard() -> None:
         )
 
 
+def render_migration_page() -> None:
+    """📦 Migration ZIP Trakt → MDBList — assistant web sécurisé.
+
+    Étapes : déposer le ZIP → aperçu (quantités + sans correspondance) →
+    choix des sections → sauvegarde JSON → confirmation → écriture par lots
+    → rapport Excel. Mode simulation (dry-run) disponible : aucun POST.
+    """
+    st.markdown('<div class="page-title">📦 Migration Trakt → MDBList</div>', unsafe_allow_html=True)
+    st.caption(
+        "Importe tes données d'un export ZIP Trakt vers ton compte MDBList : "
+        "historique (avec les vraies dates), notes, Watchlist et listes. "
+        "Écritures par lots, avec aperçu, sauvegarde et confirmation — "
+        "rien n'est écrit sans ton accord."
+    )
+
+    if not mdb_oauth.is_connected():
+        st.markdown(
+            '<div class="accent-callout"><strong>CONNEXION NÉCESSAIRE</strong> · '
+            'Connecte MDBList depuis le Tableau de bord avant de migrer (les écritures '
+            'se font sur ton compte MDBList).</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    # ── Étape 1 : déposer le ZIP ──
+    st.divider()
+    st.markdown("#### 1 · Déposer ton export ZIP Trakt")
+    zip_file = st.file_uploader(
+        "Choisis le fichier ZIP Trakt (Settings → Your data → Export)",
+        type=["zip"],
+        key="migration_zip",
+    )
+    if zip_file is None:
+        st.info("Dépose ton ZIP pour commencer. Rien n'est écrit tant que tu n'as pas confirmé.")
+        return
+    st.caption(f"Fichier : **{zip_file.name}** · {zip_file.size // 1024} Ko")
+
+    # Analyser le ZIP (lecture seule, comme l'import local)
+    try:
+        raw_bytes = zip_file.getvalue()
+        dataset = trakt_zip_provider.load_trakt_zip(raw_bytes)
+    except trakt_zip_provider.TraktZipError as exc:
+        st.error(f"Import impossible : {exc}")
+        return
+    except Exception as exc:
+        st.error(f"Erreur pendant l'analyse : {exc}")
+        return
+
+    plan = mig_mod.build_migration_plan(dataset)
+
+    # ── Étape 2 : aperçu ──
+    st.divider()
+    st.markdown("#### 2 · Aperçu de ce qui sera migré")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Films vus", plan["films_vus"])
+    c2.metric("Épisodes vus", plan["episodes_vus"])
+    c3.metric("Séries concernées", plan["series_vues"])
+    c4.metric("Sans correspondance", len(plan["sans_correspondance"]))
+    if plan["rewatches"]:
+        st.caption(f"🔁 {plan['rewatches']} rewatch(es) détecté(s) : MDBList ne conserve que la dernière date par contenu.")
+    if plan["sans_correspondance"]:
+        with st.expander(f"⚠️ Contenus sans correspondance ({len(plan['sans_correspondance'])})"):
+            st.caption("Ces contenus n'ont pas d'identifiant TMDb/IMDb utilisable par MDBList : ils ne seront pas migrés.")
+            for item in plan["sans_correspondance"][:100]:
+                st.markdown(f"- {escape(str(item.get('type')))} : **{escape(str(item.get('title')))}** ({item.get('year') or '?'})")
+
+    # Choix des sections
+    st.markdown("##### Sections à migrer")
+    do_history = st.checkbox("📜 Historique (films + épisodes avec dates)", value=True, key="mig_hist")
+    do_ratings = st.checkbox("⭐ Notes", value=True, key="mig_ratings")
+    do_watchlist = st.checkbox("📌 Watchlist", value=True, key="mig_wl")
+    do_lists = st.checkbox("🗂️ Listes (créées si absentes)", value=True, key="mig_lists")
+
+    # Mode simulation
+    st.markdown("##### Mode")
+    simu = st.radio(
+        "Mode d'exécution",
+        ["Simulation (dry-run, aucun POST)", "Écriture réelle"],
+        index=0,
+        key="mig_mode",
+        help="En simulation, le rapport est généré mais RIEN n'est écrit sur MDBList.",
+    )
+
+    # ── Étape 3 : sauvegarde + rapport d'aperçu ──
+    st.divider()
+    st.markdown("#### 3 · Sauvegarde de sécurité & rapport")
+    backup_payload = {
+        "action": "migration_trakt_to_mdblist",
+        "export_date": datetime.now(PARIS_TZ).isoformat(),
+        "plan": {
+            "films_vus": plan["films_vus"],
+            "episodes_vus": plan["episodes_vus"],
+            "sans_correspondance": plan["sans_correspondance"][:500],
+        },
+        "dataset": dataset,
+    }
+    st.download_button(
+        "💾 Télécharger la sauvegarde de sécurité (JSON)",
+        data=json.dumps(backup_payload, ensure_ascii=False, default=str, indent=2),
+        file_name=f"migration-sauvegarde-{datetime.now(PARIS_TZ).strftime('%Y%m%d-%H%M%S')}.json",
+        mime="application/json",
+        key="migration_backup",
+        type="primary",
+    )
+    st.download_button(
+        "📊 Télécharger le rapport Excel (aperçu)",
+        data=mig_mod.generate_migration_report(plan),
+        file_name=f"migration-rapport-{datetime.now(PARIS_TZ).strftime('%Y%m%d-%H%M%S')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="migration_report",
+        type="primary",
+    )
+
+    # ── Étape 4 : confirmation + exécution ──
+    st.divider()
+    st.markdown("#### 4 · Confirmation et exécution")
+    confirm = st.checkbox(
+        "✅ Je confirme : je veux exécuter la migration selon les sections cochées "
+        "(réversible via la sauvegarde, par lots)",
+        key="mig_confirm",
+    )
+    if confirm:
+        if st.button("🚀 Exécuter la migration", type="primary", key="mig_go"):
+            results: dict[str, Any] = {"watched_movies_ok": 0, "watched_episodes_ok": 0,
+                                       "errors": 0, "errors_list": []}
+            if simu.startswith("Simulation"):
+                results = {"watched_movies_ok": plan["films_vus"], "watched_episodes_ok": plan["episodes_vus"],
+                           "errors": 0, "errors_list": [], "simulated": True}
+                st.markdown(
+                    '<div class="accent-callout"><strong>✅ SIMULATION TERMINÉE</strong> · '
+                    "Aucune écriture n'a été faite. Télécharge le rapport ci-dessus " 
+                    'pour voir ce qui aurait été migré.</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                with st.spinner("Écriture par lots sur MDBList…"):
+                    try:
+                        provider = MDBListProvider(mdb_oauth.access_token())
+                        # Historique (par lots de 100)
+                        if do_history:
+                            payloads = mig_mod.build_watched_payloads(plan)
+                            for i in range(0, len(payloads["movies"]), 100):
+                                chunk = payloads["movies"][i:i + 100]
+                                try:
+                                    provider.raw_post("/sync/watched", {"movies": chunk})
+                                    results["watched_movies_ok"] += len(chunk)
+                                except Exception as exc:
+                                    results["errors"] += len(chunk)
+                                    results["errors_list"].append({"section": "watched_movies", "detail": str(exc)})
+                            for i in range(0, len(payloads["shows"]), 100):
+                                chunk = payloads["shows"][i:i + 100]
+                                try:
+                                    provider.raw_post("/sync/watched", {"shows": chunk})
+                                    results["watched_episodes_ok"] += sum(len(s["seasons"]) for s in chunk)
+                                except Exception as exc:
+                                    results["errors"] += 1
+                                    results["errors_list"].append({"section": "watched_shows", "detail": str(exc)})
+                        # Notes
+                        if do_ratings:
+                            rat = mig_mod.build_ratings_payloads(plan, dataset)
+                            try:
+                                provider.raw_post("/sync/ratings", rat)
+                            except Exception as exc:
+                                results["errors"] += 1
+                                results["errors_list"].append({"section": "ratings", "detail": str(exc)})
+                        # Watchlist
+                        if do_watchlist:
+                            wl = mig_mod.build_watchlist_payloads(dataset)
+                            try:
+                                provider.add_watchlist_items(movies=wl["movies"], shows=wl["shows"])
+                            except Exception as exc:
+                                results["errors"] += 1
+                                results["errors_list"].append({"section": "watchlist", "detail": str(exc)})
+                        # Listes
+                        if do_lists:
+                            for lplan in mig_mod.build_lists_plans(dataset):
+                                try:
+                                    resp = provider.create_list(lplan["name"])
+                                    list_id = (resp.get("id") if isinstance(resp, dict) else None)
+                                    if list_id:
+                                        provider.add_list_items(int(list_id), movies=lplan["movies"], shows=lplan["shows"])
+                                    else:
+                                        results["errors_list"].append({"section": "list_create", "detail": f"liste {lplan['name']} : pas d'id retourné"})
+                                except Exception as exc:
+                                    results["errors"] += 1
+                                    results["errors_list"].append({"section": "list", "detail": str(exc)})
+                    except Exception as exc:
+                        st.error(f"Échec de la migration : {exc}")
+                st.markdown(
+                    f'<div class="accent-callout"><strong>✅ MIGRATION TERMINÉE</strong> · '
+                    f'{results["watched_movies_ok"]} films · {results["watched_episodes_ok"]} épisodes '
+                    f'· {results["errors"]} erreur(s). Télécharge le rapport final ci-dessous.</div>',
+                    unsafe_allow_html=True,
+                )
+                st.download_button(
+                    "📊 Télécharger le rapport Excel final",
+                    data=mig_mod.generate_migration_report(plan, results),
+                    file_name=f"migration-rapport-final-{datetime.now(PARIS_TZ).strftime('%Y%m%d-%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="migration_report_final",
+                    type="primary",
+                )
+
+
 def render_achievements_page() -> None:
     """Succès (badges) — mêmes badges et même présentation que l'ancienne
     application Trakt Smart Lists, branchés sur le modèle normalisé."""
@@ -4574,6 +4780,8 @@ elif page == "🏆 Succès":
     render_achievements_page()
 elif page == "📤 Sauvegarde":
     render_backup_page()
+elif page == "📦 Migration Trakt → MDBList":
+    render_migration_page()
 else:
     placeholder(page)
 

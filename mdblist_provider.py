@@ -239,8 +239,36 @@ class MDBListProvider:
         response = self._post(f"/lists/{int(list_id)}/items/remove", payload)
         return response if isinstance(response, dict) else {"response": response}
 
+    def raw_post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """POST brut pour les écritures de migration (payloads déjà construits,
+        ex. avec `watched_at` et `seasons`)."""
+        response = self._post(path, payload)
+        return response if isinstance(response, dict) else {"response": response}
+
+    def add_watchlist_items(self, movies: list[dict[str, Any]] | None = None, shows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """Ajoute des films/séries à la Watchlist MDBList."""
+        payload = self._write_payload(movies or [], shows or [])
+        response = self._post("/watchlist/items/add", payload)
+        return response if isinstance(response, dict) else {"response": response}
+
+    def create_list(self, name: str, description: str = "") -> dict[str, Any]:
+        """Crée une liste statique MDBList et retourne la réponse (avec son id)."""
+        payload: dict[str, Any] = {"name": str(name), "description": str(description)}
+        response = self._post("/lists/user/add", payload)
+        return response if isinstance(response, dict) else {"response": response}
+
+    def add_list_items(self, list_id: int, movies: list[dict[str, Any]] | None = None, shows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """Ajoute des films/séries dans une liste statique MDBList."""
+        payload = self._write_payload(movies or [], shows or [])
+        response = self._post(f"/lists/{int(list_id)}/items/add", payload)
+        return response if isinstance(response, dict) else {"response": response}
+
     def set_watched(self, movies: list[dict[str, Any]] | None = None, shows: list[dict[str, Any]] | None = None, watched: bool = True) -> dict[str, Any]:
-        """Marque vu (ou non-vu si watched=False)."""
+        """Marque vu (ou non-vu si watched=False).
+
+        Les payloads acceptent `watched_at` (par film, saison ou épisode) pour
+        conserver les vraies dates de visionnage lors d'une migration.
+        """
         payload = self._write_payload(movies or [], shows or [])
         path = "/sync/watched" if watched else "/sync/watched/remove"
         response = self._post(path, payload)

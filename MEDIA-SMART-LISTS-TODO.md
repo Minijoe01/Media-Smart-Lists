@@ -96,13 +96,19 @@ L'utilisateur ne peut pas lancer un script Python en local : il faut une
 
 Page proposée : « 📦 Migration ZIP Trakt → MDBList » (assistant en étapes).
 
-- [ ] Assistant web « Import ZIP Trakt → MDBList » (étapes : upload ZIP →
-      aperçu des quantités → choix (historique, notes, watchlist, listes) →
-      sauvegarde → confirmation → écriture par lots).
-- [ ] Ajouter les méthodes d'écriture manquantes : `add_watchlist_items`,
-      `create_list`, `add_list_items`, `add_collection`.
-- [ ] Ne jamais écrire dans une liste dynamique/IA/flux.
-- [ ] Journal local nettoyé de tous les secrets.
+- [x] Assistant web « Import ZIP Trakt → MDBList » (page dédiée au menu) :
+      upload ZIP → aperçu (quantités + sans correspondance) → choix des
+      sections → sauvegarde JSON → rapport Excel d'aperçu → confirmation →
+      écriture par lots → rapport Excel final. Fait en V45.
+- [x] Historique migré avec les **vraies dates** (`watched_at` par film/saison/
+      épisode) ; rewatches comptés mais MDBList ne garde que la dernière date.
+- [x] Contenus sans correspondance listés + onglet Excel dédié.
+- [x] Mode **simulation (dry-run)** intégré (aucun POST).
+- [x] Méthodes d'écriture ajoutées : `add_watchlist_items`, `create_list`,
+      `add_list_items`, `raw_post` (+ `set_watched` avec dates).
+- [x] Ne jamais écrire dans une liste dynamique/IA/flux (uniquement listes statiques).
+- [ ] Tester la migration réelle sur un vrai compte MDBList (l'utilisateur a
+      déjà migré : il faudra un compte de test ou un volontaire).
 
 ### Dépôt communautaire (optionnel, outil CLI pour les initiés)
 
