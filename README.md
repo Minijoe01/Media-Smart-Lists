@@ -123,6 +123,13 @@ Python, sans clé API — juste ta session MDBList :
 
 > ⚠️ L'app **écrit sur ton compte MDBList** uniquement quand tu cliques sur un bouton (suppression, vu/non-vu, abandon) — avec **aperçu, sauvegarde de sécurité et confirmation** à chaque fois. Elle ne partage rien avec personne.
 
+## 🧰 Outil CLI (utilisateurs avancés)
+
+Une migration ZIP Trakt → MDBList **en local, sans l'application web** est aussi
+possible avec le script Python autonome (bibliothèque standard, dry-run par
+défaut) : voir [`scripts/README-migration-cli.md`](scripts/README-migration-cli.md)
+et le lanceur Windows [`scripts/start_windows.bat`](scripts/start_windows.bat).
+
 ## 🛠️ Lancer en local
 
 ```bash

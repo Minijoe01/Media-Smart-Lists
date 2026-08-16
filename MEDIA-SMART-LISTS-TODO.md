@@ -110,17 +110,16 @@ Page proposée : « 📦 Migration ZIP Trakt → MDBList » (assistant en étape
 - [ ] Tester la migration réelle sur un vrai compte MDBList (l'utilisateur a
       déjà migré : il faudra un compte de test ou un volontaire).
 
-### Dépôt communautaire (optionnel, outil CLI pour les initiés)
+### Outil CLI pour les initiés (intégré au dépôt — pas de nouveau dépôt)
 
-Dépôt prévu : `Minijoe01/Trakt-ZIP-to-MDBList` — script `migrate_trakt_zip_to_mdblist.py` déjà fonctionnel.
+Décision (V48) : le script CLI reste **dans Media Smart Lists**, dossier
+`scripts/` (pas de dépôt séparé).
 
-- [x] bibliothèque standard uniquement ; dry-run par défaut ; aucune suppression ; clé masquée ; protections ZIP ; préflight ; confirmation `IMPORTER` ; import watched/ratings/watchlist/collection/listes.
-- [ ] créer le dépôt séparé.
-- [ ] README.md, SECURITY.md, requirements.txt.
-- [ ] start_windows.bat.
-- [ ] Release ZIP avec SHA-256.
-- [ ] Fixtures anonymisées + tests automatiques.
-- [ ] Ne jamais accepter ni enregistrer les clés d'un utilisateur sur un serveur public.
+- [x] Script déplacé dans `scripts/migrate_trakt_zip_to_mdblist.py`.
+- [x] `scripts/README-migration-cli.md` (documentation complète : usage, options, sécurité, limites).
+- [x] `scripts/start_windows.bat` (lanceur Windows).
+- [x] bibliothèque standard uniquement ; dry-run par défaut ; aucune suppression ; clé masquée ; protections ZIP ; préflight ; confirmation `IMPORTER`.
+- [ ] (Optionnel, plus tard) Release ZIP + SHA-256 si un jour un dépôt séparé est souhaité.
 
 ---
 

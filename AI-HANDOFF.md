@@ -74,7 +74,7 @@ list_audit_engine.py     → audit des listes (doublons, vu·à retirer / vu·à
 calendar_engine.py       → calendrier (officiel + secours + enrichi)
 history_engine.py        → historique normalisé (durées d'épisode corrigées)
 legacy_trakt_app.py      → ancienne app (archivée, à ne pas utiliser)
-migrate_trakt_zip_to_mdblist.py → script de migration CLI (dépôt séparé à créer)
+scripts/migrate_trakt_zip_to_mdblist.py → script de migration CLI (voir scripts/README-migration-cli.md)
 ```
 
 ## État de l'application (13 août 2026)
