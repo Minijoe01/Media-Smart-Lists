@@ -159,7 +159,8 @@ Le dossier `fonts/` (polices DejaVu) garantit les accents sur l'image Wrapped PN
 - Aucune base de données, aucun compte à créer : l'authentification se fait directement entre toi et **MDBList** (OAuth device flow), ou via ton **ZIP Trakt** local.
 - Les jetons ne quittent jamais le serveur Streamlit / ton navigateur, et ne sont **jamais** inclus dans les exports.
 - Les données sont mises en cache (cloisonné par utilisateur) uniquement pour accélérer tes visites suivantes.
-- Les écritures (suppressions, vu/non-vu, abandon) ne se font **que sur action explicite + confirmation**, élément par élément.
+- Les écritures (suppressions, vu/non-vu, abandon, migration) ne se font **que sur action explicite + confirmation**, élément par élément.
+- 👉 [Politique de confidentialité complète](docs/privacy.md) · [Politique de sécurité (SECURITY.md)](SECURITY.md)
 
 ## 💬 Communauté
 

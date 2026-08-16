@@ -126,15 +126,23 @@ Dépôt prévu : `Minijoe01/Trakt-ZIP-to-MDBList` — script `migrate_trakt_zip_
 
 ## Documentation et qualité
 
-- [x] README du dépôt réécrit (V38) — complet, wordmark, fonctionnalités, sources, sécurité, installation.
+- [x] README du dépôt réécrit — complet, wordmark, fonctionnalités, sources, sécurité, installation, migration.
 - [x] Changelog synthétique créé (CHANGELOG.md).
-- [x] Social card régénérée (docs/social_card.png).
-- [x] Guide communauté Alkodiques (docs/guide-alkodiques.md).
-- [x] CI GitHub Actions (compilation + scan de secrets).
-- [ ] Licence MIT ajoutée (LICENSE) — voir ci-dessous.
-- [ ] Nettoyage du dépôt : supprimer les fichiers obsolètes (voir INSTALLATION-V39.txt).
-- [ ] SECURITY.md et politique de confidentialité.
-- [ ] Tests unitaires versionnés dans le dépôt.
+- [x] Social card régénérée (style Trakt, textes Media Smart Lists).
+- [x] Guide communauté Alkodiques (docs/guide-alkodiques.md) + section migration.
+- [x] CI GitHub Actions (compilation + scan de secrets) + tests unitaires.
+- [x] Licence MIT (LICENSE).
+- [x] Nettoyage du dépôt (GitHub Desktop) : les obsolètes sont supprimés ; il ne reste que l'essentiel.
+- [x] SECURITY.md + politique de confidentialité (docs/privacy.md).
+- [x] Tests unitaires versionnés dans le dépôt (tests/test_core.py, 7 tests) — exécutés par la CI.
+
+### À faire PAR L'UTILISATEUR (rappels)
+- [ ] **Captures d'écran à jour** : remplacer le CONTENU de docs/Dashboard.png,
+      series.png, Doublons.png, quoi_regarder.png, statistiques.png par des
+      captures prises sur la V45+ (SANS renommer les fichiers).
+- [ ] **Partager l'article Alkodiques** sur le portail
+      (lesalkodiques.com) — pas encore publié.
+- [ ] (Optionnel) Supprimer docs/audit-fichiers-github.xlsx une fois lu.
 
 ---
 
