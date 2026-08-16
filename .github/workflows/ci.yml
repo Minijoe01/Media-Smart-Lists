@@ -29,6 +29,10 @@ jobs:
           python -m compileall -q app.py
           python -m compileall -q -f . -x '/(\.git|\.venv|__pycache__)/'
 
+      - name: Tests unitaires (moteurs purs, sans réseau)
+        run: |
+          python -m unittest discover -s tests -v
+
       - name: Scan de secrets (aucune vraie clé autorisée)
         run: |
           python - <<'EOF'
