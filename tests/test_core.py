@@ -155,7 +155,7 @@ class TestDashboardWidgets(unittest.TestCase):
     @staticmethod
     def _dataset(**overrides):
         from datetime import timedelta
-        from normalized_model import build_sources
+        from normalized_model import build_progress, build_sources
 
         now = datetime.now(timezone.utc)
         iso = lambda d: d.isoformat()
@@ -178,6 +178,8 @@ class TestDashboardWidgets(unittest.TestCase):
              "last_watched_at": iso(years(3))},              # terminée -> exclue
             {"show": {"title": "The OA", "year": 2016, "ids": {"tmdb": 2003, "imdb": "tt6"}, "status": "returning"},
              "last_watched_at": iso(years(4))},              # abandonnée -> exclue
+            {"show": {"title": "Lupin", "year": 2021, "ids": {"tmdb": 2006, "imdb": "tt11"}, "status": "returning"},
+             "last_watched_at": iso(years(3))},              # vue EN ENTIER, absente d'Up Next -> exclue
             {"show": {"title": "Silo", "year": 2023, "ids": {"tmdb": 2004, "imdb": "tt7"}, "status": "returning"},
              "last_watched_at": iso(now - timedelta(days=3))},
         ]
@@ -200,13 +202,24 @@ class TestDashboardWidgets(unittest.TestCase):
             "watchlist": {"movies": [{"title": "Interstellar", "year": 2014, "ids": {"tmdb": 3001, "imdb": "tt9"},
                                       "listed_at": iso(now - timedelta(days=800))}], "shows": []},
             "dropped": {"shows": [{"show": {"title": "The OA", "ids": {"tmdb": 2003, "imdb": "tt6"}}}]},
+            # Up Next : Severance et Silo ont encore des épisodes à voir ;
+            # Lupin (vue en entier) n'y figure pas -> exclue de la pause longue.
+            "upnext": [
+                {"show": {"title": "Severance", "ids": {"tmdb": 2001, "imdb": "tt4"}},
+                 "next_episode": {"season": 2, "number": 1, "air_date": "2026-09-01"},
+                 "progress": {"watched_episode_count": 9, "total_episode_count": 10}},
+                {"show": {"title": "Silo", "ids": {"tmdb": 2004, "imdb": "tt7"}},
+                 "next_episode": {"season": 2, "number": 5, "air_date": "2026-08-20"},
+                 "progress": {"watched_episode_count": 9, "total_episode_count": 10}},
+            ],
             "user_lists": [{"id": 5, "name": "Films à voir", "type": "static",
                             "movies": [{"title": "Titanic", "year": 1997, "ids": {"tmdb": 4001, "imdb": "tt10"},
                                         "released": (now + timedelta(days=3)).date().isoformat(), "score_average": 79}],
                             "shows": []}],
         }
         dataset = {"source": "mdblist", "sections": sections,
-                   "sources": build_sources(sections), "loaded_at": iso(now)}
+                   "sources": build_sources(sections),
+                   "progress": build_progress(sections), "loaded_at": iso(now)}
         dataset.update(overrides)
         return dataset
 
@@ -230,11 +243,11 @@ class TestDashboardWidgets(unittest.TestCase):
     def test_thermometre_nuance(self):
         from dashboard_engine import compute_widgets
 
-        # Ma note 9 vs public 8.4 -> écart +0.6 : « UN PEU INDULGENT » (plus
+        # Ma note 9 vs public 8.4 -> écart +0.6 : « PLUTÔT INDULGENT » (plus
         # l'étiquette « 😇 INDULGENT » dès ±0,5 pt de l'ancien site).
         w = compute_widgets(self._dataset(), timezone_name="Europe/Paris")
         sev = w["contre_courant"]["severite"]
-        self.assertEqual(sev["label"], "UN PEU INDULGENT")
+        self.assertEqual(sev["label"], "PLUTÔT INDULGENT")
 
     def test_records_binge(self):
         from dashboard_engine import compute_widgets
