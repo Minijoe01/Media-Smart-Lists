@@ -138,6 +138,7 @@ def compute_dashboard(
                 "date": row["date_dt"],
                 "type": row["type"],
                 "titre": row["titre"],
+                "episode": row.get("episode_label") or "",
             }
         )
 
@@ -165,4 +166,235 @@ def compute_dashboard(
         "reste_actives": reste_actives,
         "projection": projection,
         "derniers": derniers,
+    }
+
+
+# ── Widgets restaurés de Trakt Smart Lists ──────────────────────────────────
+
+
+def _media_note_public(media: dict[str, Any]) -> float | None:
+    """Note publique (communauté) d'un média : score_average, score, ou ratings."""
+    if not isinstance(media, dict):
+        return None
+    for key in ("score_average", "score"):
+        try:
+            value = float(media.get(key) or 0)
+            if value > 0:
+                return max(0.0, min(value / 10.0, 10.0))
+        except (TypeError, ValueError):
+            pass
+    ratings = media.get("ratings") if isinstance(media.get("ratings"), list) else []
+    for rating in ratings:
+        if not isinstance(rating, dict):
+            continue
+        source = str(rating.get("source") or "").lower()
+        raw = rating.get("value")
+        try:
+            note = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if note > 0 and source in ("imdb", "tmdb", "trakt", "mdblist"):
+            if note > 10:
+                note = note / 10.0
+            return max(0.0, min(note, 10.0))
+    return None
+
+
+def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris") -> dict[str, Any]:
+    """Calcule les widgets restaurés (0 appel API) : coups de cœur,
+    thermomètre de sévérité, rewatch radar, sorties de la semaine,
+    plus ancien de la watchlist."""
+    from zoneinfo import ZoneInfo
+    try:
+        now = datetime.now(ZoneInfo(timezone_name))
+    except Exception:
+        now = datetime.now()
+    sections = dataset.get("sections") or {}
+    watched = sections.get("watched") or {}
+    ratings = sections.get("ratings") or {}
+    watchlist = sections.get("watchlist") or {}
+    sources = dataset.get("sources") or []
+
+    # ── Index médias (titre, année, note publique) depuis watched ──
+    media_index: dict[str, dict[str, Any]] = {}
+
+    def key_of(media: dict[str, Any]) -> str:
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        return str(ids.get("tmdb") or ids.get("imdb") or media.get("title") or "?")
+
+    for row in watched.get("movies") or []:
+        if not isinstance(row, dict):
+            continue
+        media = row.get("movie") if isinstance(row.get("movie"), dict) else row
+        k = key_of(media)
+        media_index[k] = {"titre": media.get("title"), "annee": media.get("year"),
+                          "pub": _media_note_public(media), "id": media.get("id"),
+                          "ids": media.get("ids") if isinstance(media.get("ids"), dict) else {}}
+    for row in watched.get("shows") or []:
+        if not isinstance(row, dict):
+            continue
+        media = row.get("show") if isinstance(row.get("show"), dict) else row
+        k = key_of(media)
+        media_index[k] = {"titre": media.get("title"), "annee": media.get("year"),
+                          "pub": _media_note_public(media), "id": media.get("id"),
+                          "ids": media.get("ids") if isinstance(media.get("ids"), dict) else {}}
+
+    # ── Mes notes perso (ratings) ──
+    mes_notes: list[dict[str, Any]] = []
+    for row in ratings.get("movies") or []:
+        if not isinstance(row, dict):
+            continue
+        media = row.get("movie") if isinstance(row.get("movie"), dict) else row
+        try:
+            note = float(row.get("rating") or 0)
+        except (TypeError, ValueError):
+            continue
+        if note <= 0:
+            continue
+        mes_notes.append({"type": "Film", "titre": media.get("title"), "annee": media.get("year"),
+                          "note": note, "ids": media.get("ids") if isinstance(media.get("ids"), dict) else {},
+                          "media": media})
+    for row in ratings.get("shows") or []:
+        if not isinstance(row, dict):
+            continue
+        media = row.get("show") if isinstance(row.get("show"), dict) else row
+        try:
+            note = float(row.get("rating") or 0)
+        except (TypeError, ValueError):
+            continue
+        if note <= 0:
+            continue
+        mes_notes.append({"type": "Série", "titre": media.get("title"), "annee": media.get("year"),
+                          "note": note, "ids": media.get("ids") if isinstance(media.get("ids"), dict) else {},
+                          "media": media})
+
+    # ── Coups de cœur (mes notes ≥ 9) ──
+    coups_de_coeur = [m for m in mes_notes if m["note"] >= 9]
+    coups_de_coeur.sort(key=lambda x: (-x["note"], str(x["titre"] or "").casefold()))
+    # Fallback : note publique ≥ 9 si je n'ai rien noté
+    if not coups_de_coeur:
+        fallback = [v for v in media_index.values() if (v.get("pub") or 0) >= 9]
+        fallback.sort(key=lambda x: -(x.get("pub") or 0))
+        coups_de_coeur = [{"type": "Film" if not None else "Film", "titre": v["titre"],
+                           "annee": v["annee"], "note": v["pub"], "ids": v["ids"], "fallback": True}
+                          for v in fallback[:5]]
+    coups_de_coeur = coups_de_coeur[:5]
+
+    # ── Thermomètre de sévérité (comparatif mes notes vs public) ──
+    deltas: list[float] = []
+    ecarts: list[dict[str, Any]] = []
+    for m in mes_notes:
+        ids = m.get("ids") or {}
+        k = str(ids.get("tmdb") or ids.get("imdb") or m.get("titre") or "?")
+        info = media_index.get(k) or {}
+        pub = info.get("pub") or 0
+        if pub <= 0 or m["note"] <= 0:
+            # tenter la note publique depuis le média lui-même (enrichi)
+            pub = _media_note_public(m.get("media")) or 0
+        if pub <= 0:
+            continue
+        d = m["note"] - pub
+        deltas.append(d)
+        if abs(d) >= 2.0:
+            ecarts.append({"type": m["type"], "titre": m["titre"], "annee": m["annee"],
+                           "note": m["note"], "pub": pub, "ecart": d, "ids": ids})
+    ecarts.sort(key=lambda x: -abs(x["ecart"]))
+    ecarts = ecarts[:5]
+    severite = None
+    if deltas:
+        moy = sum(deltas) / len(deltas)
+        if moy <= -0.5:
+            severite = {"moy": moy, "label": "SÉVÈRE", "emoji": "😈",
+                        "txt": "tu notes en moyenne plus dur que le public", "couleur": "#ED2224"}
+        elif moy >= 0.5:
+            severite = {"moy": moy, "label": "INDULGENT", "emoji": "😇",
+                        "txt": "tu notes en moyenne plus gentiment que le public", "couleur": "#00D084"}
+        else:
+            severite = {"moy": moy, "label": "PILE DANS LA MOYENNE", "emoji": "🎯",
+                        "txt": "tes notes collent bien à celles du public", "couleur": "#CEDC00"}
+
+    # ── Rewatch radar : films vus 1 seule fois il y a ≥ 3 ans, notés ≥ 8 ──
+    rewatch = []
+    for row in watched.get("movies") or []:
+        if not isinstance(row, dict):
+            continue
+        media = row.get("movie") if isinstance(row.get("movie"), dict) else row
+        try:
+            plays = int(row.get("plays") or 1)
+        except (TypeError, ValueError):
+            plays = 1
+        if plays != 1:
+            continue
+        pub = _media_note_public(media) or 0
+        if pub < 8:
+            continue
+        last = row.get("last_watched_at") or row.get("watched_at")
+        try:
+            d = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            jours = (now - d.astimezone(now.tzinfo)).days
+        except Exception:
+            continue
+        if jours < 1095:  # 3 ans
+            continue
+        rewatch.append({"titre": media.get("title"), "annee": media.get("year"),
+                        "note": pub, "ans": jours // 365,
+                        "ids": media.get("ids") if isinstance(media.get("ids"), dict) else {}})
+    rewatch.sort(key=lambda x: (-x["note"], -x["ans"]))
+    rewatch = rewatch[:3]
+
+    # ── Sorties de la semaine (films des listes qui sortent ≤ 7 jours) ──
+    sorties = []
+    aujourdhui = now.date()
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for movie in source.get("movies") or []:
+            if not isinstance(movie, dict):
+                continue
+            rel = movie.get("released") or movie.get("release_date") or movie.get("premiere_date")
+            if not rel:
+                continue
+            try:
+                ds = datetime.fromisoformat(str(rel)[:10]).date()
+            except Exception:
+                continue
+            j = (ds - aujourdhui).days
+            if 0 <= j <= 7:
+                ids = movie.get("ids") if isinstance(movie.get("ids"), dict) else {}
+                sorties.append({"j": j, "date": ds, "titre": movie.get("title"), "annee": movie.get("year"),
+                                "note": _media_note_public(movie) or 0, "ids": ids})
+    sorties.sort(key=lambda x: (x["j"], -x["note"]))
+    sorties = sorties[:3]
+
+    # ── Plus ancien de la watchlist (≥ 60 jours) ──
+    plus_ancien = None
+    ancien = None
+    for item in (watchlist.get("movies") or []) + (watchlist.get("shows") or []):
+        if not isinstance(item, dict):
+            continue
+        la = item.get("listed_at") or item.get("watchlist_at")
+        if not la:
+            continue
+        try:
+            dt_l = datetime.fromisoformat(str(la).replace("Z", "+00:00"))
+            if dt_l.tzinfo is None:
+                dt_l = dt_l.replace(tzinfo=timezone.utc)
+            dt_l = dt_l.astimezone(now.tzinfo)
+        except Exception:
+            continue
+        if ancien is None or dt_l < ancien[0]:
+            ancien = (dt_l, item.get("title"), item.get("year"))
+    if ancien:
+        jours = (now - ancien[0]).days
+        if jours >= 60:
+            plus_ancien = {"titre": ancien[1], "annee": ancien[2], "jours": jours}
+
+    return {
+        "coups_de_coeur": coups_de_coeur,
+        "contre_courant": {"severite": severite, "ecarts": ecarts, "nb": len(deltas)},
+        "rewatch": rewatch,
+        "sorties": sorties,
+        "plus_ancien": plus_ancien,
     }

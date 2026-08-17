@@ -48,6 +48,16 @@
 
 ### Divers
 - [x] Liens contenus : badges discrets « 🔎 Où regarder · TMDB · MDBL » avec info-bulles.
+- [x] Widgets du tableau de bord restaurés (V49) : **⭐ Mes coups de cœur**, **🧭 À contre-courant** (thermomètre de sévérité : mes notes vs public), **🔁 Rewatch radar**, **📅 Sorties de la semaine**, **⏳ Plus ancien de la Watchlist** — 0 appel API.
+- [x] Historique du tableau de bord : la **saison/épisode** (SxxEyy) est affichée.
+
+### Acteurs favoris MDBList / recherche d'acteur (analyse V49)
+- [ ] **Acteurs favoris** : pas d'endpoint public MDBList pour les lister (vérifié
+      dans l'OpenAPI officiel). Le `favorite_cast` du calendrier est côté serveur,
+      non lisible. À réévaluer si MDBList expose un jour un endpoint.
+- [ ] **« Où ai-je vu cet acteur ? »** (façon Cinopsys) : nécessite les crédits
+      des médias, absents du dataset sans appels supplémentaires (TMDB credits).
+      Non prioritaire ; possible en option avec des appels TMDB dédiés.
 - [x] Durées d'épisode corrigées (fini les « 22 ans » de visionnage).
 - [x] Export Excel : largeurs auto, onglet « Mes contenus » avec colonne Liste.
 - [x] Connexion « sans smartphone » : lien direct avec code pré-rempli.

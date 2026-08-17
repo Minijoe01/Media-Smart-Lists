@@ -97,6 +97,8 @@ def build_frame(rows: Iterable[dict[str, Any]]) -> pd.DataFrame:
                 "lectures": plays,
                 "note": float(row["personal_rating"]) if row.get("personal_rating") else 0.0,
                 "studios": list(row.get("studios") or []),
+                "episode_label": str(row.get("episode_label") or ""),
+                "ids": dict(row.get("ids") or {}),
             }
         )
     if not values:

@@ -3838,9 +3838,108 @@ def render_dashboard_widgets() -> None:
     if dash["derniers"]:
         st.markdown("#### 🕘 Derniers visionnages")
         for item in dash["derniers"]:
+            ep = f" · {escape(str(item.get('episode') or ''))}" if item.get("episode") else ""
             st.markdown(
-                f"📅 **{item['date'].strftime('%d/%m/%Y %H:%M')}** · {item['type']} · **{escape(str(item['titre']))}**"
+                f"📅 **{item['date'].strftime('%d/%m/%Y %H:%M')}** · {item['type']} · "
+                f"**{escape(str(item['titre']))}**{ep}"
             )
+
+    # ── Widgets restaurés de Trakt Smart Lists ──────────────────────────────
+    try:
+        _render_restored_widgets(dataset)
+    except Exception:
+        pass
+
+
+def _render_restored_widgets(dataset: dict[str, Any]) -> None:
+    """Coups de cœur · À contre-courant (thermomètre) · Rewatch radar ·
+    Sorties de la semaine · Plus ancien de la watchlist (0 appel API)."""
+    w = dashboard_mod.compute_widgets(dataset, timezone_name="Europe/Paris")
+
+    # ⭐ Coups de cœur
+    if w.get("coups_de_coeur"):
+        st.divider()
+        with st.expander(f"⭐ Mes coups de cœur ({len(w['coups_de_coeur'])})", expanded=False):
+            st.caption("Tes plus belles découvertes — de bons candidats à revoir !")
+            cols = st.columns(min(5, len(w["coups_de_coeur"])))
+            for i, c in enumerate(w["coups_de_coeur"]):
+                ic = "🎬" if c.get("type") == "Film" else "📺"
+                an = f" ({c.get('annee')})" if c.get("annee") else ""
+                src_txt = " (communauté)" if c.get("fallback") else ""
+                with cols[i % 5]:
+                    st.markdown(f"{ic} **{escape(str(c.get('titre')))}**{an}")
+                    st.caption(f"⭐ **{c.get('note', 0):.1f}**/10{src_txt}")
+
+    # 🧭 À contre-courant (thermomètre de sévérité)
+    cc = w.get("contre_courant") or {}
+    sev = cc.get("severite")
+    if sev:
+        st.divider()
+        top = cc.get("ecarts") or []
+        with st.expander(
+            f"🧭 À contre-courant {sev['emoji']}" + (f" — {len(top)} écart(s) notable(s)" if top else " — aucun écart notable"),
+            expanded=False,
+        ):
+            st.caption("Tes goûts face à la foule : ton thermomètre de sévérité, puis les contenus où TA note s'écarte le plus de celle du public.")
+            st.markdown(
+                f"🌡️ **Thermomètre de sévérité** — sur **{cc.get('nb', 0)}** contenus notés, tu es : "
+                f"<span style='color:{sev['couleur']}; font-weight:800;'>{sev['emoji']} {sev['label']}</span> "
+                f"(écart moyen **{sev['moy']:+.1f} pt /10**, {sev['txt']}).",
+                unsafe_allow_html=True,
+            )
+            jauge = max(0.0, min(1.0, (sev["moy"] + 3) / 6))
+            st.progress(jauge)
+            st.caption("😈 Sévère ···· 🎯 Dans la moyenne ···· 😇 Indulgent")
+            for c in top:
+                ic = "🎬" if c.get("type") == "Film" else "📺"
+                an = f" ({c.get('annee')})" if c.get("annee") else ""
+                sens = "💎 Tu as adoré ce que le public a boudé" if c.get("ecart", 0) > 0 else "🙃 Tu as boudé ce que le public a adoré"
+                st.markdown(
+                    f"{ic} **{escape(str(c.get('titre')))}**{an} — Toi <b>{c.get('note', 0):.1f}/10</b> · "
+                    f"Public <b>{c.get('pub', 0):.1f}/10</b> · écart <b>{c.get('ecart', 0):+.1f}</b>",
+                    unsafe_allow_html=True,
+                )
+                st.caption(sens)
+    elif cc.get("nb"):
+        st.divider()
+        with st.expander("🧭 À contre-courant 🎯", expanded=False):
+            st.caption(f"Aucun écart notable : tes notes suivent sagement celles du public ({cc['nb']} contenus comparés). 🤝")
+
+    # 🔁 Rewatch radar
+    if w.get("rewatch"):
+        st.divider()
+        with st.expander(f"🔁 Rewatch radar ({len(w['rewatch'])})", expanded=False):
+            st.caption("Vus une seule fois il y a 3 ans ou plus, et très bien notés — un soir nostalgie ?")
+            for c in w["rewatch"]:
+                an = f" ({c.get('annee')})" if c.get("annee") else ""
+                pl = "s" if c.get("ans", 1) > 1 else ""
+                st.markdown(f"🔁 **{escape(str(c.get('titre')))}**{an} · il y a {c.get('ans')} an{pl} · ⭐ {c.get('note', 0):.1f}/10")
+
+    # 📅 Sorties de la semaine
+    if w.get("sorties"):
+        st.divider()
+        with st.expander(f"📅 Sorties de la semaine ({len(w['sorties'])})", expanded=False):
+            st.caption("Des films de tes listes qui sortent dans les 7 prochains jours.")
+            for c in w["sorties"]:
+                an = f" ({c.get('annee')})" if c.get("annee") else ""
+                note_txt = f" · ⭐ {c.get('note', 0):.1f}/10" if c.get("note") else ""
+                jtxt = "aujourd'hui" if c.get("j") == 0 else f"dans {c.get('j')} j"
+                st.markdown(f"🎬 **{escape(str(c.get('titre')))}**{an} · {jtxt} ({c.get('date'):%d/%m}){note_txt}")
+
+    # ⏳ Plus ancien de la watchlist
+    pa = w.get("plus_ancien")
+    if pa:
+        st.divider()
+        jours = pa.get("jours") or 0
+        if jours >= 365:
+            age = f"{jours // 365} an" + ("s" if jours >= 730 else "")
+        else:
+            age = f"{jours // 30} mois"
+        an = f" ({pa.get('annee')})" if pa.get("annee") else ""
+        st.markdown(
+            f"⏳ **Le plus ancien de ta Watchlist** : **{escape(str(pa.get('titre')))}**{an} "
+            f"— ajouté il y a {age}. Encore envie de le voir ?"
+        )
 
 
 def pending_source_now() -> bool:
