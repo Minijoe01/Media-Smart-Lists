@@ -149,5 +149,114 @@ class TestStats(unittest.TestCase):
         self.assertEqual(keys, sorted(keys))
 
 
+class TestDashboardWidgets(unittest.TestCase):
+    """Widgets restaurés du tableau de bord (compute_widgets, 0 appel API)."""
+
+    @staticmethod
+    def _dataset(**overrides):
+        from datetime import timedelta
+        from normalized_model import build_sources
+
+        now = datetime.now(timezone.utc)
+        iso = lambda d: d.isoformat()
+        years = lambda y: now - timedelta(days=int(365 * y))
+
+        watched_movies = [
+            # Dune vu 2 fois (2 lignes dans un ZIP Trakt) -> exclu du rewatch radar.
+            {"movie": {"title": "Dune 2", "year": 2024, "ids": {"tmdb": 1001, "imdb": "tt1"}, "score_average": 84},
+             "last_watched_at": iso(years(5)), "plays": 1},
+            {"movie": {"title": "Dune 2", "year": 2024, "ids": {"tmdb": 1001, "imdb": "tt1"}, "score_average": 84},
+             "last_watched_at": iso(now - timedelta(days=10)), "plays": 1},
+            # Inception vu 1 seule fois il y a 4 ans, note publique 8.8 -> candidat.
+            {"movie": {"title": "Inception", "year": 2010, "ids": {"tmdb": 1002, "imdb": "tt2"}, "score_average": 88},
+             "last_watched_at": iso(years(4)), "plays": 1},
+        ]
+        watched_shows = [
+            {"show": {"title": "Severance", "year": 2022, "ids": {"tmdb": 2001, "imdb": "tt4"}, "status": "returning"},
+             "last_watched_at": iso(years(2.5))},           # pause longue
+            {"show": {"title": "Breaking Bad", "year": 2008, "ids": {"tmdb": 2002, "imdb": "tt5"}, "status": "ended"},
+             "last_watched_at": iso(years(3))},              # terminée -> exclue
+            {"show": {"title": "The OA", "year": 2016, "ids": {"tmdb": 2003, "imdb": "tt6"}, "status": "returning"},
+             "last_watched_at": iso(years(4))},              # abandonnée -> exclue
+            {"show": {"title": "Silo", "year": 2023, "ids": {"tmdb": 2004, "imdb": "tt7"}, "status": "returning"},
+             "last_watched_at": iso(now - timedelta(days=3))},
+        ]
+        episodes = []
+        for i in range(5):
+            episodes.append({"episode": {"season": 1, "number": i, "title": f"E{i}", "ids": {"tmdb": 90001 + i},
+                                         "show": {"title": "Silo", "ids": {"tmdb": 2004}}},
+                             "show": {"title": "Silo", "ids": {"tmdb": 2004}},
+                             "last_watched_at": f"2024-07-12T{17 + i:02d}:00:00+00:00", "plays": 1, "runtime": 45})
+        for i in range(2):
+            episodes.append({"episode": {"season": 1, "number": i, "title": f"B{i}", "ids": {"tmdb": 91001 + i},
+                                         "show": {"title": "The Bear", "ids": {"tmdb": 2005}}},
+                             "show": {"title": "The Bear", "ids": {"tmdb": 2005}},
+                             "last_watched_at": "2024-07-12T10:00:00+00:00", "plays": 1, "runtime": 30})
+
+        sections = {
+            "watched": {"movies": watched_movies, "shows": watched_shows, "episodes": episodes},
+            "ratings": {"movies": [{"movie": {"title": "Dune 2", "year": 2024, "ids": {"tmdb": 1001, "imdb": "tt1"}}, "rating": 9}],
+                        "shows": [], "episodes": []},
+            "watchlist": {"movies": [{"title": "Interstellar", "year": 2014, "ids": {"tmdb": 3001, "imdb": "tt9"},
+                                      "listed_at": iso(now - timedelta(days=800))}], "shows": []},
+            "dropped": {"shows": [{"show": {"title": "The OA", "ids": {"tmdb": 2003, "imdb": "tt6"}}}]},
+            "user_lists": [{"id": 5, "name": "Films à voir", "type": "static",
+                            "movies": [{"title": "Titanic", "year": 1997, "ids": {"tmdb": 4001, "imdb": "tt10"},
+                                        "released": (now + timedelta(days=3)).date().isoformat(), "score_average": 79}],
+                            "shows": []}],
+        }
+        dataset = {"source": "mdblist", "sections": sections,
+                   "sources": build_sources(sections), "loaded_at": iso(now)}
+        dataset.update(overrides)
+        return dataset
+
+    def test_rewatch_dedupe_zip(self):
+        from dashboard_engine import compute_widgets
+
+        w = compute_widgets(self._dataset(), timezone_name="Europe/Paris")
+        titres = [c["titre"] for c in w["rewatch"]]
+        self.assertIn("Inception", titres)   # 1 seule vue, il y a 4 ans, pub 8.8
+        self.assertNotIn("Dune 2", titres)   # vu 2 fois (ZIP) -> exclu
+
+    def test_pause_longue_filters(self):
+        from dashboard_engine import compute_widgets
+
+        w = compute_widgets(self._dataset(), timezone_name="Europe/Paris")
+        titres = [c["titre"] for c in w["pause_longue"]]
+        self.assertEqual(titres, ["Severance"])          # seule non terminée / non abandonnée
+        self.assertNotIn("Breaking Bad", titres)         # statut ended
+        self.assertNotIn("The OA", titres)               # dropped
+
+    def test_thermometre_nuance(self):
+        from dashboard_engine import compute_widgets
+
+        # Ma note 9 vs public 8.4 -> écart +0.6 : « UN PEU INDULGENT » (plus
+        # l'étiquette « 😇 INDULGENT » dès ±0,5 pt de l'ancien site).
+        w = compute_widgets(self._dataset(), timezone_name="Europe/Paris")
+        sev = w["contre_courant"]["severite"]
+        self.assertEqual(sev["label"], "UN PEU INDULGENT")
+
+    def test_records_binge(self):
+        from dashboard_engine import compute_widgets
+
+        w = compute_widgets(self._dataset(), timezone_name="Europe/Paris")
+        rec = w["records"]
+        self.assertEqual(rec["jour"]["date"], datetime(2024, 7, 12).date())  # 5 ép. + 2, en heure de Paris
+        self.assertEqual(rec["jour"]["nb"], 7)
+        self.assertEqual(rec["mois"]["key"], (2024, 7))
+
+    def test_creneau_prefere(self):
+        from dashboard_engine import compute_widgets
+
+        w = compute_widgets(self._dataset(), timezone_name="Europe/Paris")
+        self.assertEqual(w["creneau"]["top"]["label"], "Soir")
+
+    def test_sorties_dedupliquees(self):
+        from dashboard_engine import compute_widgets
+
+        w = compute_widgets(self._dataset(), timezone_name="Europe/Paris")
+        self.assertEqual(len(w["sorties"]), 1)  # une seule fois malgré les sources agrégées
+
+
 if __name__ == "__main__":
     unittest.main()
