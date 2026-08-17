@@ -596,6 +596,20 @@ st.markdown(
         color: var(--am-text) !important;
     }
     hr { border-color: var(--am-border) !important; }
+    /* Espacement resserré entre les widgets du tableau de bord : séparateurs
+       et expandeurs plus compacts (sans casser le reste de l'app). */
+    hr { margin: .45rem 0 !important; }
+    div[data-testid="stExpander"] {
+        border: 1px solid rgba(18, 90, 84, .42) !important;
+        border-radius: 12px !important;
+        background: rgba(8, 55, 50, .28) !important;
+        margin-bottom: .3rem !important;
+    }
+    div[data-testid="stExpander"] details { padding: .05rem .35rem !important; }
+    div[data-testid="stExpander"] summary {
+        padding: .5rem .6rem !important;
+        min-height: 2.2rem;
+    }
     p, li, label { color: var(--am-text) !important; }
     .stCaption { color: var(--am-text-muted) !important; }
 
@@ -1031,6 +1045,11 @@ def _enrich_zip_dataset() -> tuple[bool, str]:
             media["studios"] = meta["studios"]
         if not media.get("year") and meta.get("year"):
             media["year"] = meta["year"]
+        # Date de sortie : alimente le widget « 📅 Sorties de la semaine »
+        # pour les données issues d'un ZIP Trakt enrichi.
+        for date_key in ("released", "release_date", "premiere_date", "first_aired"):
+            if not media.get(date_key) and meta.get(date_key):
+                media[date_key] = meta[date_key]
 
     def apply_row_media(row: Any, key: str, nested_show: str | None = None) -> None:
         """Applique les métadonnées au média d'une ligne, en suivant le show
@@ -3852,9 +3871,92 @@ def render_dashboard_widgets() -> None:
 
 
 def _render_restored_widgets(dataset: dict[str, Any]) -> None:
-    """Coups de cœur · À contre-courant (thermomètre) · Rewatch radar ·
-    Sorties de la semaine · Plus ancien de la watchlist (0 appel API)."""
+    """Widgets restaurés de Trakt Smart Lists (0 appel API), dans un ordre
+    logique : l'action d'abord (sorties, watchlist, pauses longues), puis les
+    souvenirs (records, créneau), puis les goûts (coups de cœur, à
+    contre-courant, rewatch)."""
     w = dashboard_mod.compute_widgets(dataset, timezone_name="Europe/Paris")
+
+    # 📅 Sorties de la semaine
+    if w.get("sorties"):
+        st.divider()
+        with st.expander(f"📅 Sorties de la semaine ({len(w['sorties'])})", expanded=False):
+            st.caption("Des films de tes listes qui sortent dans les 7 prochains jours.")
+            for c in w["sorties"]:
+                an = f" ({c.get('annee')})" if c.get("annee") else ""
+                note_txt = f" · ⭐ {c.get('note', 0):.1f}/10" if c.get("note") else ""
+                jtxt = "aujourd'hui" if c.get("j") == 0 else f"dans {c.get('j')} j"
+                st.markdown(f"🎬 **{escape(str(c.get('titre')))}**{an} · {jtxt} ({c.get('date'):%d/%m}){note_txt}")
+
+    # ⏳ Plus ancien de la watchlist
+    pa = w.get("plus_ancien")
+    if pa:
+        st.divider()
+        jours = pa.get("jours") or 0
+        if jours >= 365:
+            age = f"{jours // 365} an" + ("s" if jours >= 730 else "")
+        else:
+            age = f"{jours // 30} mois"
+        an = f" ({pa.get('annee')})" if pa.get("annee") else ""
+        st.markdown(
+            f"⏳ **Le plus ancien de ta Watchlist** : **{escape(str(pa.get('titre')))}**{an} "
+            f"— ajouté il y a {age}. Encore envie de le voir ?"
+        )
+
+    # 🚦 Séries en pause longue
+    if w.get("pause_longue"):
+        st.divider()
+        with st.expander(f"🚦 Séries en pause longue ({len(w['pause_longue'])})", expanded=False):
+            st.caption("Tu n'as pas regardé un épisode depuis 2 ans ou plus — à reprendre… ou à abandonner ?")
+            for c in w["pause_longue"]:
+                an = f" ({c.get('annee')})" if c.get("annee") else ""
+                ans = (c.get("jours") or 0) // 365
+                pl = "s" if ans > 1 else ""
+                note_txt = f" · ⭐ {c.get('pub', 0):.1f}/10" if c.get("pub") else ""
+                st.markdown(
+                    f"🚦 **{escape(str(c.get('titre')))}**{an} — dernier épisode vu il y a {ans} an{pl}{note_txt}"
+                )
+
+    # 🔥 Records de binge
+    rec = w.get("records")
+    if rec:
+        st.divider()
+        with st.expander("🔥 Records de binge", expanded=False):
+            st.caption("Tes plus grosses sessions — calculées sur ton historique local, sans appel API.")
+            j = rec["jour"]
+            counts = j.get("counts") or {}
+            top_key = max(counts, key=counts.get) if counts else None
+            top_titre = (j.get("shows") or {}).get(top_key)
+            extra = f" — surtout **{escape(str(top_titre))}**" if top_titre else ""
+            st.markdown(f"📅 **Jour record** : {j['nb']} épisode(s) le {j['date']:%d/%m/%Y}{extra}")
+            m = rec["mois"]
+            mois_nom = dashboard_mod.MOIS_NOMS[m["key"][1] - 1]
+            st.markdown(f"🗓️ **Mois record** : {m['nb']} épisode(s) en {mois_nom} {m['key'][0]}")
+            s = rec["serie"]
+            st.markdown(
+                f"📺 **Série la plus avalée** : **{escape(str(s.get('titre')))}** — "
+                f"{dashboard_mod._minutes_to_duree(int(s.get('min', 0)))} ({s.get('nb')} ép.)"
+            )
+
+    # 🕰️ Ton créneau préféré
+    cr = w.get("creneau")
+    if cr:
+        st.divider()
+        with st.expander("🕰️ Ton créneau préféré", expanded=False):
+            st.caption("Répartition de ton temps de visionnage par moment de la journée.")
+            items = cr.get("items") or []
+            cols = st.columns(len(items))
+            for i, it in enumerate(items):
+                with cols[i]:
+                    st.markdown(f"{it['emoji']} **{it['label']}**")
+                    st.markdown(
+                        f"<div style='font-size:1.3rem; font-weight:800; color:#CEDC00;'>{it['pct']:.0f}%</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.caption(dashboard_mod._minutes_to_duree(int(it["min"])))
+            top = cr.get("top") or {}
+            if top:
+                st.caption(f"🏆 Ton moment préféré : {top['emoji']} **{top['label']}** ({top['pct']:.0f}% de ton temps).")
 
     # ⭐ Coups de cœur
     if w.get("coups_de_coeur"):
@@ -3889,7 +3991,7 @@ def _render_restored_widgets(dataset: dict[str, Any]) -> None:
             )
             jauge = max(0.0, min(1.0, (sev["moy"] + 3) / 6))
             st.progress(jauge)
-            st.caption("😈 Sévère ···· 🎯 Dans la moyenne ···· 😇 Indulgent")
+            st.caption("😈 Très sévère ···· 🎯 Dans la moyenne ···· 😇 Très indulgent")
             for c in top:
                 ic = "🎬" if c.get("type") == "Film" else "📺"
                 an = f" ({c.get('annee')})" if c.get("annee") else ""
@@ -3915,31 +4017,6 @@ def _render_restored_widgets(dataset: dict[str, Any]) -> None:
                 pl = "s" if c.get("ans", 1) > 1 else ""
                 st.markdown(f"🔁 **{escape(str(c.get('titre')))}**{an} · il y a {c.get('ans')} an{pl} · ⭐ {c.get('note', 0):.1f}/10")
 
-    # 📅 Sorties de la semaine
-    if w.get("sorties"):
-        st.divider()
-        with st.expander(f"📅 Sorties de la semaine ({len(w['sorties'])})", expanded=False):
-            st.caption("Des films de tes listes qui sortent dans les 7 prochains jours.")
-            for c in w["sorties"]:
-                an = f" ({c.get('annee')})" if c.get("annee") else ""
-                note_txt = f" · ⭐ {c.get('note', 0):.1f}/10" if c.get("note") else ""
-                jtxt = "aujourd'hui" if c.get("j") == 0 else f"dans {c.get('j')} j"
-                st.markdown(f"🎬 **{escape(str(c.get('titre')))}**{an} · {jtxt} ({c.get('date'):%d/%m}){note_txt}")
-
-    # ⏳ Plus ancien de la watchlist
-    pa = w.get("plus_ancien")
-    if pa:
-        st.divider()
-        jours = pa.get("jours") or 0
-        if jours >= 365:
-            age = f"{jours // 365} an" + ("s" if jours >= 730 else "")
-        else:
-            age = f"{jours // 30} mois"
-        an = f" ({pa.get('annee')})" if pa.get("annee") else ""
-        st.markdown(
-            f"⏳ **Le plus ancien de ta Watchlist** : **{escape(str(pa.get('titre')))}**{an} "
-            f"— ajouté il y a {age}. Encore envie de le voir ?"
-        )
 
 
 def pending_source_now() -> bool:

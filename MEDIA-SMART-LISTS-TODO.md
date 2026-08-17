@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 13 août 2026 · Dernière version déployée : V35.
+> Dernière mise à jour : 17 août 2026 · Dernière version déployée : V50.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -19,7 +19,7 @@
 - [x] Calculs, filtres, tris, recommandations et audits locaux dès que possible.
 - [x] Aucune suppression distante sans aperçu, sauvegarde et confirmation explicite.
 - [x] Thème legacy conservé : fond radial Aston Martin, boutons dégradé vert, badges citron.
-- [x] Déconnexion durable via `?msl_logged_out=1` dans l'URL (F5 → on reste déconnecté).
+- [x] Déconnexion : ne vaut que pour la session (au F5 on reste connecté via le cookie OAuth). Le marqueur `?msl_logged_out=1` a été RETIRÉ en V38-V39 (il causait de fausses déconnexions).
 
 ---
 
@@ -49,6 +49,12 @@
 ### Divers
 - [x] Liens contenus : badges discrets « 🔎 Où regarder · TMDB · MDBL » avec info-bulles.
 - [x] Widgets du tableau de bord restaurés (V49) : **⭐ Mes coups de cœur**, **🧭 À contre-courant** (thermomètre de sévérité : mes notes vs public), **🔁 Rewatch radar**, **📅 Sorties de la semaine**, **⏳ Plus ancien de la Watchlist** — 0 appel API.
+- [x] Widgets V50 : **🚦 Séries en pause longue** (2 ans+ sans épisode, non abandonnées/terminées), **🔥 Records de binge** (jour/mois record, série la plus avalée), **🕰️ Ton créneau préféré** (matin/après-midi/soir/nuit) — 0 appel API.
+- [x] Thermomètre de sévérité **affiné à 5 paliers** (V50) : ±0,5 pt = « UN PEU sévère/indulgent », ±1,5 pt = « TRÈS » (l'ancien site étiquetait dès ±0,5 pt).
+- [x] Ordre logique des widgets (V50) : action (sorties → plus ancien → pauses) → souvenirs (records → créneau) → goûts (coups de cœur → contre-courant → rewatch).
+- [x] Sorties de la semaine : **corrigées pour le ZIP** (date copiée par l'enrichissement) + **dédoublonnées** (sources agrégées) — V50.
+- [x] Rewatch radar **dédoublonné pour le ZIP** (chaque visionnage est une ligne) — V50.
+- [x] Espacement entre widgets resserré (CSS hr + expandeurs) — V50.
 - [x] Historique du tableau de bord : la **saison/épisode** (SxxEyy) est affichée.
 
 ### Acteurs favoris MDBList / recherche d'acteur (analyse V49)
@@ -143,7 +149,8 @@ Décision (V48) : le script CLI reste **dans Media Smart Lists**, dossier
 - [x] Licence MIT (LICENSE).
 - [x] Nettoyage du dépôt (GitHub Desktop) : les obsolètes sont supprimés ; il ne reste que l'essentiel.
 - [x] SECURITY.md + politique de confidentialité (docs/privacy.md).
-- [x] Tests unitaires versionnés dans le dépôt (tests/test_core.py, 7 tests) — exécutés par la CI.
+- [x] Tests unitaires versionnés dans le dépôt (tests/test_core.py, **13 tests** depuis V50) — exécutés par la CI.
+- [x] Maquette du futur look animé (V50) : docs/maquette-animations.html + .png — « comet », fondu d'entrée, survol lumineux, en vert/citron. **À appliquer dans une version ultérieure** (les fonctionnalités passent d'abord).
 
 ### À faire PAR L'UTILISATEUR (rappels)
 - [ ] **Captures d'écran à jour** : remplacer le CONTENU de docs/Dashboard.png,

@@ -2,6 +2,70 @@
 
 Toutes les évolutions notables de Media Smart Lists.
 
+## [V50] — 17 août 2026
+
+- 🧭 **Thermomètre de sévérité affiné à 5 paliers** : ±0,5 pt = « UN PEU sévère/indulgent », ±1,5 pt = « TRÈS sévère/indulgent » (l'ancien site étiquetait « indulgent » dès 0,5 pt — 0,5 pt c'est peu, donc maintenant c'est « 🙂 UN PEU INDULGENT »).
+- 🚦 **Nouveau widget « Séries en pause longue »** : séries dont le dernier épisode vu date d'il y a 2 ans ou plus, non abandonnées (dropped) et non terminées/annulées — à reprendre… ou à abandonner ?
+- 🔥 **Nouveau widget « Records de binge »** : jour record (nb d'épisodes + série dominante), mois record, série la plus « avalée » en heures.
+- 🕰️ **Nouveau widget « Ton créneau préféré »** : répartition matin / après-midi / soir / nuit en % de temps de visionnage.
+- 🧭 **Ordre logique des widgets du tableau de bord** : l'action d'abord (sorties → plus ancien watchlist → pauses longues), puis les souvenirs (records → créneau), puis les goûts (coups de cœur → à contre-courant → rewatch radar).
+- 📅 **Sorties de la semaine** : corrigées pour l'import ZIP (la date de sortie est maintenant copiée par l'enrichissement MDBList) et **dédoublonnées** (un film n'apparaît qu'une fois, malgré les sources agrégées).
+- 🔁 **Rewatch radar dédoublonné pour le ZIP** : dans un ZIP Trakt chaque visionnage est une ligne séparée — un film revu n'apparaît plus plusieurs fois.
+- 📏 **Espacement resserré entre les widgets** (séparateurs et expandeurs plus compacts, sans casser le thème).
+- 🧪 **6 nouveaux tests unitaires** (13 au total) : thermomètre nuancé, pause longue, records, créneau, rewatch ZIP, sorties dédupliquées.
+- 🎨 **Maquette du futur look animé** (`docs/maquette-animations.html` + `docs/maquette-animations.png`) : balayage « comet », entrée en fondu, survol lumineux — à appliquer dans une version ultérieure.
+
+## [V49] — 16 août 2026
+
+- 🕘 Derniers visionnages du tableau de bord : **saison/épisode affichés** (ex. « Silo · S01E05 »).
+- 🧭 **Widgets restaurés de Trakt Smart Lists** (0 appel API) : ⭐ coups de cœur (note ≥ 9), 🧭 à contre-courant (thermomètre de sévérité + écarts ≥ 2 pts), 🔁 rewatch radar (1 seule vue il y a ≥ 3 ans, public ≥ 8), 📅 sorties de la semaine, ⏳ plus ancien de la Watchlist — tous en expandeurs repliés.
+- 🎬 Analyse acteurs favoris MDBList : pas d'endpoint public (vérifié dans l'OpenAPI) ; « où ai-je vu cet acteur ? » nécessiterait les crédits TMDB (optionnel, coûteux).
+- 📱 Cinopsys (tracker Android basé sur Trakt/Simkl) et **Reeel** (l'app mobile officielle MDBList) documentés.
+
+## [V48] — 16 août 2026
+
+- 🧰 Outil CLI de migration intégré dans `scripts/` : `migrate_trakt_zip_to_mdblist.py` (dry-run par défaut, clé MDBLIST_API_KEY, `--apply`, `--check-api`, `--sections`, `--list-layout`), `README-migration-cli.md`, `start_windows.bat` (l'ancien script à la racine est déplacé).
+- 📄 README : section « 🧰 Outil CLI (utilisateurs avancés) » ; AI-HANDOFF et TODO mis à jour.
+
+## [V47] — 16 août 2026
+
+- 🔒 `SECURITY.md` (signalement responsable d'une vulnérabilité) et `docs/privacy.md` (politique de confidentialité complète).
+- 🧪 Tests unitaires dans `tests/test_core.py` (7 tests) + CI GitHub Actions (`.github/workflows/ci.yml` : compileall + scan secrets + tests).
+
+## [V46] — 16 août 2026
+
+- 📄 README : ligne « 📦 Migration Trakt → MDBList » dans le tableau des fonctionnalités + section « 🚚 Le grand transfert » (5 étapes, mise en garde, simulation recommandée).
+- 📰 Guide Alkodiques : section « Et si vous voulez carrément passer à MDBList ? ».
+
+## [V45] — 16 août 2026
+
+- 🚀 **Nouvelle page « 📦 Migration Trakt → MDBList »** (11ᵉ page, menu séparé) : assistant web en 4 étapes (déposer le ZIP → aperçu avec sans-correspondance et mode simulation → sauvegarde JSON + rapport Excel → confirmation → écriture par lots → rapport final 7 onglets). Vraies dates conservées (`watched_at`), listes créées si absentes, jamais d'écriture dans les listes dynamiques.
+
+## [V44] — 15 août 2026
+
+- 🧹 Nettoyage des listes : la description couvre maintenant explicitement les **doublons entre listes** (README) + piste documentée de la migration ZIP → MDBList depuis le site web.
+
+## [V43] — 15 août 2026
+
+- 📄 README : ligne « 🔁 Doublons » retirée du tableau (intégrée à Nettoyage des listes).
+- 🖼️ Social card **reproduite fidèlement** de l'originale Trakt (même fond radial, même icône citron, proportions vérifiées pixel par pixel, police Manrope, aucun lien cliquable).
+
+## [V42] — 15 août 2026
+
+- 📄 **README réécrit façon Trakt Smart Lists** : « 🤔 Le problème », tableau Page / Ce qu'elle fait (11 pages), score « Que regarder ? », captures en blocs centrés (`docs/*.png`), tuto ZIP complet, vie privée.
+- 🖼️ Social card reconstruite en PIL sur le modèle de l'originale (fond dégradé radial, liseré citron, URL `media-smart-lists.streamlit.app`).
+
+## [V41] — 15 août 2026
+
+- 🖼️ Social card finale : aucun lien cliquable, URL correcte, tagline neutre.
+- 📄 README corrigé (« Pour qui » : MDBList prioritaire, ZIP expliqué) ; article Alkodiques plus convivial.
+
+## [V40] — 15 août 2026
+
+- ❓ Guide ZIP Trakt : HTML pur + entièrement jaune citron (plus de balises `**` visibles).
+- ✍️ « Marquer vu / non-vu » : recherche par frappe (multiselect) + filtre par type + flux action → confirmation → exécuter.
+- 📚 Docs : README (MDBList prioritaire), social card, article Alkodiques réécrit, CI.
+
 ## [V39] — 14 août 2026
 
 - 🔴 Déconnexion stabilisée : retour au comportement « toujours connecté » au F5 (toute la mécanique de marqueur `?msl_logged_out=1` est retirée) ; la déconnexion ne vaut que pour la session en cours. Plus de fausse déconnexion au clic « Charger mes données MDBList ».

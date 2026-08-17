@@ -8,6 +8,7 @@ digest hebdomadaire et projection de la date de fin des séries en cours
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -281,6 +282,9 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
     coups_de_coeur = coups_de_coeur[:5]
 
     # ── Thermomètre de sévérité (comparatif mes notes vs public) ──
+    # Paliers affinés : ±0,5 pt = « un peu », ±1,5 pt = « très » (l'ancien
+    # site classait dès ±0,5 pt, ce qui étiquetait « indulgent » un écart
+    # quasi nul).
     deltas: list[float] = []
     ecarts: list[dict[str, Any]] = []
     for m in mes_notes:
@@ -303,32 +307,55 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
     severite = None
     if deltas:
         moy = sum(deltas) / len(deltas)
-        if moy <= -0.5:
-            severite = {"moy": moy, "label": "SÉVÈRE", "emoji": "😈",
-                        "txt": "tu notes en moyenne plus dur que le public", "couleur": "#ED2224"}
-        elif moy >= 0.5:
-            severite = {"moy": moy, "label": "INDULGENT", "emoji": "😇",
-                        "txt": "tu notes en moyenne plus gentiment que le public", "couleur": "#00D084"}
-        else:
-            severite = {"moy": moy, "label": "PILE DANS LA MOYENNE", "emoji": "🎯",
+        if moy <= -1.5:
+            severite = {"moy": moy, "label": "TRÈS SÉVÈRE", "emoji": "😈",
+                        "txt": "tu notes beaucoup plus dur que le public", "couleur": "#ED2224"}
+        elif moy <= -0.5:
+            severite = {"moy": moy, "label": "UN PEU SÉVÈRE", "emoji": "😠",
+                        "txt": "tu notes un peu plus dur que le public", "couleur": "#ED8B24"}
+        elif moy < 0.5:
+            severite = {"moy": moy, "label": "DANS LA MOYENNE", "emoji": "🎯",
                         "txt": "tes notes collent bien à celles du public", "couleur": "#CEDC00"}
+        elif moy < 1.5:
+            severite = {"moy": moy, "label": "UN PEU INDULGENT", "emoji": "🙂",
+                        "txt": "tu notes un peu plus gentiment que le public", "couleur": "#00A392"}
+        else:
+            severite = {"moy": moy, "label": "TRÈS INDULGENT", "emoji": "😇",
+                        "txt": "tu notes beaucoup plus gentiment que le public", "couleur": "#00D084"}
 
     # ── Rewatch radar : films vus 1 seule fois il y a ≥ 3 ans, notés ≥ 8 ──
-    rewatch = []
+    # Agrégation par film : dans un ZIP Trakt chaque visionnage est une ligne
+    # séparée → sans regroupement, un film revu apparaîtrait plusieurs fois.
+    movie_stats: dict[str, dict[str, Any]] = {}
     for row in watched.get("movies") or []:
         if not isinstance(row, dict):
             continue
         media = row.get("movie") if isinstance(row.get("movie"), dict) else row
+        k = key_of(media)
+        if not k or k == "?":
+            continue
         try:
             plays = int(row.get("plays") or 1)
         except (TypeError, ValueError):
             plays = 1
-        if plays != 1:
+        last = row.get("last_watched_at") or row.get("watched_at")
+        entry = movie_stats.setdefault(
+            k,
+            {"plays": 0, "last": None, "media": media, "pub": _media_note_public(media) or 0},
+        )
+        entry["plays"] += plays
+        if last and (entry["last"] is None or str(last) > str(entry["last"])):
+            entry["last"] = last
+
+    rewatch = []
+    for k, entry in movie_stats.items():
+        if entry["plays"] != 1:
             continue
-        pub = _media_note_public(media) or 0
+        pub = entry.get("pub") or 0
         if pub < 8:
             continue
-        last = row.get("last_watched_at") or row.get("watched_at")
+        media = entry["media"]
+        last = entry.get("last")
         try:
             d = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
             if d.tzinfo is None:
@@ -338,14 +365,120 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
             continue
         if jours < 1095:  # 3 ans
             continue
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
         rewatch.append({"titre": media.get("title"), "annee": media.get("year"),
                         "note": pub, "ans": jours // 365,
-                        "ids": media.get("ids") if isinstance(media.get("ids"), dict) else {}})
+                        "ids": ids})
     rewatch.sort(key=lambda x: (-x["note"], -x["ans"]))
     rewatch = rewatch[:3]
 
+    # ── Séries en pause longue : dernier épisode vu il y a ≥ 2 ans ──
+    # On exclut les séries abandonnées (dropped) et celles terminées/annulées
+    # quand le statut est connu (MDBList ou ZIP enrichi).
+    dropped_ids: set[str] = set()
+    for row in (sections.get("dropped") or {}).get("shows") or []:
+        if not isinstance(row, dict):
+            continue
+        media = row.get("show") if isinstance(row.get("show"), dict) else row
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        dropped_ids.add(str(ids.get("tmdb") or ids.get("imdb") or media.get("title") or "").casefold())
+
+    pause = []
+    for row in watched.get("shows") or []:
+        if not isinstance(row, dict):
+            continue
+        media = row.get("show") if isinstance(row.get("show"), dict) else row
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        k = str(ids.get("tmdb") or ids.get("imdb") or media.get("title") or "?").casefold()
+        if not k or k == "?" or k in dropped_ids:
+            continue
+        status = str(media.get("status") or "").strip().lower()
+        if status in {"ended", "canceled", "end", "finished", "terminée", "annulée"}:
+            continue
+        last = row.get("last_watched_at") or row.get("watched_at") or media.get("last_watched_at")
+        try:
+            d = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+            if d.tzinfo is None:
+                d = d.replace(tzinfo=timezone.utc)
+            jours = (now - d.astimezone(now.tzinfo)).days
+        except Exception:
+            continue
+        if jours < 730:  # 2 ans
+            continue
+        pause.append({"titre": media.get("title"), "annee": media.get("year"),
+                      "jours": jours, "ids": ids, "pub": _media_note_public(media) or 0})
+    pause.sort(key=lambda x: -x["jours"])
+    pause = pause[:3]
+
+    # ── Records de binge + créneau préféré (depuis l'historique horodaté) ──
+    # normalize_history est un calcul local sur les données déjà chargées :
+    # aucun appel API supplémentaire.
+    records = None
+    creneau = None
+    hist = normalize_history(dataset, timezone_name=timezone_name)
+    ep_rows = [r for r in hist if r.get("type") == "Épisode" and isinstance(r.get("watched_at"), datetime)]
+    if ep_rows:
+        by_day: dict[date, dict[str, Any]] = {}
+        by_month: dict[tuple[int, int], dict[str, Any]] = {}
+        by_show: dict[str, dict[str, Any]] = {}
+        for r in ep_rows:
+            dt = r["watched_at"]
+            day = dt.date()
+            dd = by_day.setdefault(day, {"nb": 0, "min": 0.0, "shows": defaultdict(int), "titles": {}})
+            dd["nb"] += 1
+            dd["min"] += float(r.get("total_minutes") or 0)
+            ids = r.get("ids") or {}
+            show_key = str(ids.get("tmdb") or ids.get("imdb") or r.get("title") or "?")
+            dd["shows"][show_key] += 1
+            dd["titles"][show_key] = r.get("title")
+            mk = (dt.year, dt.month)
+            mm = by_month.setdefault(mk, {"nb": 0, "min": 0.0})
+            mm["nb"] += 1
+            mm["min"] += float(r.get("total_minutes") or 0)
+            sm = by_show.setdefault(show_key, {"min": 0.0, "nb": 0, "titre": r.get("title"), "ids": ids})
+            sm["min"] += float(r.get("total_minutes") or 0)
+            sm["nb"] += 1
+        jour_record = max(by_day.items(), key=lambda kv: (kv[1]["nb"], kv[1]["min"]))
+        mois_record = max(by_month.items(), key=lambda kv: (kv[1]["nb"], kv[1]["min"]))
+        serie_aval = max(by_show.values(), key=lambda v: (v["min"], v["nb"]))
+        records = {
+            "jour": {"date": jour_record[0], "nb": jour_record[1]["nb"], "min": jour_record[1]["min"],
+                     "shows": jour_record[1]["titles"], "counts": dict(jour_record[1]["shows"])},
+            "mois": {"key": mois_record[0], "nb": mois_record[1]["nb"], "min": mois_record[1]["min"]},
+            "serie": {"titre": serie_aval["titre"], "nb": serie_aval["nb"],
+                      "min": serie_aval["min"], "ids": serie_aval["ids"]},
+        }
+
+    if hist:
+        bucket_min = {"Matin": 0.0, "Après-midi": 0.0, "Soir": 0.0, "Nuit": 0.0}
+        for r in hist:
+            dt = r.get("watched_at")
+            if not isinstance(dt, datetime):
+                continue
+            minutes = float(r.get("total_minutes") or 0)
+            hour = dt.hour
+            if 6 <= hour < 12:
+                bucket_min["Matin"] += minutes
+            elif 12 <= hour < 18:
+                bucket_min["Après-midi"] += minutes
+            elif 18 <= hour < 22:
+                bucket_min["Soir"] += minutes
+            else:
+                bucket_min["Nuit"] += minutes
+        total = sum(bucket_min.values())
+        if total > 0:
+            emojis = {"Matin": "🌅", "Après-midi": "☀️", "Soir": "🌆", "Nuit": "🌙"}
+            items = [{"label": label, "emoji": emojis[label], "min": minutes,
+                      "pct": minutes / total * 100}
+                     for label, minutes in bucket_min.items()]
+            items.sort(key=lambda x: -x["min"])
+            creneau = {"items": items, "top": items[0]}
+
     # ── Sorties de la semaine (films des listes qui sortent ≤ 7 jours) ──
-    sorties = []
+    # Déduplication par identifiant : un film apparaît dans sa liste ET dans
+    # les sources agrégées (statiques, personnelles, toutes) — on ne le garde
+    # qu'une fois, à sa date la plus proche / meilleure note.
+    sorties_map: dict[str, dict[str, Any]] = {}
     aujourdhui = now.date()
     for source in sources:
         if not isinstance(source, dict):
@@ -353,7 +486,7 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
         for movie in source.get("movies") or []:
             if not isinstance(movie, dict):
                 continue
-            rel = movie.get("released") or movie.get("release_date") or movie.get("premiere_date")
+            rel = movie.get("released") or movie.get("release_date") or movie.get("premiere_date") or movie.get("first_aired")
             if not rel:
                 continue
             try:
@@ -361,11 +494,17 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
             except Exception:
                 continue
             j = (ds - aujourdhui).days
-            if 0 <= j <= 7:
-                ids = movie.get("ids") if isinstance(movie.get("ids"), dict) else {}
-                sorties.append({"j": j, "date": ds, "titre": movie.get("title"), "annee": movie.get("year"),
-                                "note": _media_note_public(movie) or 0, "ids": ids})
-    sorties.sort(key=lambda x: (x["j"], -x["note"]))
+            if not (0 <= j <= 7):
+                continue
+            ids = movie.get("ids") if isinstance(movie.get("ids"), dict) else {}
+            key = str(ids.get("tmdb") or ids.get("imdb") or str(movie.get("title") or "").casefold())
+            note = _media_note_public(movie) or 0
+            candidate = {"j": j, "date": ds, "titre": movie.get("title"), "annee": movie.get("year"),
+                         "note": note, "ids": ids}
+            existing = sorties_map.get(key)
+            if existing is None or (j, -note) < (existing["j"], -existing.get("note", 0)):
+                sorties_map[key] = candidate
+    sorties = sorted(sorties_map.values(), key=lambda x: (x["j"], -x["note"]))
     sorties = sorties[:3]
 
     # ── Plus ancien de la watchlist (≥ 60 jours) ──
@@ -397,4 +536,7 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
         "rewatch": rewatch,
         "sorties": sorties,
         "plus_ancien": plus_ancien,
+        "pause_longue": pause,
+        "records": records,
+        "creneau": creneau,
     }
