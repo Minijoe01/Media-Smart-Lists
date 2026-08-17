@@ -2,6 +2,13 @@
 
 Toutes les évolutions notables de Media Smart Lists.
 
+## [V51] — 17 août 2026
+
+- ✍️ **Thermomètre de sévérité** : « UN PEU sévère/indulgent » devient « **PLUTÔT** sévère/indulgent » (labels, textes et légende de la jauge).
+- 🕰️ **Ton créneau préféré** : chaque créneau affiche sa **plage horaire en info-bulle** au survol (Matin 6 h → 12 h · Après-midi 12 h → 18 h · Soir 18 h → 22 h · Nuit 22 h → 6 h).
+- 🚦 **Séries en pause longue corrigées** : les séries **vues en entier** (plus aucun épisode à voir, détecté via Up Next MDBList) sont désormais exclues — on ne peut pas « reprendre » un contenu fini. En ZIP sans métadonnées, le comportement précédent (statut + abandonnées) est conservé.
+- 🎨 **Référence du futur thème enregistrée** : `docs/preview-look.html` (ruban comet biseauté vert/citron, rubans déroulants à icônes, entrée en fondu en cascade, surbrillance au survol) — à reproduire sur tous les onglets dans une version ultérieure.
+
 ## [V50] — 17 août 2026
 
 - 🧭 **Thermomètre de sévérité affiné à 5 paliers** : ±0,5 pt = « UN PEU sévère/indulgent », ±1,5 pt = « TRÈS sévère/indulgent » (l'ancien site étiquetait « indulgent » dès 0,5 pt — 0,5 pt c'est peu, donc maintenant c'est « 🙂 UN PEU INDULGENT »).

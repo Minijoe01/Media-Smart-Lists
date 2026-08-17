@@ -311,14 +311,14 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
             severite = {"moy": moy, "label": "TRÈS SÉVÈRE", "emoji": "😈",
                         "txt": "tu notes beaucoup plus dur que le public", "couleur": "#ED2224"}
         elif moy <= -0.5:
-            severite = {"moy": moy, "label": "UN PEU SÉVÈRE", "emoji": "😠",
-                        "txt": "tu notes un peu plus dur que le public", "couleur": "#ED8B24"}
+            severite = {"moy": moy, "label": "PLUTÔT SÉVÈRE", "emoji": "😠",
+                        "txt": "tu notes plutôt plus dur que le public", "couleur": "#ED8B24"}
         elif moy < 0.5:
             severite = {"moy": moy, "label": "DANS LA MOYENNE", "emoji": "🎯",
                         "txt": "tes notes collent bien à celles du public", "couleur": "#CEDC00"}
         elif moy < 1.5:
-            severite = {"moy": moy, "label": "UN PEU INDULGENT", "emoji": "🙂",
-                        "txt": "tu notes un peu plus gentiment que le public", "couleur": "#00A392"}
+            severite = {"moy": moy, "label": "PLUTÔT INDULGENT", "emoji": "🙂",
+                        "txt": "tu notes plutôt plus gentiment que le public", "couleur": "#00A392"}
         else:
             severite = {"moy": moy, "label": "TRÈS INDULGENT", "emoji": "😇",
                         "txt": "tu notes beaucoup plus gentiment que le public", "couleur": "#00D084"}
@@ -373,8 +373,12 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
     rewatch = rewatch[:3]
 
     # ── Séries en pause longue : dernier épisode vu il y a ≥ 2 ans ──
-    # On exclut les séries abandonnées (dropped) et celles terminées/annulées
-    # quand le statut est connu (MDBList ou ZIP enrichi).
+    # On exclut :
+    #  - les séries abandonnées (dropped) ;
+    #  - les séries terminées/annulées (statut connu) ;
+    #  - les séries vues EN ENTIER : quand MDBList fournit la progression
+    #    (Up Next non vide), une série absente d'Up Next n'a plus aucun
+    #    épisode à voir — on ne peut pas « reprendre » un contenu fini.
     dropped_ids: set[str] = set()
     for row in (sections.get("dropped") or {}).get("shows") or []:
         if not isinstance(row, dict):
@@ -382,6 +386,18 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
         media = row.get("show") if isinstance(row.get("show"), dict) else row
         ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
         dropped_ids.add(str(ids.get("tmdb") or ids.get("imdb") or media.get("title") or "").casefold())
+
+    progress_rows = dataset.get("progress") or []
+    progress_keys: set[str] = set()
+    for row in progress_rows:
+        if not isinstance(row, dict):
+            continue
+        show = row.get("show") if isinstance(row.get("show"), dict) else {}
+        ids = show.get("ids") if isinstance(show.get("ids"), dict) else {}
+        progress_keys.add(str(ids.get("tmdb") or ids.get("imdb") or show.get("title") or "").casefold())
+    # ZIP Trakt sans métadonnées : Up Next vide → on ne peut pas détecter la
+    # complétude, on garde le comportement précédent (statut seul).
+    progression_disponible = bool(progress_keys)
 
     pause = []
     for row in watched.get("shows") or []:
@@ -395,6 +411,8 @@ def compute_widgets(dataset: dict[str, Any], timezone_name: str = "Europe/Paris"
         status = str(media.get("status") or "").strip().lower()
         if status in {"ended", "canceled", "end", "finished", "terminée", "annulée"}:
             continue
+        if progression_disponible and k not in progress_keys:
+            continue  # tout est vu : plus aucun épisode à reprendre
         last = row.get("last_watched_at") or row.get("watched_at") or media.get("last_watched_at")
         try:
             d = datetime.fromisoformat(str(last).replace("Z", "+00:00"))

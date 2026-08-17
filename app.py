@@ -3907,7 +3907,10 @@ def _render_restored_widgets(dataset: dict[str, Any]) -> None:
     if w.get("pause_longue"):
         st.divider()
         with st.expander(f"🚦 Séries en pause longue ({len(w['pause_longue'])})", expanded=False):
-            st.caption("Tu n'as pas regardé un épisode depuis 2 ans ou plus — à reprendre… ou à abandonner ?")
+            st.caption(
+                "Tu n'as pas regardé un épisode depuis 2 ans ou plus, alors qu'il reste des épisodes à voir — "
+                "à reprendre… ou à abandonner ? (séries terminées, abandonnées ou vues en entier exclues)"
+            )
             for c in w["pause_longue"]:
                 an = f" ({c.get('annee')})" if c.get("annee") else ""
                 ans = (c.get("jours") or 0) // 365
@@ -3943,12 +3946,25 @@ def _render_restored_widgets(dataset: dict[str, Any]) -> None:
     if cr:
         st.divider()
         with st.expander("🕰️ Ton créneau préféré", expanded=False):
-            st.caption("Répartition de ton temps de visionnage par moment de la journée.")
+            st.caption("Répartition de ton temps de visionnage par moment de la journée (survole un créneau pour voir ses horaires).")
+            # Plages horaires exactes de chaque créneau (info-bulle au survol).
+            HORAIRES = {
+                "Matin": "6 h → 12 h",
+                "Après-midi": "12 h → 18 h",
+                "Soir": "18 h → 22 h",
+                "Nuit": "22 h → 6 h",
+            }
             items = cr.get("items") or []
             cols = st.columns(len(items))
             for i, it in enumerate(items):
                 with cols[i]:
-                    st.markdown(f"{it['emoji']} **{it['label']}**")
+                    plage = HORAIRES.get(it["label"], "")
+                    pill = (
+                        f'<span class="reason-pill info-pill" tabindex="0" '
+                        f'data-tooltip="{escape(plage, quote=True)}" title="{escape(plage, quote=True)}">'
+                        f"{it['emoji']} {escape(it['label'])}</span>"
+                    )
+                    st.markdown(pill, unsafe_allow_html=True)
                     st.markdown(
                         f"<div style='font-size:1.3rem; font-weight:800; color:#CEDC00;'>{it['pct']:.0f}%</div>",
                         unsafe_allow_html=True,
@@ -3991,7 +4007,7 @@ def _render_restored_widgets(dataset: dict[str, Any]) -> None:
             )
             jauge = max(0.0, min(1.0, (sev["moy"] + 3) / 6))
             st.progress(jauge)
-            st.caption("😈 Très sévère ···· 🎯 Dans la moyenne ···· 😇 Très indulgent")
+            st.caption("😈 Très sévère · 😠 Plutôt sévère · 🎯 Moyenne · 🙂 Plutôt indulgent · 😇 Très indulgent")
             for c in top:
                 ic = "🎬" if c.get("type") == "Film" else "📺"
                 an = f" ({c.get('annee')})" if c.get("annee") else ""

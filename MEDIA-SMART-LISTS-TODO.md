@@ -153,12 +153,60 @@ Décision (V48) : le script CLI reste **dans Media Smart Lists**, dossier
 - [x] Maquette du futur look animé (V50) : docs/maquette-animations.html + .png — « comet », fondu d'entrée, survol lumineux, en vert/citron. **À appliquer dans une version ultérieure** (les fonctionnalités passent d'abord).
 
 ### À faire PAR L'UTILISATEUR (rappels)
-- [ ] **Captures d'écran à jour** : remplacer le CONTENU de docs/Dashboard.png,
-      series.png, Doublons.png, quoi_regarder.png, statistiques.png par des
-      captures prises sur la V45+ (SANS renommer les fichiers).
+- [x] **Captures d'écran à jour** : le contenu de docs/Dashboard.png, series.png,
+      Doublons.png, quoi_regarder.png, statistiques.png a été remplacé par
+      l'utilisateur (17/08/2026) — SANS renommer les fichiers.
 - [ ] **Partager l'article Alkodiques** sur le portail
       (lesalkodiques.com) — pas encore publié.
 - [ ] (Optionnel) Supprimer docs/audit-fichiers-github.xlsx une fois lu.
+
+---
+
+## 🎨 Futur thème « vivant » — idées à retenir (V51+, idée utilisateur)
+
+L'utilisateur a fourni **`docs/preview-look.html`** (enregistré en V51) : il
+l'adore et veut que l'app s'en rapproche dans les prochaines versions. Les
+patterns CSS viennent aussi de son site sport-auto / worker Cloudflare
+(analysé en V51). Rien n'est encore intégré : **les fonctionnalités passent
+d'abord**, le thème ensuite, SANS casser l'existant (posters, infos…).
+
+### À reproduire (liste exhaustive des demandes)
+- [ ] **Ruban « comet » biseauté** en haut : `clip-path: polygon(21px 0, 100% 0,
+      calc(100% - 21px) 100%, 0 100%)` (biseau au début ET à la fin), bandes
+      diagonales 115°, `animation: comet 8s linear infinite`.
+      **Couleur préférée de l'utilisateur** : vert `rgba(0,163,146,.95)` +
+      citron `rgba(206,220,0,.25)` (celle de preview-look.html, PAS le citron
+      seul de ma maquette).
+- [ ] **Rubans déroulants (widgets) avec une icône devant** : rangée =
+      icône dans une tuile (fond dégradé sombre, liseré interne) + titre +
+      ligne de méta + chevron ▾. Au survol : tuile en dégradé vert, lueur.
+- [ ] **Icônes/cartes en fondu en cascade** (`fadeUp` + `animation-delay`
+      croissant ~40 ms) et **surbrillance au survol** (translateY(-3px),
+      fond teinté, bordure, ombre lumineuse).
+- [ ] **Bandeau de métriques** en haut du tableau de bord (films vus ·
+      épisodes vus · temps total · rythme), comme dans preview-look.html.
+- [ ] **Wordmark** avec logo-tuile (rectangle arrondi + triangle de lecture +
+      point), italique 900 majuscule, halo vert sous le svg.
+- [ ] **Swoosh** (trait dégradé) sous le titre + **grain** subtil du fond.
+- [ ] **Barre de progression** segmentée en dégradé vert→citron (déjà en
+      place sur les cartes contenus, à généraliser).
+- [ ] Le thème doit être appliqué sur **TOUS les onglets** (pas seulement le
+      dashboard), en reprenant les éléments actuels (posters, liens,
+      badges, cartes contenus) avec la mise en forme de preview-look.html.
+
+### Éléments de maquette-animations.html jugés au-dessus (à proposer)
+- [ ] **Barre de répartition colorée du créneau** (Matin/Après-midi/Soir/Nuit
+      en segments verts/citron) — plus lisible que des % seuls.
+- [ ] **Mini-cartes « records »** (jour / mois / série avalée) en 3 colonnes
+      avec les gros chiffres citron.
+
+### Rappels techniques
+- CSS injecté dans `app.py` (bloc `st.markdown(unsafe_allow_html=True)`) ;
+  boutons Streamlit 1.60 : `type="primary"` SANS `help=` ; les expandeurs
+  actuels resteront (avec habillage « ruban »).
+- Ne pas toucher aux couleurs officielles (#00A392, #00524B, #CEDC00).
+- `worker (3).js` (catalogue 1fichier/Kodi de l'utilisateur) : analysé pour
+  les patterns, PAS ajouté au dépôt (fichier privé de l'utilisateur).
 
 ---
 
