@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aperçu — Media Smart Lists · look &amp; animations (idée V50+)</title>
+<style>
+  :root {
+    --am-green: #00A392;
+    --am-green-aston: #00524B;
+    --am-lime: #CEDC00;
+    --am-mint: #00D084;
+    --am-border: rgba(18, 90, 84, 0.5);
+    --am-text: #F0FAF8;
+    --am-muted: #9DC5BF;
+    --am-card: rgba(8, 55, 50, 0.72);
+    --am-card-hover: rgba(12, 75, 68, 0.88);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { background: #011715; }
+  body {
+    font-family: "Titillium Web", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background:
+      radial-gradient(ellipse 100% 85% at 50% 0%,
+        #006B62 0%, #005951 28%, #00443E 55%, #002B28 80%, #011715 100%);
+    background-attachment: fixed;
+    color: var(--am-text);
+    min-height: 100vh;
+    padding: 84px 20px 64px;
+  }
+  /* Léger grain (comme le site sport-auto) */
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  .wrap { position: relative; z-index: 1; max-width: 1020px; margin: 0 auto; }
+
+  /* ── Barre du haut : verre vert + BALAYAGE LUMINEUX « comet » ── */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; height: 44px; z-index: 60;
+    background: rgba(2, 20, 18, 0.70);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--am-border);
+    overflow: hidden;
+  }
+  .topbar::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 100%;
+    transform: translateX(-100%);
+    -webkit-clip-path: polygon(21px 0, 100% 0, calc(100% - 21px) 100%, 0 100%);
+            clip-path: polygon(21px 0, 100% 0, calc(100% - 21px) 100%, 0 100%);
+    background: repeating-linear-gradient(115deg,
+      rgba(0, 163, 146, 0.95) 0px, rgba(0, 163, 146, 0.95) 2px,
+      rgba(206, 220, 0, 0.25) 2px, rgba(206, 220, 0, 0.25) 5px);
+    -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,.16) 0%, rgba(0,0,0,.5) 55%, rgba(0,0,0,1) 100%);
+            mask-image: linear-gradient(90deg, rgba(0,0,0,.16) 0%, rgba(0,0,0,.5) 55%, rgba(0,0,0,1) 100%);
+    animation: comet 8s linear infinite;
+  }
+  @keyframes comet { to { transform: translateX(100%); } }
+
+  /* ── Entête : wordmark + swoosh ── */
+  header { text-align: center; margin-bottom: 14px; }
+  .wordmark {
+    display: inline-flex; align-items: center; gap: 14px;
+    font-style: italic; font-weight: 900; font-size: 40px; line-height: 1;
+    text-transform: uppercase; letter-spacing: 1px;
+    animation: fadeUp .6s cubic-bezier(.22,1,.36,1) both;
+  }
+  .wordmark svg { width: 44px; height: 44px; flex: 0 0 auto;
+                  filter: drop-shadow(0 5px 14px rgba(0,163,146,.55)); }
+  .wordmark .accent { color: var(--am-lime); }
+  .swoosh {
+    width: clamp(260px, 44vw, 860px); height: 3px; margin: 20px auto 26px; border-radius: 3px;
+    background: linear-gradient(90deg, rgba(0,163,146,0) 0%, rgba(0,163,146,.95) 50%, rgba(0,163,146,0) 100%);
+  }
+
+  .page-title {
+    font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; margin: 6px 0 4px;
+    animation: fadeUp .55s cubic-bezier(.22,1,.36,1) both;
+  }
+  .crumb { font-size: 13.5px; color: var(--am-muted); margin-bottom: 18px; animation: fadeUp .55s .05s cubic-bezier(.22,1,.36,1) both; }
+
+  /* ── Cartes métriques (verre vert) ── */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 13px; margin: 18px 0; }
+  .metric {
+    background: var(--am-card); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border: 1px solid var(--am-border); border-radius: 16px; padding: 16px 18px;
+    animation: fadeUp .6s cubic-bezier(.22,1,.36,1) both;
+    transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease;
+  }
+  .metric:hover { background: var(--am-card-hover); border-color: rgba(0,163,146,.6);
+                  transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0,163,146,.25); }
+  .metric .k { font-size: .78rem; letter-spacing: 1px; text-transform: uppercase; color: var(--am-muted); }
+  .metric .v { font-size: 1.35rem; font-weight: 800; color: var(--am-lime); margin-top: 4px; }
+  .metric .d { font-size: .8rem; color: var(--am-muted); margin-top: 2px; }
+
+  /* ── Widgets (expandeurs) : les 8 du tableau de bord ── */
+  .group-label {
+    display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700;
+    letter-spacing: 1.4px; text-transform: uppercase; color: #fff; margin: 26px 0 13px;
+  }
+  .group-label::after { content: ""; height: 1px; flex: 1; background: linear-gradient(90deg, rgba(0,163,146,.6), transparent); }
+  .widget {
+    display: flex; align-items: center; gap: 12px;
+    background: rgba(255,255,255,.045); border: 1px solid rgba(0,163,146,.16);
+    border-radius: 13px; padding: 13px 16px; margin-bottom: 9px; cursor: pointer;
+    transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease;
+    animation: fadeUp .55s cubic-bezier(.22,1,.36,1) both;
+  }
+  .widget:hover { background: rgba(0,163,146,.16); border-color: rgba(0,163,146,.55);
+                  transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,163,146,.22); }
+  .widget .ic {
+    width: 42px; height: 42px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+    font-size: 20px; border-radius: 11px;
+    background: linear-gradient(180deg, #0b3f3a 0%, #06302c 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.10), inset 0 0 0 1px rgba(0,163,146,.10),
+                0 10px 22px -12px rgba(0,0,0,.7);
+    transition: background .18s ease, box-shadow .18s ease;
+  }
+  .widget:hover .ic { background: linear-gradient(180deg, #00A392 0%, #00524B 100%);
+                      box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 12px 26px -10px rgba(0,163,146,.6); }
+  .widget .nm { flex: 1; font-size: 14.5px; font-weight: 600; line-height: 1.2; }
+  .widget .meta { font-size: 12px; color: var(--am-muted); margin-top: 2px; }
+  .widget .chev { color: var(--am-muted); font-size: 13px; }
+
+  /* ── Cartes de contenus (posters) ── */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 13px; margin-top: 8px; }
+  .card {
+    display: flex; align-items: center; gap: 13px;
+    background: rgba(8, 55, 50, .62); border: 1px solid var(--am-border); border-left: 3px solid var(--am-green);
+    border-radius: 13px; padding: 12px 14px;
+    transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease;
+    animation: fadeUp .6s cubic-bezier(.22,1,.36,1) both;
+  }
+  .card:hover { background: rgba(0,163,146,.14); border-color: rgba(0,163,146,.55); border-left-color: var(--am-lime);
+                transform: translateY(-3px); box-shadow: 0 10px 26px rgba(0,163,146,.25); }
+  .poster {
+    width: 56px; height: 84px; flex: 0 0 auto; border-radius: 9px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; font-size: 26px;
+    background: linear-gradient(180deg, #0b3f3a 0%, #04211e 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 0 1px rgba(0,163,146,.14);
+  }
+  .card .t { font-weight: 700; }
+  .card .s { display: block; font-size: .78rem; color: var(--am-muted); margin-top: 3px; }
+  .bar { height: 6px; background: rgba(0,0,0,.30); border-radius: 4px; margin-top: 9px; overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 4px;
+           background: linear-gradient(90deg, var(--am-green), var(--am-lime)); }
+
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(14px); }
+                      to { opacity: 1; transform: translateY(0); } }
+
+  .note { margin-top: 26px; padding-top: 14px; border-top: 1px solid rgba(0,163,146,.18);
+          font-size: 12.5px; color: #7f8ea5; line-height: 1.6; text-align: center; }
+  .pill { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 5px 12px; border-radius: 999px;
+          background: rgba(206,220,0,.12); color: var(--am-lime); border: 1px solid rgba(206,220,0,.4);
+          margin: 2px 4px 2px 0; }
+</style>
+</head>
+<body>
+  <div class="topbar"></div>
+  <div class="wrap">
+    <header>
+      <div class="wordmark">
+        <svg viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <rect x="3" y="3" width="42" height="42" rx="12" fill="#0b3f3a" stroke="#00A392" stroke-width="2"/>
+          <path d="M18 15 L36 24 L18 33 Z" fill="#CEDC00"/>
+          <circle cx="14" cy="24" r="3" fill="#00A392"/>
+        </svg>
+        <span>Media <span class="accent">Smart&nbsp;Lists</span></span>
+      </div>
+      <div class="swoosh"></div>
+    </header>
+
+    <div class="page-title">🏠 Tableau de bord</div>
+    <div class="crumb">🔵 DONNÉES MDBLIST · TEMPS RÉEL — aperçu du futur habillage (idée V50+)</div>
+
+    <div class="metrics">
+      <div class="metric" style="animation-delay:.05s"><div class="k">Films vus</div><div class="v">1 243</div><div class="d">🎬 depuis toujours</div></div>
+      <div class="metric" style="animation-delay:.10s"><div class="k">Épisodes vus</div><div class="v">8 761</div><div class="d">📺 320 séries</div></div>
+      <div class="metric" style="animation-delay:.15s"><div class="k">Temps total</div><div class="v">7 mois 15 j</div><div class="d">⏱️ cumulé</div></div>
+      <div class="metric" style="animation-delay:.20s"><div class="k">Rythme</div><div class="v">4,2 ép./sem.</div><div class="d">🏃 sur 90 jours</div></div>
+    </div>
+
+    <div class="group-label">Widgets du tableau de bord (dans l'ordre logique de l'ancienne app)</div>
+
+    <div class="widget" style="animation-delay:.10s">
+      <div class="ic">📅</div>
+      <div class="nm">Sorties de la semaine<span class="meta">2 films de tes listes sortent dans les 7 prochains jours</span></div>
+      <div class="chev">▾</div>
+    </div>
+    <div class="widget" style="animation-delay:.15s">
+      <div class="ic">⏳</div>
+      <div class="nm">Le plus ancien de ta Watchlist<span class="meta">« Interstellar » — ajouté il y a 3 ans…</span></div>
+      <div class="chev">▾</div>
+    </div>
+    <div class="widget" style="animation-delay:.20s">
+      <div class="ic">⭐</div>
+      <div class="nm">Mes coups de cœur (5)<span class="meta">tes contenus notés 9/10 ou plus</span></div>
+      <div class="chev">▾</div>
+    </div>
+    <div class="widget" style="animation-delay:.25s">
+      <div class="ic">🧭</div>
+      <div class="nm">À contre-courant 😊<span class="meta">thermomètre : UN PEU INDULGENT (+0,6 pt /10)</span></div>
+      <div class="chev">▾</div>
+    </div>
+    <div class="widget" style="animation-delay:.30s">
+      <div class="ic">🔁</div>
+      <div class="nm">Rewatch radar (3)<span class="meta">vus une seule fois il y a 3 ans+, très bien notés</span></div>
+      <div class="chev">▾</div>
+    </div>
+    <div class="widget" style="animation-delay:.35s">
+      <div class="ic">🚦</div>
+      <div class="nm">Séries en pause longue (4)<span class="meta">2 ans+ sans épisode — à reprendre… ou à abandonner ?</span></div>
+      <div class="chev">▾</div>
+    </div>
+    <div class="widget" style="animation-delay:.40s">
+      <div class="ic">🔥</div>
+      <div class="nm">Tes records de binge<span class="meta">9 épisodes en un jour · mois record · série la plus avalée</span></div>
+      <div class="chev">▾</div>
+    </div>
+    <div class="widget" style="animation-delay:.45s">
+      <div class="ic">🕰️</div>
+      <div class="nm">Ton créneau préféré<span class="meta">🌆 Soir 61% · 🌙 Nuit 22% · 🌅 Matin 11% · ☀️ 6%</span></div>
+      <div class="chev">▾</div>
+    </div>
+
+    <div class="group-label">Exemple de cartes contenus (entrée en fondu + lueur au survol)</div>
+    <div class="cards">
+      <div class="card" style="animation-delay:.15s">
+        <div class="poster">🎬</div>
+        <div>
+          <div class="t">Dune : Deuxième partie</div>
+          <span class="s">2024 · Sci-Fi · ⭐ 8,4/10</span>
+          <div class="bar"><i style="width:72%"></i></div>
+        </div>
+      </div>
+      <div class="card" style="animation-delay:.20s">
+        <div class="poster">📺</div>
+        <div>
+          <div class="t">Silo — S02E05</div>
+          <span class="s">▶️ Prochain épisode · 68% vu</span>
+          <div class="bar"><i style="width:68%"></i></div>
+        </div>
+      </div>
+      <div class="card" style="animation-delay:.25s">
+        <div class="poster">📺</div>
+        <div>
+          <div class="t">Severance — S01E03</div>
+          <span class="s">reprise en pause · reste ~38 min</span>
+          <div class="bar"><i style="width:34%"></i></div>
+        </div>
+      </div>
+      <div class="card" style="animation-delay:.30s">
+        <div class="poster">🎬</div>
+        <div>
+          <div class="t">La Zone d'intérêt</div>
+          <span class="s">2023 · Drame · 💎 pépite du public</span>
+          <div class="bar"><i style="width:90%"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <span class="pill">Balayage lumineux sur la barre du haut</span>
+      <span class="pill">Trait dégradé sous le titre</span>
+      <span class="pill">Entrée en fondu des cartes</span>
+      <span class="pill">Soulèvement + lueur au survol</span>
+      <span class="pill">Grain subtil du fond</span><br><br>
+      Aperçu statique autonome — rien de tout cela n'est encore intégré à l'application.
+      Palette conservée : vert <b style="color:#00A392">#00A392</b> · vert foncé <b style="color:#00A392">#00524B</b> · citron <b style="color:#CEDC00">#CEDC00</b>.
+    </div>
+  </div>
+</body>
+</html>
