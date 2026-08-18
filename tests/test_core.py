@@ -163,13 +163,14 @@ class TestDashboardWidgets(unittest.TestCase):
 
         watched_movies = [
             # Dune vu 2 fois (2 lignes dans un ZIP Trakt) -> exclu du rewatch radar.
+            # Heures fixes (20:00 UTC = 22 h à Paris) pour un créneau déterministe.
             {"movie": {"title": "Dune 2", "year": 2024, "ids": {"tmdb": 1001, "imdb": "tt1"}, "score_average": 84},
-             "last_watched_at": iso(years(5)), "plays": 1},
+             "last_watched_at": "2026-08-07T18:00:00+00:00", "plays": 1},
             {"movie": {"title": "Dune 2", "year": 2024, "ids": {"tmdb": 1001, "imdb": "tt1"}, "score_average": 84},
-             "last_watched_at": iso(now - timedelta(days=10)), "plays": 1},
+             "last_watched_at": "2021-08-17T18:00:00+00:00", "plays": 1},
             # Inception vu 1 seule fois il y a 4 ans, note publique 8.8 -> candidat.
             {"movie": {"title": "Inception", "year": 2010, "ids": {"tmdb": 1002, "imdb": "tt2"}, "score_average": 88},
-             "last_watched_at": iso(years(4)), "plays": 1},
+             "last_watched_at": "2022-08-18T18:00:00+00:00", "plays": 1},
         ]
         watched_shows = [
             {"show": {"title": "Severance", "year": 2022, "ids": {"tmdb": 2001, "imdb": "tt4"}, "status": "returning"},
