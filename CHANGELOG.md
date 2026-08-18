@@ -2,6 +2,12 @@
 
 Toutes les évolutions notables de Media Smart Lists.
 
+## [V54] — 18 août 2026
+
+- 🎨 **Fini le lime « kitsch » sur les cartes** : les valeurs des cartes de métriques, sous-cartes (compteurs, records) et créneaux passent en **blanc** (lisible sur fond vert). Le citron `#CEDC00` reste un **accent** : comet, barre colorée du créneau, badges, survol — l'identité Aston Martin 2026 est conservée.
+- 🕰️ **Créneau préféré repensé** : étiquettes **plus grandes** (🌆 Soir, ☀️ Après-midi…), **info-bulle supprimée** au profit des **horaires affichés directement** sous chaque étiquette (6 h → 12 h, 12 h → 18 h, 18 h → 22 h, 22 h → 6 h), % en grand et blanc.
+- 🧪 13/13 tests OK, app sans erreur (AppTest).
+
 ## [V53] — 18 août 2026
 
 - 📊 **Bandeau de métriques moderne** partout : les blocs « Films vus / Épisodes vus / Watchlist / Listes / Notes / Reprises / Abandonnées / Up Next / Temps total / Temps séries / Temps films / Épisodes-semaine » du tableau de bord deviennent de **belles cartes k/v/d avec icône**, fondu en cascade et surbrillance au survol — façon preview-look.

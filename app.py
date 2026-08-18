@@ -714,7 +714,7 @@ st.markdown(
     }
     .msl-subcard:hover { background: rgba(12,75,68,.6); transform: translateY(-2px); }
     .msl-subcard .k { font-size: .74rem; letter-spacing: 1px; text-transform: uppercase; color: var(--am-text-muted); }
-    .msl-subcard .v { font-size: 1.25rem; font-weight: 800; color: var(--am-lime); margin-top: 3px; line-height: 1.15; }
+    .msl-subcard .v { font-size: 1.25rem; font-weight: 800; color: var(--am-text); margin-top: 3px; line-height: 1.15; }
     .msl-subcard .d { font-size: .78rem; color: var(--am-text-muted); margin-top: 2px; line-height: 1.4; }
     .msl-stats2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
     .msl-bar {
@@ -730,8 +730,10 @@ st.markdown(
         background: var(--am-bg-card); border: 1px solid var(--am-border); border-radius: 12px;
         padding: 10px 12px; text-align: center;
     }
-    .msl-creneau .v { font-size: 1.3rem; font-weight: 800; color: var(--am-lime); margin-top: 4px; }
-    .msl-creneau .d { font-size: .76rem; color: var(--am-text-muted); margin-top: 2px; }
+    .msl-creneau .lb { font-size: 1.05rem; font-weight: 800; color: var(--am-text); }
+    .msl-creneau .pl { font-size: .72rem; color: var(--am-text-muted); margin-top: 2px; }
+    .msl-creneau .v { font-size: 1.5rem; font-weight: 800; color: var(--am-text); margin-top: 6px; }
+    .msl-creneau .d { font-size: .78rem; color: var(--am-text-muted); margin-top: 2px; }
     .msl-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
     .msl-coup {
         background: var(--am-bg-card); border: 1px solid var(--am-border); border-radius: 12px;
@@ -771,7 +773,7 @@ st.markdown(
         font-size: .72rem; letter-spacing: .6px; text-transform: uppercase;
         color: var(--am-text-muted); padding-right: 26px; line-height: 1.25;
     }
-    .msl-mcard .v { font-size: 1.35rem; font-weight: 800; color: var(--am-lime); margin-top: 4px; line-height: 1.1; }
+    .msl-mcard .v { font-size: 1.35rem; font-weight: 800; color: var(--am-text); margin-top: 4px; line-height: 1.1; }
     .msl-mcard .d { font-size: .74rem; color: var(--am-text-muted); margin-top: 3px; line-height: 1.35; }
 
     /* Expandeurs natifs des autres pages : habillage « ruban » cohérent */
@@ -4150,17 +4152,17 @@ def _creneau_body(cr: dict[str, Any]) -> str:
     cases = []
     for it in items:
         pct = it["pct"]
+        # Barre colorée (4 segments distincts, lisible d'un coup d'œil).
         segments.append(
             f'<span style="width:{pct:.0f}%; background:{COULEURS.get(it["label"], "#00A392")};"></span>'
         )
+        # Étiquette grande + horaires affichés directement (plus d'info-bulle).
         plage = HORAIRES.get(it["label"], "")
-        pill = (
-            f'<span class="reason-pill info-pill" tabindex="0" '
-            f'data-tooltip="{escape(plage, quote=True)}" title="{escape(plage, quote=True)}">'
-            f"{it['emoji']} {escape(it['label'])}</span>"
-        )
+        pl = f'<div class="pl">{escape(plage)}</div>' if plage else ""
         cases.append(
-            f'<div class="msl-creneau">{pill}'
+            f'<div class="msl-creneau">'
+            f'<div class="lb">{it["emoji"]} {escape(it["label"])}</div>'
+            f'{pl}'
             f'<div class="v">{pct:.0f}%</div>'
             f'<div class="d">{escape(dashboard_mod._minutes_to_duree(int(it["min"])))}</div></div>'
         )
@@ -4321,7 +4323,7 @@ def render_dashboard_widgets() -> None:
     if w.get("creneau"):
         rubans.append(
             _ruban("🕰️", "Ton créneau préféré",
-                   "où regardes-tu le plus ? (survole un créneau pour ses horaires)",
+                   "où regardes-tu le plus ? (horaires affichés sous chaque créneau)",
                    _creneau_body(w["creneau"]), delay)
         )
         delay += 50

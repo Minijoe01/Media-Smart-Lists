@@ -163,7 +163,7 @@ Décision (V48) : le script CLI reste **dans Media Smart Lists**, dossier
 
 ---
 
-## 🎨 Futur thème « vivant » — PROGRESSION (V52 : dashboard en rubans ✅ · V53 : bandeaux de cartes partout ✅)
+## 🎨 Futur thème « vivant » — PROGRESSION (V52 : dashboard en rubans ✅ · V53 : bandeaux de cartes partout ✅ · V54 : valeurs blanches + créneau lisible ✅)
 
 L'utilisateur a validé le principe (« si tu te sens capable d'appliquer le
 nouveau skin au site, vas-y, mais fais gaffe à pas tout péter »). Un backup
@@ -171,7 +171,7 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 (hors dépôt, dans le workspace). **V53 = uniformisation de tous les onglets**
 (le user veut « de la modernité » et « uniformiser tout l'outil »).
 
-### Fait en V52-V53
+### Fait en V52-V54
 - [x] **Rubans déroulants** avec icône en tuile + titre + méta + chevron
       (rythme, derniers visionnages + les 8 widgets restaurés).
 - [x] **Comet biseauté** sur la barre du haut, en vert `#00A392` + citron
@@ -186,6 +186,13 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       Nettoyage, Calendrier ×2, Statistiques, Sauvegarde, Wrapped ×2,
       Migration). Les anciens `st.metric` sont remplacés partout.
 - [x] Démo mise à jour : docs/demo-skin-dashboard.html inclut le bandeau.
+- [x] **V54 — valeurs des cartes en BLANC** (fini le lime kitsch partout) :
+      `.msl-mcard .v`, `.msl-subcard .v`, `.msl-creneau .v` → var(--am-text).
+      Le citron reste un accent (comet, barre du créneau, badges, survol) —
+      identité Aston Martin conservée.
+- [x] **V54 — créneau préféré lisible** : étiquettes grandes (`.lb` 1.05rem),
+      info-bulle retirée, horaires affichés sous chaque étiquette (`.pl`),
+      % en grand et blanc.
 
 ### Reste à faire (modernité des cartes contenus)
 - [ ] **Cartes contenus** (En cours de lecture, Fantômes, Que regarder ?) :
