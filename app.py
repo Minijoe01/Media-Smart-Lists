@@ -743,6 +743,37 @@ st.markdown(
     .msl-coup .t { font-size: .84rem; font-weight: 700; color: var(--am-text); margin-top: 4px; }
     .msl-coup .s { font-size: .74rem; color: var(--am-mint); margin-top: 2px; }
 
+    /* Bandeau de métriques moderne (skin V53) : cartes k/v/d avec icône,
+       fondu en cascade, surbrillance au survol — comme preview-look.html. */
+    .msl-metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+        gap: 12px;
+        margin: 14px 0;
+    }
+    .msl-mcard {
+        background: rgba(255,255,255,.045);
+        border: 1px solid rgba(0,163,146,.18);
+        border-radius: 13px;
+        padding: 12px 14px;
+        position: relative;
+        transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease;
+        animation: msl-fadeUp .55s cubic-bezier(.22,1,.36,1) both;
+    }
+    .msl-mcard:hover {
+        background: rgba(0,163,146,.14);
+        border-color: rgba(0,163,146,.55);
+        transform: translateY(-3px);
+        box-shadow: 0 10px 26px rgba(0,163,146,.22);
+    }
+    .msl-mcard .ic { position: absolute; top: 10px; right: 12px; font-size: 1.15rem; opacity: .85; }
+    .msl-mcard .k {
+        font-size: .72rem; letter-spacing: .6px; text-transform: uppercase;
+        color: var(--am-text-muted); padding-right: 26px; line-height: 1.25;
+    }
+    .msl-mcard .v { font-size: 1.35rem; font-weight: 800; color: var(--am-lime); margin-top: 4px; line-height: 1.1; }
+    .msl-mcard .d { font-size: .74rem; color: var(--am-text-muted); margin-top: 3px; line-height: 1.35; }
+
     /* Expandeurs natifs des autres pages : habillage « ruban » cohérent */
     div[data-testid="stExpander"] {
         background: rgba(8,55,50,.35) !important;
@@ -847,16 +878,18 @@ def _render_connected_mdblist() -> None:
         f'{escape(str(account.get("username") or "Compte MDBList"))}</div>',
         unsafe_allow_html=True,
     )
-    cols = st.columns(4)
-    cols[0].metric("Forfait", account.get("plan") or "—")
     remaining = account.get("rate_limit_remaining")
     limit = account.get("rate_limit")
-    cols[1].metric(
-        "Quota restant",
-        f"{remaining}/{limit}" if remaining is not None and limit else "—",
+    st.markdown(
+        _metric_cards([
+            {"emoji": "🎫", "k": "Forfait", "v": account.get("plan") or "—", "d": "compte MDBList"},
+            {"emoji": "🧮", "k": "Quota restant",
+             "v": f"{remaining}/{limit}" if remaining is not None and limit else "—", "d": "requêtes API"},
+            {"emoji": "🗂️", "k": "Listes actuelles", "v": lists_summary.get("total", 0), "d": "créées"},
+            {"emoji": "🔒", "k": "Limite de listes", "v": account.get("list_limit") or "—", "d": "selon le forfait"},
+        ]),
+        unsafe_allow_html=True,
     )
-    cols[2].metric("Listes actuelles", lists_summary.get("total", 0))
-    cols[3].metric("Limite de listes", account.get("list_limit") or "—")
     st.caption(
         f"Listes statiques : {lists_summary.get('static', 0)} · "
         f"dynamiques : {lists_summary.get('dynamic', 0)} · "
@@ -1612,39 +1645,37 @@ def render_dataset_overview() -> None:
     playback = sections.get("playback") or []
     dropped = sections.get("dropped") or {}
 
-    first = st.columns(4)
-    first[0].metric("Films vus", len(watched.get("movies") or []))
-    first[1].metric("Épisodes vus", len(watched.get("episodes") or []))
-    first[2].metric(
-        "Contenus dans votre Watchlist",
-        len(watchlist.get("movies") or []) + len(watchlist.get("shows") or []),
-    )
-    first[3].metric("Listes personnelles", len(lists))
-
-    second = st.columns(4)
-    second[0].metric(
-        "Notes",
-        sum(len(ratings.get(key) or []) for key in ("movies", "shows", "seasons", "episodes")),
-    )
-    second[1].metric("Reprises", len(playback))
-    second[2].metric("Séries abandonnées", len(dropped.get("shows") or []))
-    second[3].metric("Up Next", len(sections.get("upnext") or []))
+    # Bandeau de métriques moderne (skin V53) : cartes k/v/d avec icône,
+    # fondu en cascade et surbrillance au survol (0 appel API).
+    cards: list[dict[str, Any]] = [
+        {"emoji": "🎬", "k": "Films vus", "v": len(watched.get("movies") or []), "d": "au compteur"},
+        {"emoji": "📺", "k": "Épisodes vus", "v": len(watched.get("episodes") or []), "d": "au compteur"},
+        {"emoji": "⭐", "k": "Watchlist", "v": len(watchlist.get("movies") or []) + len(watchlist.get("shows") or []),
+         "d": "films + séries"},
+        {"emoji": "🗂️", "k": "Listes personnelles", "v": len(lists), "d": "créées sur MDBList"},
+        {"emoji": "💬", "k": "Notes", "v": sum(len(ratings.get(key) or []) for key in ("movies", "shows", "seasons", "episodes")),
+         "d": "films, séries, épisodes"},
+        {"emoji": "⏸️", "k": "Reprises", "v": len(playback), "d": "en cours de reprise"},
+        {"emoji": "🚫", "k": "Séries abandonnées", "v": len(dropped.get("shows") or []), "d": "statut abandonnée"},
+        {"emoji": "📺", "k": "Up Next", "v": len(sections.get("upnext") or []), "d": "prochains épisodes"},
+    ]
 
     # Temps de visionnage (à vie) — calcul local depuis l'historique.
     try:
         dash = dashboard_mod.compute_dashboard(_dataset(), timezone_name="Europe/Paris")
         if not dash.get("empty"):
             c = dash["compteurs"]
-            third = st.columns(4)
-            third[0].metric("⏱️ Temps total", dashboard_mod._minutes_to_duree(dash["total_minutes"]))
-            third[1].metric("📺 Temps séries", dashboard_mod._minutes_to_duree(int(c["h_series"] * 60)))
-            third[2].metric("🎬 Temps films", dashboard_mod._minutes_to_duree(int(c["h_films"] * 60)))
-            third[3].metric(
-                "🏃 Épisodes/semaine",
-                f"{dash['eps_sem']:.1f}".replace(".", ",") if dash["eps_sem"] else "—",
-            )
+            cards += [
+                {"emoji": "⏱️", "k": "Temps total", "v": dashboard_mod._minutes_to_duree(dash["total_minutes"]), "d": "à vie"},
+                {"emoji": "📺", "k": "Temps séries", "v": dashboard_mod._minutes_to_duree(int(c["h_series"] * 60)), "d": "à vie"},
+                {"emoji": "🎬", "k": "Temps films", "v": dashboard_mod._minutes_to_duree(int(c["h_films"] * 60)), "d": "à vie"},
+                {"emoji": "🏃", "k": "Épisodes/semaine", "v": f"{dash['eps_sem']:.1f}".replace(".", ",") if dash["eps_sem"] else "—",
+                 "d": "rythme moyen"},
+            ]
     except Exception:
         pass
+
+    st.markdown(_metric_cards(cards), unsafe_allow_html=True)
 
 
 def _reset_recommendation_filters() -> None:
@@ -2132,10 +2163,14 @@ def render_progress_page() -> None:
             unsafe_allow_html=True,
         )
         return
-    cols = st.columns(3)
-    cols[0].metric("Points de reprise", len(playback))
-    cols[1].metric("Séries en cours", len(progress_rows))
-    cols[2].metric("Séries abandonnées", len(dropped))
+    st.markdown(
+        _metric_cards([
+            {"emoji": "⏸️", "k": "Points de reprise", "v": len(playback), "d": "reprises en cours"},
+            {"emoji": "📺", "k": "Séries en cours", "v": len(progress_rows), "d": "Up Next"},
+            {"emoji": "🚫", "k": "Séries abandonnées", "v": len(dropped), "d": "statut abandonnée"},
+        ]),
+        unsafe_allow_html=True,
+    )
 
     st.markdown("### Où en suis-je dans mes séries ?")
     if not progress_rows:
@@ -2468,11 +2503,15 @@ def render_ghost_page() -> None:
     rows = enrich_playback_posters(normalize_playback(playback_items), dataset)
     rows = _apply_playback_poster_cache(rows)
     known_remaining = sum(int(row.get("remaining_minutes") or 0) for row in rows)
-    metrics = st.columns(4)
-    metrics[0].metric("Progressions", len(rows))
-    metrics[1].metric("Films", sum(row.get("type") == "Film" for row in rows))
-    metrics[2].metric("Épisodes", sum(row.get("type") == "Épisode" for row in rows))
-    metrics[3].metric("Temps restant connu", _format_minutes(known_remaining) if known_remaining else "—")
+    st.markdown(
+        _metric_cards([
+            {"emoji": "👻", "k": "Progressions", "v": len(rows), "d": "reprises en pause"},
+            {"emoji": "🎬", "k": "Films", "v": sum(row.get("type") == "Film" for row in rows), "d": "reprises"},
+            {"emoji": "📺", "k": "Épisodes", "v": sum(row.get("type") == "Épisode" for row in rows), "d": "reprises"},
+            {"emoji": "⏱️", "k": "Temps restant connu", "v": _format_minutes(known_remaining) if known_remaining else "—", "d": "à terminer"},
+        ]),
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
         '<div class="accent-callout"><strong>REPRISES DISPONIBLES</strong> · '
@@ -2680,11 +2719,15 @@ def render_static_lists_page() -> None:
         sort_mode=sort_mode,
     )
 
-    metrics = st.columns(4)
-    metrics[0].metric("Contenus", len(all_rows))
-    metrics[1].metric("Avec signal", sum(bool(row.get("issues")) for row in all_rows))
-    metrics[2].metric("Déjà vus", sum(bool(row.get("watched")) for row in all_rows))
-    metrics[3].metric("Multi-conteneurs", sum(bool(row.get("duplicate")) for row in all_rows))
+    st.markdown(
+        _metric_cards([
+            {"emoji": "📦", "k": "Contenus", "v": len(all_rows), "d": "dans le conteneur"},
+            {"emoji": "🚩", "k": "Avec signal", "v": sum(bool(row.get("issues")) for row in all_rows), "d": "à examiner"},
+            {"emoji": "👀", "k": "Déjà vus", "v": sum(bool(row.get("watched")) for row in all_rows), "d": "dans les listes"},
+            {"emoji": "🔁", "k": "Multi-conteneurs", "v": sum(bool(row.get("duplicate")) for row in all_rows), "d": "doublons entre listes"},
+        ]),
+        unsafe_allow_html=True,
+    )
 
     nb_revoir = sum(bool(row.get("added_after_watch")) for row in all_rows if row.get("watched"))
     nb_retirer = sum(bool(row.get("watched")) and not row.get("added_after_watch") for row in all_rows)
@@ -3039,10 +3082,14 @@ def render_static_lists_page() -> None:
             now=datetime.now(PARIS_TZ),
         )
         known_dates = sum(row.get("added_at") is not None for row in visible_additions)
-        add_metrics = st.columns(3)
-        add_metrics[0].metric("Ajouts", len(visible_additions))
-        add_metrics[1].metric("Dates connues", known_dates)
-        add_metrics[2].metric("Dates non fournies", len(visible_additions) - known_dates)
+        st.markdown(
+            _metric_cards([
+                {"emoji": "🆕", "k": "Ajouts", "v": len(visible_additions), "d": "dans l'historique"},
+                {"emoji": "✅", "k": "Dates connues", "v": known_dates, "d": "ajouts datés"},
+                {"emoji": "⚠️", "k": "Dates non fournies", "v": len(visible_additions) - known_dates, "d": "sans date"},
+            ]),
+            unsafe_allow_html=True,
+        )
         max_additions = len(visible_additions) if addition_limit == "Tout" else int(addition_limit)
         additions_table = [
             {
@@ -3504,13 +3551,14 @@ def render_calendar_page() -> None:
     rows = enrich_playback_posters(rows, _dataset())
     rows = _apply_playback_poster_cache(rows)
     dated = [row for row in rows if row.get("datetime")]
-    metrics = st.columns(4)
-    metrics[0].metric("Événements", len(rows))
-    metrics[1].metric("Films", sum(row.get("type") == "Film" for row in rows))
-    metrics[2].metric("Épisodes", sum(row.get("type") == "Épisode" for row in rows))
-    metrics[3].metric(
-        "Prochaine date",
-        min(row["datetime"] for row in dated).strftime("%d/%m") if dated else "—",
+    st.markdown(
+        _metric_cards([
+            {"emoji": "🗓️", "k": "Événements", "v": len(rows), "d": "sur l'horizon choisi"},
+            {"emoji": "🎬", "k": "Films", "v": sum(row.get("type") == "Film" for row in rows), "d": "sorties"},
+            {"emoji": "📺", "k": "Épisodes", "v": sum(row.get("type") == "Épisode" for row in rows), "d": "diffusions"},
+            {"emoji": "⏭️", "k": "Prochaine date", "v": min(row["datetime"] for row in dated).strftime("%d/%m") if dated else "—", "d": "premier événement"},
+        ]),
+        unsafe_allow_html=True,
     )
     checked = datetime.fromtimestamp(float(cache.get("fetched_at") or time.time()), PARIS_TZ).strftime("%d/%m à %H:%M")
     counts = cache.get("event_counts") or {}
@@ -3676,12 +3724,16 @@ def render_detailed_stats_page(filtered: "pd.DataFrame", period_label: str) -> N
     daily = filtered.groupby(filtered["date_dt"].dt.date)["lectures"].sum()
     record_jour = int(daily.max()) if not daily.empty else 0
 
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Nombre de visionnages", total_lectures)
-    m2.metric("Temps de visionnage", _format_minutes(total_minutes) if total_minutes else "—")
-    m3.metric("Note moyenne /10", f"{note_moyenne:.1f}" if pd.notna(note_moyenne) else "—")
-    m4.metric("Moyenne par jour", f"{total_lectures / nb_jours:.1f}")
-    m5.metric("Record en 1 jour", record_jour)
+    st.markdown(
+        _metric_cards([
+            {"emoji": "🎬", "k": "Visionnages", "v": total_lectures, "d": "films + épisodes"},
+            {"emoji": "⏱️", "k": "Temps visionné", "v": _format_minutes(total_minutes) if total_minutes else "—", "d": "sur la sélection"},
+            {"emoji": "🌡️", "k": "Note moyenne", "v": f"{note_moyenne:.1f}" if pd.notna(note_moyenne) else "—", "d": "sur 10"},
+            {"emoji": "📅", "k": "Moyenne / jour", "v": f"{total_lectures / nb_jours:.1f}", "d": "visionnages par jour"},
+            {"emoji": "🏆", "k": "Record en 1 jour", "v": record_jour, "d": "pic d'activité"},
+        ]),
+        unsafe_allow_html=True,
+    )
 
     # ── Heatmap d'activité (suit les filtres) ────────────────────────────────
     st.divider()
@@ -3894,10 +3946,14 @@ def render_basic_stats_page() -> None:
 
         total_plays = sum(int(row.get("plays") or 1) for row in visible)
         total_minutes = sum(int(row.get("total_minutes") or 0) for row in visible)
-        metrics = st.columns(3)
-        metrics[0].metric("Entrées", len(visible))
-        metrics[1].metric("Lectures connues", total_plays)
-        metrics[2].metric("Temps estimé", _format_minutes(total_minutes) if total_minutes else "—")
+        st.markdown(
+            _metric_cards([
+                {"emoji": "📥", "k": "Entrées", "v": len(visible), "d": "dans l'export"},
+                {"emoji": "🔁", "k": "Lectures connues", "v": total_plays, "d": "au total"},
+                {"emoji": "⏱️", "k": "Temps estimé", "v": _format_minutes(total_minutes) if total_minutes else "—", "d": "de visionnage"},
+            ]),
+            unsafe_allow_html=True,
+        )
 
         display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
         table = []
@@ -4174,6 +4230,28 @@ def _rewatch_body(rewatch: list[dict[str, Any]]) -> str:
             f'<span class="muted">⭐ {c.get("note", 0):.1f}/10</span>'
         )
     return "".join(f'<div class="msl-line">{l}</div>' for l in lignes)
+
+
+def _metric_cards(cards: list[dict[str, Any]], start_delay: int = 0) -> str:
+    """Bandeau de métriques moderne (skin V53) : cartes k/v/d avec icône,
+    fondu en cascade, surbrillance au survol. Utilisé sur le tableau de
+    bord, En cours de lecture, Statistiques et Migration."""
+    out = []
+    delay = start_delay
+    for card in cards:
+        emoji = str(card.get("emoji") or "")
+        k = escape(str(card.get("k") or ""))
+        v = escape(str(card.get("v") if card.get("v") is not None else "—"))
+        d = escape(str(card.get("d") or ""))
+        out.append(
+            f'<div class="msl-mcard" style="animation-delay:{delay}ms">'
+            f'<span class="ic">{emoji}</span>'
+            f'<div class="k">{k}</div>'
+            f'<div class="v">{v}</div>'
+            f'<div class="d">{d}</div></div>'
+        )
+        delay += 40
+    return f'<div class="msl-metrics">{"".join(out)}</div>'
 
 
 def render_dashboard_widgets() -> None:
@@ -4552,11 +4630,15 @@ def render_migration_page() -> None:
     # ── Étape 2 : aperçu ──
     st.divider()
     st.markdown("#### 2 · Aperçu de ce qui sera migré")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Films vus", plan["films_vus"])
-    c2.metric("Épisodes vus", plan["episodes_vus"])
-    c3.metric("Séries concernées", plan["series_vues"])
-    c4.metric("Sans correspondance", len(plan["sans_correspondance"]))
+    st.markdown(
+        _metric_cards([
+            {"emoji": "🎬", "k": "Films vus", "v": plan["films_vus"], "d": "à migrer"},
+            {"emoji": "📺", "k": "Épisodes vus", "v": plan["episodes_vus"], "d": "à migrer"},
+            {"emoji": "🗂️", "k": "Séries concernées", "v": plan["series_vues"], "d": "séries touchées"},
+            {"emoji": "⚠️", "k": "Sans correspondance", "v": len(plan["sans_correspondance"]), "d": "exclus de la migration"},
+        ]),
+        unsafe_allow_html=True,
+    )
     if plan["rewatches"]:
         st.caption(f"🔁 {plan['rewatches']} rewatch(es) détecté(s) : MDBList ne conserve que la dernière date par contenu.")
     if plan["sans_correspondance"]:
@@ -4830,18 +4912,18 @@ def render_annual_page() -> None:
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("🎬 Films uniques", d["films"])
-    c2.metric("📺 Séries suivies", d["series"])
-    c3.metric("🎞️ Épisodes", d["episodes"])
-    c4.metric("⭐ Note moyenne", f"{d['note_moy']:.1f}/10" if d["note_moy"] else "—")
-
-    c5, c6 = st.columns(2)
-    if d["jour_peak"] is not None:
-        c5.metric("🏆 Record en 1 jour", f"{d['nb_peak']} visionnages", delta=d["jour_peak"].strftime("%d/%m"))
-    else:
-        c5.metric("🏆 Record en 1 jour", "—")
-    c6.metric("📅 Ton plus gros mois", wrapped_mod.MOIS_NOMS[d["mois_peak"] - 1] if d["mois_peak"] else "—")
+    wrapped_cards = [
+        {"emoji": "🎬", "k": "Films uniques", "v": d["films"], "d": "vus cette année"},
+        {"emoji": "📺", "k": "Séries suivies", "v": d["series"], "d": "cette année"},
+        {"emoji": "🎞️", "k": "Épisodes", "v": d["episodes"], "d": "vus cette année"},
+        {"emoji": "⭐", "k": "Note moyenne", "v": f"{d['note_moy']:.1f}/10" if d["note_moy"] else "—", "d": "sur tes notes"},
+        {"emoji": "🏆", "k": "Record en 1 jour",
+         "v": f"{d['nb_peak']} visionnages" if d["jour_peak"] is not None else "—",
+         "d": d["jour_peak"].strftime("%d/%m") if d["jour_peak"] is not None else ""},
+        {"emoji": "📅", "k": "Ton plus gros mois",
+         "v": wrapped_mod.MOIS_NOMS[d["mois_peak"] - 1] if d["mois_peak"] else "—", "d": "le plus actif"},
+    ]
+    st.markdown(_metric_cards(wrapped_cards), unsafe_allow_html=True)
 
     # Top films.
     st.divider()
@@ -4865,9 +4947,13 @@ def render_annual_page() -> None:
     st.divider()
     st.markdown(f"### 🎭 Tes genres préférés en {annee}")
     if d["top_genres"]:
-        cols = st.columns(min(5, len(d["top_genres"])))
-        for i, (genre, n) in enumerate(d["top_genres"]):
-            cols[i].metric(genre, n)
+        st.markdown(
+            _metric_cards([
+                {"emoji": "🎭", "k": genre, "v": n, "d": "visionnages"}
+                for genre, n in d["top_genres"]
+            ]),
+            unsafe_allow_html=True,
+        )
     else:
         st.caption("Aucun genre identifié cette année.")
 

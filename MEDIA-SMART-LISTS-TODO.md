@@ -163,32 +163,37 @@ Décision (V48) : le script CLI reste **dans Media Smart Lists**, dossier
 
 ---
 
-## 🎨 Futur thème « vivant » — PROGRESSION (V52 : dashboard en rubans ✅)
+## 🎨 Futur thème « vivant » — PROGRESSION (V52 : dashboard en rubans ✅ · V53 : bandeaux de cartes partout ✅)
 
 L'utilisateur a validé le principe (« si tu te sens capable d'appliquer le
 nouveau skin au site, vas-y, mais fais gaffe à pas tout péter »). Un backup
 de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
-(hors dépôt, dans le workspace).
+(hors dépôt, dans le workspace). **V53 = uniformisation de tous les onglets**
+(le user veut « de la modernité » et « uniformiser tout l'outil »).
 
-### Fait en V52 (appliqué au tableau de bord)
+### Fait en V52-V53
 - [x] **Rubans déroulants** avec icône en tuile + titre + méta + chevron
       (rythme, derniers visionnages + les 8 widgets restaurés).
 - [x] **Comet biseauté** sur la barre du haut, en vert `#00A392` + citron
       `#CEDC00` (préférence utilisateur), menu ⋮ intact.
-- [x] **Fondu en cascade** (50 ms de décalage) + **surbrillance au survol**.
+- [x] **Fondu en cascade** (50 ms) + **surbrillance au survol**.
 - [x] **Grain** subtil + **swoosh** sous les titres de page (tous les onglets).
 - [x] Barre de répartition colorée du créneau + mini-cartes records (3 col.).
 - [x] Expandeurs natifs des autres pages habillés « ruban » (léger).
+- [x] **Bandeau de métriques moderne** (cartes k/v/d avec icône) : helper
+      `_metric_cards()` dans app.py, utilisé sur **TOUTES les pages**
+      (dashboard vue d'ensemble + ruban compte, En cours, Fantômes,
+      Nettoyage, Calendrier ×2, Statistiques, Sauvegarde, Wrapped ×2,
+      Migration). Les anciens `st.metric` sont remplacés partout.
+- [x] Démo mise à jour : docs/demo-skin-dashboard.html inclut le bandeau.
 
-### Reste à faire (vers les autres onglets)
-- [ ] Étendre les rubans à icônes aux autres pages (en cours, progression,
-      nettoyage, que regarder, calendrier, stats, succès, wrapped, etc.)
-      en reprenant les posters et infos actuels.
-- [ ] **Bandeau de métriques** en haut du dashboard (films vus · épisodes
-      vus · temps total · rythme) façon preview-look.html.
-- [ ] Wordmark avec logo-tuile dans le header natif Streamlit (optionnel,
+### Reste à faire (modernité des cartes contenus)
+- [ ] **Cartes contenus** (En cours de lecture, Fantômes, Que regarder ?) :
+      ajouter le survol lumineux + icône/affichage façon preview-look (les
+      cartes ont déjà posters + infos — à embellir sans tout casser).
+- [ ] **Wordmark avec logo-tuile** dans le header natif Streamlit (optionnel,
       délicat — à faire prudemment).
-- [ ] Avis utilisateur sur la V52 → ajustements éventuels (couleurs,
+- [ ] Avis utilisateur sur la V53 → ajustements éventuels (couleurs,
       espacements, animations).
 
 ### Rappels techniques
@@ -196,8 +201,7 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
   `type="primary"` SANS `help=` ; ne pas toucher aux couleurs officielles
   (#00A392, #00524B, #CEDC00).
 - Les rubans du dashboard sont des `<details>` HTML (interactivité native du
-  navigateur) — vérifier que rien d'autre n'utilise `_render_restored_widgets`
-  (remplacé par les helpers `_ruban` + `_*_body`).
+  navigateur) — helpers `_ruban` + `_*_body` + `_metric_cards`.
 - **Référence visuelle** : `docs/preview-look.html` (fourni par l'utilisateur,
   enregistré en V51) ; patterns CSS aussi issus de son site sport-auto et de
   son `worker (3).js` (analysé, PAS ajouté au dépôt — fichier privé avec ses

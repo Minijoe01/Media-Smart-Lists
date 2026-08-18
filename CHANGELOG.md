@@ -2,6 +2,22 @@
 
 Toutes les évolutions notables de Media Smart Lists.
 
+## [V53] — 18 août 2026
+
+- 📊 **Bandeau de métriques moderne** partout : les blocs « Films vus / Épisodes vus / Watchlist / Listes / Notes / Reprises / Abandonnées / Up Next / Temps total / Temps séries / Temps films / Épisodes-semaine » du tableau de bord deviennent de **belles cartes k/v/d avec icône**, fondu en cascade et surbrillance au survol — façon preview-look.
+- 🎨 **Uniformisation de TOUS les onglets** : le même bandeau de cartes remplace les anciens compteurs `st.metric` sur :
+  - 🏠 Tableau de bord (vue d'ensemble) et ruban compte/quota MDBList ;
+  - ▶️ En cours de lecture (points de reprise, séries en cours, abandonnées) ;
+  - 👻 Progression Fantôme (progressions, films, épisodes, temps restant) ;
+  - 🧹 Nettoyage des listes (contenus, avec signal, déjà vus, multi-conteneurs) ;
+  - 📅 Calendrier (événements, films, épisodes, prochaine date + historique des ajouts) ;
+  - 📊 Statistiques (visionnages, temps, note moyenne, moyenne/jour, record/jour) ;
+  - 📦 Sauvegarde (entrées, lectures, temps estimé) ;
+  - 🎉 Rendez-vous annuel (films, séries, épisodes, note moyenne, record, mois + genres) ;
+  - 📦 Migration (films vus, épisodes, séries concernées, sans correspondance).
+- 🖥️ La démo `docs/demo-skin-dashboard.html` inclut le nouveau bandeau de métriques.
+- 🧪 13/13 tests OK, app sans erreur (AppTest).
+
 ## [V52] — 17 août 2026
 
 - 🎨 **Nouveau skin appliqué au tableau de bord** (inspiré de `docs/preview-look.html`) :
