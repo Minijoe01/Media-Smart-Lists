@@ -613,7 +613,151 @@ st.markdown(
     p, li, label { color: var(--am-text) !important; }
     .stCaption { color: var(--am-text-muted) !important; }
 
+    /* ══════════════════════════════════════════════════════════════════
+       SKIN « PREVIEW-LOOK » (V52) — rubans déroulants, comet biseauté,
+       grain, swoosh. Le thème reste compatible : si un élément déplaît,
+       le backup V51 permet de revenir en arrière.
+       ══════════════════════════════════════════════════════════════════ */
+
+    /* Fondu en cascade (même courbe que le site sport-auto) */
+    @keyframes msl-fadeUp {
+        from { opacity: 0; transform: translateY(14px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    /* Comet biseauté sur la barre du haut (vert + citron, préférence user).
+       Le header garde son overflow visible : le balayage est contenu par le
+       pseudo-élément lui-même, le menu ⋮ reste cliquable. */
+    header[data-testid="stHeader"]::before {
+        content: "";
+        position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+        transform: translateX(-100%);
+        -webkit-clip-path: polygon(21px 0, 100% 0, calc(100% - 21px) 100%, 0 100%);
+                clip-path: polygon(21px 0, 100% 0, calc(100% - 21px) 100%, 0 100%);
+        background: repeating-linear-gradient(115deg,
+            rgba(0, 163, 146, .95) 0px, rgba(0, 163, 146, .95) 2px,
+            rgba(206, 220, 0, .25) 2px, rgba(206, 220, 0, .25) 5px);
+        -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,.16) 0%, rgba(0,0,0,.5) 55%, rgba(0,0,0,1) 100%);
+                mask-image: linear-gradient(90deg, rgba(0,0,0,.16) 0%, rgba(0,0,0,.5) 55%, rgba(0,0,0,1) 100%);
+        animation: msl-comet 8s linear infinite;
+        pointer-events: none;
+        z-index: 0;
+        overflow: hidden;
+    }
+    @keyframes msl-comet { to { transform: translateX(100%); } }
+
+    /* Grain subtil du fond (comme le site sport-auto) */
+    .stApp::before {
+        content: "";
+        position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .045;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    /* Swoosh (trait dégradé) sous les titres de page */
+    .page-title::after {
+        content: "";
+        display: block;
+        width: clamp(180px, 26vw, 420px);
+        height: 3px;
+        margin-top: 10px;
+        border-radius: 3px;
+        background: linear-gradient(90deg, rgba(0,163,146,0) 0%, rgba(0,163,146,.95) 50%, rgba(0,163,146,0) 100%);
+    }
+
+    /* Ruban déroulant (widgets du tableau de bord) */
+    details.msl-widget {
+        background: rgba(255,255,255,.045);
+        border: 1px solid rgba(0,163,146,.18);
+        border-radius: 13px;
+        margin-bottom: 9px;
+        overflow: hidden;
+        transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease;
+        animation: msl-fadeUp .55s cubic-bezier(.22,1,.36,1) both;
+    }
+    details.msl-widget:hover {
+        background: rgba(0,163,146,.16);
+        border-color: rgba(0,163,146,.55);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 22px rgba(0,163,146,.22);
+    }
+    details.msl-widget summary {
+        display: flex; align-items: center; gap: 12px;
+        padding: 11px 14px; cursor: pointer; list-style: none; user-select: none;
+    }
+    details.msl-widget summary::-webkit-details-marker { display: none; }
+    details.msl-widget summary::marker { content: ""; }
+    .msl-ic {
+        width: 42px; height: 42px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+        font-size: 20px; border-radius: 11px;
+        background: linear-gradient(180deg, #0b3f3a 0%, #06302c 100%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.10), inset 0 0 0 1px rgba(0,163,146,.10),
+                    0 10px 22px -12px rgba(0,0,0,.7);
+        transition: background .18s ease, box-shadow .18s ease;
+    }
+    details.msl-widget:hover .msl-ic {
+        background: linear-gradient(180deg, #00A392 0%, #00524B 100%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 12px 26px -10px rgba(0,163,146,.6);
+    }
+    .msl-nm { flex: 1; font-size: 14.5px; font-weight: 700; color: var(--am-text); line-height: 1.25; min-width: 0; }
+    .msl-nm .msl-meta { display: block; font-size: 12px; font-weight: 500; color: var(--am-text-muted); margin-top: 2px; }
+    .msl-chev { color: var(--am-text-muted); font-size: 13px; flex: 0 0 auto; transition: transform .2s ease; }
+    details.msl-widget[open] .msl-chev { transform: rotate(180deg); }
+    .msl-body { padding: 6px 14px 14px; border-top: 1px solid rgba(0,163,146,.14); }
+    .msl-body .msl-line { font-size: .9rem; color: var(--am-text); padding: 5px 0; line-height: 1.55; }
+    .msl-body .msl-line .muted { color: var(--am-text-muted); }
+    .msl-body .msl-note { font-size: .78rem; color: var(--am-text-muted); padding: 6px 0 0; line-height: 1.45; }
+    .msl-grid2 { display: grid; grid-template-columns: 1.1fr .9fr; gap: 12px; }
+    .msl-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .msl-subcard {
+        background: var(--am-bg-card); border: 1px solid var(--am-border); border-radius: 12px;
+        padding: 12px 14px;
+        transition: transform .16s ease, background .16s ease;
+    }
+    .msl-subcard:hover { background: rgba(12,75,68,.6); transform: translateY(-2px); }
+    .msl-subcard .k { font-size: .74rem; letter-spacing: 1px; text-transform: uppercase; color: var(--am-text-muted); }
+    .msl-subcard .v { font-size: 1.25rem; font-weight: 800; color: var(--am-lime); margin-top: 3px; line-height: 1.15; }
+    .msl-subcard .d { font-size: .78rem; color: var(--am-text-muted); margin-top: 2px; line-height: 1.4; }
+    .msl-stats2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+    .msl-bar {
+        display: flex; height: 10px; border-radius: 999px; overflow: hidden;
+        margin: 10px 0 12px; border: 1px solid rgba(0,163,146,.35);
+    }
+    .msl-bar span { display: block; }
+    .msl-bar.jauge { height: 8px; }
+    .msl-bar.jauge span { background: linear-gradient(90deg, var(--am-green), var(--am-lime)); }
+    .msl-legend2 { font-size: .72rem; color: var(--am-text-muted); margin: 2px 0 10px; }
+    .msl-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 4px; }
+    .msl-creneau {
+        background: var(--am-bg-card); border: 1px solid var(--am-border); border-radius: 12px;
+        padding: 10px 12px; text-align: center;
+    }
+    .msl-creneau .v { font-size: 1.3rem; font-weight: 800; color: var(--am-lime); margin-top: 4px; }
+    .msl-creneau .d { font-size: .76rem; color: var(--am-text-muted); margin-top: 2px; }
+    .msl-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .msl-coup {
+        background: var(--am-bg-card); border: 1px solid var(--am-border); border-radius: 12px;
+        padding: 10px 12px; text-align: center;
+        transition: transform .16s ease;
+    }
+    .msl-coup:hover { transform: translateY(-2px); }
+    .msl-coup .emoji { font-size: 1.4rem; }
+    .msl-coup .t { font-size: .84rem; font-weight: 700; color: var(--am-text); margin-top: 4px; }
+    .msl-coup .s { font-size: .74rem; color: var(--am-mint); margin-top: 2px; }
+
+    /* Expandeurs natifs des autres pages : habillage « ruban » cohérent */
+    div[data-testid="stExpander"] {
+        background: rgba(8,55,50,.35) !important;
+        border: 1px solid rgba(0,163,146,.22) !important;
+        border-radius: 13px !important;
+        box-shadow: none !important;
+    }
+    div[data-testid="stExpander"] summary {
+        font-weight: 700 !important;
+        color: var(--am-text) !important;
+    }
+
     @media (max-width: 768px) {
+        .msl-grid2 { grid-template-columns: 1fr; }
+        .msl-grid3 { grid-template-columns: 1fr; }
         .block-container { padding-top: 2.5rem !important; }
         .brand-title { font-size: 1.7rem; }
         .media-list-card img {
@@ -3804,234 +3948,334 @@ def render_basic_stats_page() -> None:
     render_detailed_stats_page(filtered, period_label)
 
 
+def _ruban(emoji: str, titre: str, meta: str, body: str, delay: int = 0) -> str:
+    """Ruban déroulant (skin preview-look) : icône en tuile, titre, méta, chevron."""
+    delay_css = f" style='animation-delay:{delay}ms'" if delay else ""
+    return (
+        f'<details class="msl-widget"{delay_css}><summary>'
+        f'<span class="msl-ic">{emoji}</span>'
+        f'<span class="msl-nm">{escape(titre)}<span class="msl-meta">{escape(meta)}</span></span>'
+        f'<span class="msl-chev">▾</span></summary>'
+        f'<div class="msl-body">{body}</div></details>'
+    )
+
+
+def _rythme_body(dash: dict[str, Any]) -> str:
+    """Corps du ruban « Ton rythme de visionnage » (2 sous-cartes + digest)."""
+    bilan = dash["bilan"]
+    duree_mois = dashboard_mod._minutes_to_duree(int(bilan["heures"] * 60))
+    gauche = [
+        f"🗓️ <b>{escape(bilan['mois'])}</b> : <b>{escape(duree_mois)}</b> · "
+        f"<b>{bilan['eps']}</b> épisode(s) · <b>{bilan['films']}</b> film(s)",
+    ]
+    if dash["eps_sem"]:
+        rythme_txt = f"{dash['eps_sem']:.1f}".replace(".", ",")
+        gauche.append(f"🏃 Ton rythme : <b>{escape(rythme_txt)} ép./semaine</b>")
+    if dash["projection"]:
+        p = dash["projection"]
+        gauche.append(
+            f"🏁 Au rythme actuel, tes <b>{dash['series_actives']} série(s) en cours</b> "
+            f"({dash['reste_actives']} épisode(s) restant(s)) seront finies vers le "
+            f"<b>{p.day} {dashboard_mod.MOIS_NOMS[p.month - 1]} {p.year}</b> "
+            f"(hors nouvelles saisons… et nouvelles envies) 😉"
+        )
+        gauche.append('<div class="msl-note">🚫 Les séries abandonnées (statut « dropped ») sont exclues de ce calcul.</div>')
+    elif dash["reste_actives"] > 0:
+        gauche.append('<div class="msl-note">🏁 Regarde encore quelques épisodes et j’estimerai ta date de fin.</div>')
+    else:
+        gauche.append('<div class="msl-note">🏁 Aucune série en cours ou en pause : rien à projeter pour l’instant.</div>')
+
+    c = dash["compteurs"]
+    compteurs = (
+        f'<div class="msl-stats2">'
+        f'<div><div class="k">📺 Séries</div><div class="v">{escape(dashboard_mod._minutes_to_duree(int(c["h_series"] * 60)))}</div>'
+        f'<div class="d">{c["nb_ep"]} épisodes</div></div>'
+        f'<div><div class="k">🎬 Films</div><div class="v">{escape(dashboard_mod._minutes_to_duree(int(c["h_films"] * 60)))}</div>'
+        f'<div class="d">{c["nb_films"]} films</div></div>'
+        f'</div>'
+    )
+
+    digest = dash["digest"]
+    digest_html = ""
+    if digest["films"] or digest["eps"]:
+        digest_html = (
+            '<div class="msl-line">🍿 <b>Cette semaine</b> : '
+            f'{digest["eps"]} épisode(s), {digest["films"]} film(s) — soit <b>'
+            f'{escape(dashboard_mod._minutes_to_duree(digest["minutes"]))}</b> de visionnage.</div>'
+        )
+
+    gauche_html = "".join(f'<div class="msl-line">{l}</div>' for l in gauche)
+    return (
+        f'<div class="msl-grid2">'
+        f'<div class="msl-subcard">{gauche_html}</div>'
+        f'<div class="msl-subcard"><div class="k" style="margin-bottom:4px;">📼 Compteurs à vie</div>{compteurs}</div>'
+        f'</div>{digest_html}'
+    )
+
+
+def _derniers_body(derniers: list[dict[str, Any]]) -> str:
+    lignes = []
+    for item in derniers:
+        ep = f" · {escape(str(item.get('episode') or ''))}" if item.get("episode") else ""
+        lignes.append(
+            f'📅 <span class="muted">{escape(item["date"].strftime("%d/%m/%Y %H:%M"))}</span> · '
+            f'{escape(str(item.get("type") or ""))} · <b>{escape(str(item["titre"]))}</b>{ep}'
+        )
+    return "".join(f'<div class="msl-line">{l}</div>' for l in lignes)
+
+
+def _sorties_body(sorties: list[dict[str, Any]]) -> str:
+    lignes = []
+    for c in sorties:
+        an = f" ({c.get('annee')})" if c.get("annee") else ""
+        note_txt = f' · <span class="muted">⭐ {c.get("note", 0):.1f}/10</span>' if c.get("note") else ""
+        jtxt = "aujourd'hui" if c.get("j") == 0 else f"dans {c.get('j')} j"
+        lignes.append(
+            f'🎬 <b>{escape(str(c.get("titre")))}</b>{escape(an)} · {jtxt} '
+            f'({c["date"]:%d/%m}){note_txt}'
+        )
+    return "".join(f'<div class="msl-line">{l}</div>' for l in lignes)
+
+
+def _plus_ancien_body(pa: dict[str, Any]) -> str:
+    jours = pa.get("jours") or 0
+    if jours >= 365:
+        age = f"{jours // 365} an" + ("s" if jours >= 730 else "")
+    else:
+        age = f"{jours // 30} mois"
+    an = f" ({pa.get('annee')})" if pa.get("annee") else ""
+    return (
+        f'<div class="msl-line">⏳ <b>{escape(str(pa.get("titre")))}</b>{escape(an)} '
+        f'— ajouté il y a <b>{age}</b>. Encore envie de le voir ?</div>'
+    )
+
+
+def _pause_body(pause: list[dict[str, Any]]) -> str:
+    lignes = []
+    for c in pause:
+        an = f" ({c.get('annee')})" if c.get("annee") else ""
+        ans = (c.get("jours") or 0) // 365
+        pl = "s" if ans > 1 else ""
+        note_txt = f' · <span class="muted">⭐ {c.get("pub", 0):.1f}/10</span>' if c.get("pub") else ""
+        lignes.append(
+            f'🚦 <b>{escape(str(c.get("titre")))}</b>{escape(an)} — dernier épisode vu il y a '
+            f'<b>{ans} an{pl}</b>{note_txt}'
+        )
+    return "".join(f'<div class="msl-line">{l}</div>' for l in lignes)
+
+
+def _records_body(rec: dict[str, Any]) -> str:
+    j = rec["jour"]
+    counts = j.get("counts") or {}
+    top_key = max(counts, key=counts.get) if counts else None
+    top_titre = (j.get("shows") or {}).get(top_key)
+    extra = f" — surtout <b>{escape(str(top_titre))}</b>" if top_titre else ""
+    m = rec["mois"]
+    mois_nom = dashboard_mod.MOIS_NOMS[m["key"][1] - 1]
+    s = rec["serie"]
+    return (
+        '<div class="msl-grid3">'
+        f'<div class="msl-subcard"><div class="k">📅 Jour record</div><div class="v">{j["nb"]} ép.</div>'
+        f'<div class="d">{j["date"]:%d/%m/%Y}{extra}</div></div>'
+        f'<div class="msl-subcard"><div class="k">🗓️ Mois record</div><div class="v">{m["nb"]} ép.</div>'
+        f'<div class="d">{mois_nom} {m["key"][0]}</div></div>'
+        f'<div class="msl-subcard"><div class="k">📺 Série avalée</div>'
+        f'<div class="v">{escape(dashboard_mod._minutes_to_duree(int(s.get("min", 0))))}</div>'
+        f'<div class="d">{escape(str(s.get("titre")))} · {s.get("nb")} ép.</div></div>'
+        '</div>'
+    )
+
+
+def _creneau_body(cr: dict[str, Any]) -> str:
+    items = cr.get("items") or []
+    HORAIRES = {"Matin": "6 h → 12 h", "Après-midi": "12 h → 18 h", "Soir": "18 h → 22 h", "Nuit": "22 h → 6 h"}
+    COULEURS = {"Matin": "#00524B", "Après-midi": "#00A392", "Soir": "#CEDC00", "Nuit": "#00D084"}
+    segments = []
+    cases = []
+    for it in items:
+        pct = it["pct"]
+        segments.append(
+            f'<span style="width:{pct:.0f}%; background:{COULEURS.get(it["label"], "#00A392")};"></span>'
+        )
+        plage = HORAIRES.get(it["label"], "")
+        pill = (
+            f'<span class="reason-pill info-pill" tabindex="0" '
+            f'data-tooltip="{escape(plage, quote=True)}" title="{escape(plage, quote=True)}">'
+            f"{it['emoji']} {escape(it['label'])}</span>"
+        )
+        cases.append(
+            f'<div class="msl-creneau">{pill}'
+            f'<div class="v">{pct:.0f}%</div>'
+            f'<div class="d">{escape(dashboard_mod._minutes_to_duree(int(it["min"])))}</div></div>'
+        )
+    top = cr.get("top") or {}
+    top_txt = (
+        f'<div class="msl-note">🏆 Ton moment préféré : {top["emoji"]} <b>{escape(top["label"])}</b> '
+        f'({top["pct"]:.0f}% de ton temps).</div>'
+        if top else ""
+    )
+    return (
+        f'<div class="msl-bar">{"".join(segments)}</div>'
+        f'<div class="msl-legend">{"".join(cases)}</div>{top_txt}'
+    )
+
+
+def _coups_body(coups: list[dict[str, Any]]) -> str:
+    items = []
+    for c in coups:
+        ic = "🎬" if c.get("type") == "Film" else "📺"
+        an = f" ({c.get('annee')})" if c.get("annee") else ""
+        src_txt = " (communauté)" if c.get("fallback") else ""
+        items.append(
+            f'<div class="msl-coup"><div class="emoji">{ic}</div>'
+            f'<div class="t">{escape(str(c.get("titre")))}{escape(an)}</div>'
+            f'<div class="s">⭐ {c.get("note", 0):.1f}/10{escape(src_txt)}</div></div>'
+        )
+    return f'<div class="msl-cols">{"".join(items)}</div>'
+
+
+def _contre_courant_body(cc: dict[str, Any]) -> str:
+    sev = cc.get("severite")
+    if not sev:
+        return (
+            f'<div class="msl-line">Aucun écart notable : tes notes suivent sagement celles du public '
+            f'({cc.get("nb", 0)} contenus comparés). 🤝</div>'
+        )
+    top = cc.get("ecarts") or []
+    jauge = max(0.0, min(1.0, (sev["moy"] + 3) / 6))
+    lignes = [
+        f'🌡️ <b>Thermomètre de sévérité</b> — sur <b>{cc.get("nb", 0)}</b> contenus notés, tu es : '
+        f'<span style="color:{sev["couleur"]}; font-weight:800;">{sev["emoji"]} {sev["label"]}</span> '
+        f'(écart moyen <b>{sev["moy"]:+.1f} pt /10</b>, {sev["txt"]}).',
+    ]
+    barre = (
+        f'<div class="msl-bar jauge"><span style="width:{jauge * 100:.0f}%;"></span></div>'
+        '<div class="msl-legend2">😈 Très sévère · 😠 Plutôt sévère · 🎯 Moyenne · 🙂 Plutôt indulgent · 😇 Très indulgent</div>'
+    )
+    for c in top:
+        ic = "🎬" if c.get("type") == "Film" else "📺"
+        an = f" ({c.get('annee')})" if c.get("annee") else ""
+        sens = "💎 Tu as adoré ce que le public a boudé" if c.get("ecart", 0) > 0 else "🙃 Tu as boudé ce que le public a adoré"
+        lignes.append(
+            f'{ic} <b>{escape(str(c.get("titre")))}</b>{escape(an)} — Toi <b>{c.get("note", 0):.1f}/10</b> · '
+            f'Public <b>{c.get("pub", 0):.1f}/10</b> · écart <b>{c.get("ecart", 0):+.1f}</b><br>'
+            f'<span class="muted">{sens}</span>'
+        )
+    return "".join(f'<div class="msl-line">{l}</div>' for l in lignes) + barre
+
+
+def _rewatch_body(rewatch: list[dict[str, Any]]) -> str:
+    lignes = []
+    for c in rewatch:
+        an = f" ({c.get('annee')})" if c.get("annee") else ""
+        pl = "s" if c.get("ans", 1) > 1 else ""
+        lignes.append(
+            f'🔁 <b>{escape(str(c.get("titre")))}</b>{escape(an)} · il y a <b>{c.get("ans")} an{pl}</b> · '
+            f'<span class="muted">⭐ {c.get("note", 0):.1f}/10</span>'
+        )
+    return "".join(f'<div class="msl-line">{l}</div>' for l in lignes)
+
+
 def render_dashboard_widgets() -> None:
-    """Widgets du tableau de bord — rythme, compteurs à vie, projection de fin
-    (copie les widgets de l'ancienne application Trakt Smart Lists)."""
+    """Widgets du tableau de bord en rubans déroulants (skin preview-look) :
+    rythme, derniers visionnages, sorties, plus ancien, pauses longues,
+    records, créneau, coups de cœur, à contre-courant, rewatch radar.
+    0 appel API : tout est calculé sur les données déjà chargées."""
     dataset = _dataset()
     if not dataset:
         return
     dash = dashboard_mod.compute_dashboard(dataset, timezone_name="Europe/Paris")
     if dash.get("empty"):
         return
-
-    st.divider()
-    st.markdown("### ⏱️ Ton rythme de visionnage")
-    bilan = dash["bilan"]
-    c1, c2 = st.columns([0.55, 0.45])
-    with c1:
-        with st.container(border=True):
-            st.markdown(
-                f"🗓️ **{bilan['mois']}** : **{dashboard_mod._minutes_to_duree(int(bilan['heures'] * 60))}** "
-                f"· **{bilan['eps']}** épisode(s) · **{bilan['films']}** film(s)"
-            )
-            if dash["eps_sem"]:
-                rythme_txt = f"{dash['eps_sem']:.1f}".replace(".", ",")
-                st.markdown(f"🏃 Ton rythme : **{rythme_txt} ép./semaine**")
-            if dash["projection"]:
-                p = dash["projection"]
-                st.markdown(
-                    f"🏁 Au rythme actuel, tes **{dash['series_actives']} série(s) en cours** "
-                    f"({dash['reste_actives']} épisode(s) restant(s)) seront finies vers le "
-                    f"**{p.day} {dashboard_mod.MOIS_NOMS[p.month - 1]} {p.year}** "
-                    f"*(hors nouvelles saisons… et nouvelles envies)* 😉"
-                )
-                st.caption("🚫 Les séries abandonnées (statut « dropped ») sont exclues de ce calcul.")
-            elif dash["reste_actives"] > 0:
-                st.caption("🏁 Regarde encore quelques épisodes et j'estimerai ta date de fin.")
-            else:
-                st.caption("🏁 Aucune série en cours ou en pause : rien à projeter pour l'instant.")
-    with c2:
-        with st.container(border=True):
-            st.markdown("📼 **Compteurs à vie**")
-            c = dash["compteurs"]
-            st.caption(f"📺 Séries : **{dashboard_mod._minutes_to_duree(int(c['h_series'] * 60))}** ({c['nb_ep']} ép.)")
-            st.caption(f"🎬 Films : **{dashboard_mod._minutes_to_duree(int(c['h_films'] * 60))}** ({c['nb_films']} films)")
-
-    digest = dash["digest"]
-    if digest["films"] or digest["eps"]:
-        st.markdown(
-            f"🍿 **Cette semaine** : {digest['eps']} épisode(s), {digest['films']} film(s) — "
-            f"soit **{dashboard_mod._minutes_to_duree(digest['minutes'])}** de visionnage."
-        )
-
-    if dash["derniers"]:
-        st.markdown("#### 🕘 Derniers visionnages")
-        for item in dash["derniers"]:
-            ep = f" · {escape(str(item.get('episode') or ''))}" if item.get("episode") else ""
-            st.markdown(
-                f"📅 **{item['date'].strftime('%d/%m/%Y %H:%M')}** · {item['type']} · "
-                f"**{escape(str(item['titre']))}**{ep}"
-            )
-
-    # ── Widgets restaurés de Trakt Smart Lists ──────────────────────────────
-    try:
-        _render_restored_widgets(dataset)
-    except Exception:
-        pass
-
-
-def _render_restored_widgets(dataset: dict[str, Any]) -> None:
-    """Widgets restaurés de Trakt Smart Lists (0 appel API), dans un ordre
-    logique : l'action d'abord (sorties, watchlist, pauses longues), puis les
-    souvenirs (records, créneau), puis les goûts (coups de cœur, à
-    contre-courant, rewatch)."""
     w = dashboard_mod.compute_widgets(dataset, timezone_name="Europe/Paris")
 
-    # 📅 Sorties de la semaine
-    if w.get("sorties"):
-        st.divider()
-        with st.expander(f"📅 Sorties de la semaine ({len(w['sorties'])})", expanded=False):
-            st.caption("Des films de tes listes qui sortent dans les 7 prochains jours.")
-            for c in w["sorties"]:
-                an = f" ({c.get('annee')})" if c.get("annee") else ""
-                note_txt = f" · ⭐ {c.get('note', 0):.1f}/10" if c.get("note") else ""
-                jtxt = "aujourd'hui" if c.get("j") == 0 else f"dans {c.get('j')} j"
-                st.markdown(f"🎬 **{escape(str(c.get('titre')))}**{an} · {jtxt} ({c.get('date'):%d/%m}){note_txt}")
+    rubans: list[str] = []
+    delay = 0
 
-    # ⏳ Plus ancien de la watchlist
+    rubans.append(
+        _ruban("⏱️", "Ton rythme de visionnage",
+               "récap du mois · épisodes/semaine · date de fin projetée",
+               _rythme_body(dash), delay)
+    )
+    delay += 50
+
+    if dash.get("derniers"):
+        rubans.append(
+            _ruban("🕘", "Derniers visionnages",
+                   f"les {len(dash['derniers'])} derniers films et épisodes regardés",
+                   _derniers_body(dash["derniers"]), delay)
+        )
+        delay += 50
+
+    if w.get("sorties"):
+        rubans.append(
+            _ruban("📅", f"Sorties de la semaine ({len(w['sorties'])})",
+                   "des films de tes listes qui sortent dans les 7 prochains jours",
+                   _sorties_body(w["sorties"]), delay)
+        )
+        delay += 50
+
     pa = w.get("plus_ancien")
     if pa:
-        st.divider()
-        jours = pa.get("jours") or 0
-        if jours >= 365:
-            age = f"{jours // 365} an" + ("s" if jours >= 730 else "")
-        else:
-            age = f"{jours // 30} mois"
-        an = f" ({pa.get('annee')})" if pa.get("annee") else ""
-        st.markdown(
-            f"⏳ **Le plus ancien de ta Watchlist** : **{escape(str(pa.get('titre')))}**{an} "
-            f"— ajouté il y a {age}. Encore envie de le voir ?"
+        rubans.append(
+            _ruban("⏳", "Le plus ancien de ta Watchlist",
+                   "le contenu ajouté depuis le plus longtemps",
+                   _plus_ancien_body(pa), delay)
         )
+        delay += 50
 
-    # 🚦 Séries en pause longue
     if w.get("pause_longue"):
-        st.divider()
-        with st.expander(f"🚦 Séries en pause longue ({len(w['pause_longue'])})", expanded=False):
-            st.caption(
-                "Tu n'as pas regardé un épisode depuis 2 ans ou plus, alors qu'il reste des épisodes à voir — "
-                "à reprendre… ou à abandonner ? (séries terminées, abandonnées ou vues en entier exclues)"
-            )
-            for c in w["pause_longue"]:
-                an = f" ({c.get('annee')})" if c.get("annee") else ""
-                ans = (c.get("jours") or 0) // 365
-                pl = "s" if ans > 1 else ""
-                note_txt = f" · ⭐ {c.get('pub', 0):.1f}/10" if c.get("pub") else ""
-                st.markdown(
-                    f"🚦 **{escape(str(c.get('titre')))}**{an} — dernier épisode vu il y a {ans} an{pl}{note_txt}"
-                )
+        rubans.append(
+            _ruban("🚦", f"Séries en pause longue ({len(w['pause_longue'])})",
+                   "2 ans+ sans épisode, alors qu'il reste des épisodes à voir",
+                   _pause_body(w["pause_longue"]), delay)
+        )
+        delay += 50
 
-    # 🔥 Records de binge
-    rec = w.get("records")
-    if rec:
-        st.divider()
-        with st.expander("🔥 Records de binge", expanded=False):
-            st.caption("Tes plus grosses sessions — calculées sur ton historique local, sans appel API.")
-            j = rec["jour"]
-            counts = j.get("counts") or {}
-            top_key = max(counts, key=counts.get) if counts else None
-            top_titre = (j.get("shows") or {}).get(top_key)
-            extra = f" — surtout **{escape(str(top_titre))}**" if top_titre else ""
-            st.markdown(f"📅 **Jour record** : {j['nb']} épisode(s) le {j['date']:%d/%m/%Y}{extra}")
-            m = rec["mois"]
-            mois_nom = dashboard_mod.MOIS_NOMS[m["key"][1] - 1]
-            st.markdown(f"🗓️ **Mois record** : {m['nb']} épisode(s) en {mois_nom} {m['key'][0]}")
-            s = rec["serie"]
-            st.markdown(
-                f"📺 **Série la plus avalée** : **{escape(str(s.get('titre')))}** — "
-                f"{dashboard_mod._minutes_to_duree(int(s.get('min', 0)))} ({s.get('nb')} ép.)"
-            )
+    if w.get("records"):
+        rubans.append(
+            _ruban("🔥", "Tes records de binge",
+                   "jour record · mois record · série la plus avalée",
+                   _records_body(w["records"]), delay)
+        )
+        delay += 50
 
-    # 🕰️ Ton créneau préféré
-    cr = w.get("creneau")
-    if cr:
-        st.divider()
-        with st.expander("🕰️ Ton créneau préféré", expanded=False):
-            st.caption("Répartition de ton temps de visionnage par moment de la journée (survole un créneau pour voir ses horaires).")
-            # Plages horaires exactes de chaque créneau (info-bulle au survol).
-            HORAIRES = {
-                "Matin": "6 h → 12 h",
-                "Après-midi": "12 h → 18 h",
-                "Soir": "18 h → 22 h",
-                "Nuit": "22 h → 6 h",
-            }
-            items = cr.get("items") or []
-            cols = st.columns(len(items))
-            for i, it in enumerate(items):
-                with cols[i]:
-                    plage = HORAIRES.get(it["label"], "")
-                    pill = (
-                        f'<span class="reason-pill info-pill" tabindex="0" '
-                        f'data-tooltip="{escape(plage, quote=True)}" title="{escape(plage, quote=True)}">'
-                        f"{it['emoji']} {escape(it['label'])}</span>"
-                    )
-                    st.markdown(pill, unsafe_allow_html=True)
-                    st.markdown(
-                        f"<div style='font-size:1.3rem; font-weight:800; color:#CEDC00;'>{it['pct']:.0f}%</div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.caption(dashboard_mod._minutes_to_duree(int(it["min"])))
-            top = cr.get("top") or {}
-            if top:
-                st.caption(f"🏆 Ton moment préféré : {top['emoji']} **{top['label']}** ({top['pct']:.0f}% de ton temps).")
+    if w.get("creneau"):
+        rubans.append(
+            _ruban("🕰️", "Ton créneau préféré",
+                   "où regardes-tu le plus ? (survole un créneau pour ses horaires)",
+                   _creneau_body(w["creneau"]), delay)
+        )
+        delay += 50
 
-    # ⭐ Coups de cœur
     if w.get("coups_de_coeur"):
-        st.divider()
-        with st.expander(f"⭐ Mes coups de cœur ({len(w['coups_de_coeur'])})", expanded=False):
-            st.caption("Tes plus belles découvertes — de bons candidats à revoir !")
-            cols = st.columns(min(5, len(w["coups_de_coeur"])))
-            for i, c in enumerate(w["coups_de_coeur"]):
-                ic = "🎬" if c.get("type") == "Film" else "📺"
-                an = f" ({c.get('annee')})" if c.get("annee") else ""
-                src_txt = " (communauté)" if c.get("fallback") else ""
-                with cols[i % 5]:
-                    st.markdown(f"{ic} **{escape(str(c.get('titre')))}**{an}")
-                    st.caption(f"⭐ **{c.get('note', 0):.1f}**/10{src_txt}")
+        rubans.append(
+            _ruban("⭐", f"Mes coups de cœur ({len(w['coups_de_coeur'])})",
+                   "tes contenus notés 9/10 ou plus — de bons candidats à revoir",
+                   _coups_body(w["coups_de_coeur"]), delay)
+        )
+        delay += 50
 
-    # 🧭 À contre-courant (thermomètre de sévérité)
     cc = w.get("contre_courant") or {}
-    sev = cc.get("severite")
-    if sev:
-        st.divider()
-        top = cc.get("ecarts") or []
-        with st.expander(
-            f"🧭 À contre-courant {sev['emoji']}" + (f" — {len(top)} écart(s) notable(s)" if top else " — aucun écart notable"),
-            expanded=False,
-        ):
-            st.caption("Tes goûts face à la foule : ton thermomètre de sévérité, puis les contenus où TA note s'écarte le plus de celle du public.")
-            st.markdown(
-                f"🌡️ **Thermomètre de sévérité** — sur **{cc.get('nb', 0)}** contenus notés, tu es : "
-                f"<span style='color:{sev['couleur']}; font-weight:800;'>{sev['emoji']} {sev['label']}</span> "
-                f"(écart moyen **{sev['moy']:+.1f} pt /10**, {sev['txt']}).",
-                unsafe_allow_html=True,
-            )
-            jauge = max(0.0, min(1.0, (sev["moy"] + 3) / 6))
-            st.progress(jauge)
-            st.caption("😈 Très sévère · 😠 Plutôt sévère · 🎯 Moyenne · 🙂 Plutôt indulgent · 😇 Très indulgent")
-            for c in top:
-                ic = "🎬" if c.get("type") == "Film" else "📺"
-                an = f" ({c.get('annee')})" if c.get("annee") else ""
-                sens = "💎 Tu as adoré ce que le public a boudé" if c.get("ecart", 0) > 0 else "🙃 Tu as boudé ce que le public a adoré"
-                st.markdown(
-                    f"{ic} **{escape(str(c.get('titre')))}**{an} — Toi <b>{c.get('note', 0):.1f}/10</b> · "
-                    f"Public <b>{c.get('pub', 0):.1f}/10</b> · écart <b>{c.get('ecart', 0):+.1f}</b>",
-                    unsafe_allow_html=True,
-                )
-                st.caption(sens)
-    elif cc.get("nb"):
-        st.divider()
-        with st.expander("🧭 À contre-courant 🎯", expanded=False):
-            st.caption(f"Aucun écart notable : tes notes suivent sagement celles du public ({cc['nb']} contenus comparés). 🤝")
+    if cc.get("severite") or cc.get("nb"):
+        label = "À contre-courant"
+        if cc.get("severite"):
+            label += f" {cc['severite']['emoji']}"
+        top_nb = len(cc.get("ecarts") or [])
+        meta = "thermomètre : tes notes vs le public" + (f" · {top_nb} écart(s) notable(s)" if top_nb else "")
+        rubans.append(_ruban("🧭", label, meta, _contre_courant_body(cc), delay))
+        delay += 50
 
-    # 🔁 Rewatch radar
     if w.get("rewatch"):
-        st.divider()
-        with st.expander(f"🔁 Rewatch radar ({len(w['rewatch'])})", expanded=False):
-            st.caption("Vus une seule fois il y a 3 ans ou plus, et très bien notés — un soir nostalgie ?")
-            for c in w["rewatch"]:
-                an = f" ({c.get('annee')})" if c.get("annee") else ""
-                pl = "s" if c.get("ans", 1) > 1 else ""
-                st.markdown(f"🔁 **{escape(str(c.get('titre')))}**{an} · il y a {c.get('ans')} an{pl} · ⭐ {c.get('note', 0):.1f}/10")
+        rubans.append(
+            _ruban("🔁", f"Rewatch radar ({len(w['rewatch'])})",
+                   "vus une seule fois il y a 3 ans+, très bien notés",
+                   _rewatch_body(w["rewatch"]), delay)
+        )
+        delay += 50
+
+    if rubans:
+        st.markdown("\n".join(rubans), unsafe_allow_html=True)
 
 
 

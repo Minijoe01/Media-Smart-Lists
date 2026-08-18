@@ -2,6 +2,17 @@
 
 Toutes les évolutions notables de Media Smart Lists.
 
+## [V52] — 17 août 2026
+
+- 🎨 **Nouveau skin appliqué au tableau de bord** (inspiré de `docs/preview-look.html`) :
+  - **Rubans déroulants** avec icône en tuile, titre, ligne de méta et chevron ▾ — pour ⏱️ Ton rythme de visionnage, 🕘 Derniers visionnages, et les 8 widgets restaurés (sorties, plus ancien, pauses longues, records, créneau, coups de cœur, contre-courant, rewatch radar). Cliquables, repliés par défaut.
+  - **Comet biseauté** sur la barre du haut (vert `#00A392` + citron `#CEDC00`, biseau au début et à la fin) — la couleur préférée de l'utilisateur.
+  - **Fondu en cascade** à l'apparition des rubans + **surbrillance lumineuse au survol** (soulèvement, lueur).
+  - **Grain subtil** du fond, **swoosh** (trait dégradé) sous les titres de page, barre de répartition colorée du créneau, mini-cartes records en 3 colonnes.
+  - Les **expandeurs des autres pages** reçoivent l'habillage « ruban » cohérent (fond, bord, arrondi).
+- 💾 **Backup complet de l'état V51** fourni (`BACKUP-Media-Smart-Lists-V51-avant-skin.zip`, hors du dépôt) : le retour en arrière est garanti (restauration du zip, ou commit précédent sur GitHub / GitHub Desktop).
+- 🧪 Tests : dataset de test rendu **déterministe** (heures fixes pour les films — le créneau dépend de l'heure de la journée). 13/13 OK.
+
 ## [V51] — 17 août 2026
 
 - ✍️ **Thermomètre de sévérité** : « UN PEU sévère/indulgent » devient « **PLUTÔT** sévère/indulgent » (labels, textes et légende de la jauge).

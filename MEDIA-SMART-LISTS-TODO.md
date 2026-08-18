@@ -153,60 +153,58 @@ Décision (V48) : le script CLI reste **dans Media Smart Lists**, dossier
 - [x] Maquette du futur look animé (V50) : docs/maquette-animations.html + .png — « comet », fondu d'entrée, survol lumineux, en vert/citron. **À appliquer dans une version ultérieure** (les fonctionnalités passent d'abord).
 
 ### À faire PAR L'UTILISATEUR (rappels)
-- [x] **Captures d'écran à jour** : le contenu de docs/Dashboard.png, series.png,
-      Doublons.png, quoi_regarder.png, statistiques.png a été remplacé par
-      l'utilisateur (17/08/2026) — SANS renommer les fichiers.
-- [ ] **Partager l'article Alkodiques** sur le portail
-      (lesalkodiques.com) — pas encore publié.
-- [ ] (Optionnel) Supprimer docs/audit-fichiers-github.xlsx une fois lu.
+- [ ] **Captures d'écran à jour** : remplacer le CONTENU de docs/Dashboard.png,
+      series.png, Doublons.png, quoi_regarder.png, statistiques.png par des
+      captures prises sur une version récente (SANS renommer les fichiers).
+      → toujours dans la todo : l'utilisateur ne les a PAS encore modifiées
+      (17/08/2026).
+- [ ] **Valider la démo du skin** (docs/demo-skin-dashboard.html) AVANT de
+      déployer la V52 — puis donner son avis (garder / ajuster / revenir V51).
 
 ---
 
-## 🎨 Futur thème « vivant » — idées à retenir (V51+, idée utilisateur)
+## 🎨 Futur thème « vivant » — PROGRESSION (V52 : dashboard en rubans ✅)
 
-L'utilisateur a fourni **`docs/preview-look.html`** (enregistré en V51) : il
-l'adore et veut que l'app s'en rapproche dans les prochaines versions. Les
-patterns CSS viennent aussi de son site sport-auto / worker Cloudflare
-(analysé en V51). Rien n'est encore intégré : **les fonctionnalités passent
-d'abord**, le thème ensuite, SANS casser l'existant (posters, infos…).
+L'utilisateur a validé le principe (« si tu te sens capable d'appliquer le
+nouveau skin au site, vas-y, mais fais gaffe à pas tout péter »). Un backup
+de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
+(hors dépôt, dans le workspace).
 
-### À reproduire (liste exhaustive des demandes)
-- [ ] **Ruban « comet » biseauté** en haut : `clip-path: polygon(21px 0, 100% 0,
-      calc(100% - 21px) 100%, 0 100%)` (biseau au début ET à la fin), bandes
-      diagonales 115°, `animation: comet 8s linear infinite`.
-      **Couleur préférée de l'utilisateur** : vert `rgba(0,163,146,.95)` +
-      citron `rgba(206,220,0,.25)` (celle de preview-look.html, PAS le citron
-      seul de ma maquette).
-- [ ] **Rubans déroulants (widgets) avec une icône devant** : rangée =
-      icône dans une tuile (fond dégradé sombre, liseré interne) + titre +
-      ligne de méta + chevron ▾. Au survol : tuile en dégradé vert, lueur.
-- [ ] **Icônes/cartes en fondu en cascade** (`fadeUp` + `animation-delay`
-      croissant ~40 ms) et **surbrillance au survol** (translateY(-3px),
-      fond teinté, bordure, ombre lumineuse).
-- [ ] **Bandeau de métriques** en haut du tableau de bord (films vus ·
-      épisodes vus · temps total · rythme), comme dans preview-look.html.
-- [ ] **Wordmark** avec logo-tuile (rectangle arrondi + triangle de lecture +
-      point), italique 900 majuscule, halo vert sous le svg.
-- [ ] **Swoosh** (trait dégradé) sous le titre + **grain** subtil du fond.
-- [ ] **Barre de progression** segmentée en dégradé vert→citron (déjà en
-      place sur les cartes contenus, à généraliser).
-- [ ] Le thème doit être appliqué sur **TOUS les onglets** (pas seulement le
-      dashboard), en reprenant les éléments actuels (posters, liens,
-      badges, cartes contenus) avec la mise en forme de preview-look.html.
+### Fait en V52 (appliqué au tableau de bord)
+- [x] **Rubans déroulants** avec icône en tuile + titre + méta + chevron
+      (rythme, derniers visionnages + les 8 widgets restaurés).
+- [x] **Comet biseauté** sur la barre du haut, en vert `#00A392` + citron
+      `#CEDC00` (préférence utilisateur), menu ⋮ intact.
+- [x] **Fondu en cascade** (50 ms de décalage) + **surbrillance au survol**.
+- [x] **Grain** subtil + **swoosh** sous les titres de page (tous les onglets).
+- [x] Barre de répartition colorée du créneau + mini-cartes records (3 col.).
+- [x] Expandeurs natifs des autres pages habillés « ruban » (léger).
 
-### Éléments de maquette-animations.html jugés au-dessus (à proposer)
-- [ ] **Barre de répartition colorée du créneau** (Matin/Après-midi/Soir/Nuit
-      en segments verts/citron) — plus lisible que des % seuls.
-- [ ] **Mini-cartes « records »** (jour / mois / série avalée) en 3 colonnes
-      avec les gros chiffres citron.
+### Reste à faire (vers les autres onglets)
+- [ ] Étendre les rubans à icônes aux autres pages (en cours, progression,
+      nettoyage, que regarder, calendrier, stats, succès, wrapped, etc.)
+      en reprenant les posters et infos actuels.
+- [ ] **Bandeau de métriques** en haut du dashboard (films vus · épisodes
+      vus · temps total · rythme) façon preview-look.html.
+- [ ] Wordmark avec logo-tuile dans le header natif Streamlit (optionnel,
+      délicat — à faire prudemment).
+- [ ] Avis utilisateur sur la V52 → ajustements éventuels (couleurs,
+      espacements, animations).
 
 ### Rappels techniques
-- CSS injecté dans `app.py` (bloc `st.markdown(unsafe_allow_html=True)`) ;
-  boutons Streamlit 1.60 : `type="primary"` SANS `help=` ; les expandeurs
-  actuels resteront (avec habillage « ruban »).
-- Ne pas toucher aux couleurs officielles (#00A392, #00524B, #CEDC00).
-- `worker (3).js` (catalogue 1fichier/Kodi de l'utilisateur) : analysé pour
-  les patterns, PAS ajouté au dépôt (fichier privé de l'utilisateur).
+- CSS injecté dans `app.py` (bloc <style>) ; boutons Streamlit 1.60 :
+  `type="primary"` SANS `help=` ; ne pas toucher aux couleurs officielles
+  (#00A392, #00524B, #CEDC00).
+- Les rubans du dashboard sont des `<details>` HTML (interactivité native du
+  navigateur) — vérifier que rien d'autre n'utilise `_render_restored_widgets`
+  (remplacé par les helpers `_ruban` + `_*_body`).
+- **Référence visuelle** : `docs/preview-look.html` (fourni par l'utilisateur,
+  enregistré en V51) ; patterns CSS aussi issus de son site sport-auto et de
+  son `worker (3).js` (analysé, PAS ajouté au dépôt — fichier privé avec ses
+  icônes).
+- [ ] **Partager l'article Alkodiques** sur le portail
+      (lesalkodiques.com) — pas encore publié.
+- [ ] (Optionnel) Supprimer docs/audit-fichiers-github.xlsx une fois lu.
 
 ---
 
