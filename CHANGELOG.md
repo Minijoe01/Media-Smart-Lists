@@ -2,6 +2,15 @@
 
 Toutes les évolutions notables de Media Smart Lists.
 
+## [V55] — 18 août 2026
+
+- 📱 **Mobile** : espace ajouté entre le bandeau du haut et le wordmark (le titre respire sous le menu ⋮).
+- 🎨 **Cartes contenus** : survol léger (soulèvement + lueur) sur toutes les cartes (En cours, Fantômes, Calendrier, Que regarder ?), et **tuile fallback élégante** quand un poster est absent — la carte n'est plus jamais vide.
+- 👻 **Progression Fantôme** : les cartes ressemblent maintenant à « En cours de lecture » — poster (ou tuile fallback), progression, liens TMDB/MDBList/Où regarder. Le bloc redondant « ⚡ Tu peux finir ça ce soir » a été supprimé (les filtres en dessous suffisent).
+- 👋 **Choix de source clarifié** (surtout sur mobile, où les 2 cartes s'empilent) : callout d'accueil « choisis UNE seule source », badges 🔵/🟢 et descriptions guidées sur chaque carte, rappel « les données affichées suivent toujours la source choisie ».
+- 🖼️ **Maquette variante** `docs/preview-bandeau-jaune.html` (comet + swoosh jaune citron) : simple idée à voir, le bandeau vert reste en place.
+- 🧪 13/13 tests OK, app sans erreur (AppTest).
+
 ## [V54] — 18 août 2026
 
 - 🎨 **Fini le lime « kitsch » sur les cartes** : les valeurs des cartes de métriques, sous-cartes (compteurs, records) et créneaux passent en **blanc** (lisible sur fond vert). Le citron `#CEDC00` reste un **accent** : comet, barre colorée du créneau, badges, survol — l'identité Aston Martin 2026 est conservée.

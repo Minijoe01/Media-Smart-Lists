@@ -74,7 +74,6 @@ from playback_engine import (
     PLAYBACK_SORT_OPTIONS,
     enrich_playback_posters,
     filter_playback_rows,
-    finishable_tonight,
     normalize_now_playing,
     normalize_playback,
 )
@@ -788,11 +787,37 @@ st.markdown(
         color: var(--am-text) !important;
     }
 
+    /* Survol léger des cartes contenus (skin V55) : soulèvement + lueur,
+       comme les rubans — sans rien casser (posters, liens, infos). */
+    .media-list-card {
+        transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease;
+    }
+    .media-list-card:hover {
+        background: rgba(0, 163, 146, .12);
+        border-color: rgba(0, 163, 146, .55);
+        border-left-color: var(--am-lime);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 22px rgba(0, 163, 146, .18);
+    }
+
+    /* Tuile fallback quand un poster est absent (fantômes, reprises) :
+       emoji sur fond dégradé, mêmes dimensions qu'un poster — la carte
+       n'est plus jamais vide. */
+    .msl-poster-fallback {
+        display: flex; align-items: center; justify-content: center;
+        height: 132px; width: 88px; flex: 0 0 auto;
+        font-size: 30px; border-radius: 10px;
+        background: linear-gradient(180deg, #0b3f3a 0%, #04211e 100%);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 0 1px rgba(0,163,146,.14);
+    }
+    .media-list-card.upnext-card .msl-poster-fallback { height: 150px; width: 100px; }
+
     @media (max-width: 768px) {
         .msl-grid2 { grid-template-columns: 1fr; }
         .msl-grid3 { grid-template-columns: 1fr; }
-        .block-container { padding-top: 2.5rem !important; }
-        .brand-title { font-size: 1.7rem; }
+        /* Espace sous le bandeau du haut sur mobile : le wordmark respire. */
+        .block-container { padding-top: 3.6rem !important; }
+        .brand-title { font-size: 1.7rem; margin-top: .9rem; }
         .media-list-card img {
             height: 114px;
             width: 76px;
@@ -801,6 +826,8 @@ st.markdown(
             height: 126px;
             width: 84px;
         }
+        .msl-poster-fallback { height: 114px; width: 76px; }
+        .media-list-card.upnext-card .msl-poster-fallback { height: 126px; width: 84px; }
     }
     </style>
     """,
@@ -1353,6 +1380,17 @@ def _poster_url(item: dict) -> str:
     return f"https://image.tmdb.org/t/p/w500{value}"
 
 
+def _poster_html(poster: str, media_type: str = "") -> str:
+    """Poster de la carte contenus, ou tuile fallback élégante (emoji sur
+    fond dégradé) quand le poster est absent — la carte n'est plus jamais
+    vide, comme dans preview-look."""
+    if poster:
+        return f'<img src="{poster}" alt="" loading="lazy">'
+    kind = str(media_type or "").strip().lower()
+    emoji = "🎬" if kind in {"film", "movie", "movies"} else "📺"
+    return f'<div class="msl-poster-fallback">{emoji}</div>'
+
+
 def _score(item: dict) -> str:
     if not isinstance(item, dict):
         return ""
@@ -1743,7 +1781,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     title = escape(raw_title)
     year = escape(_media_year(item))
     poster = escape(_poster_url(item), quote=True)
-    image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+    image_html = _poster_html(poster, row.get("type") or "")
     metadata = []
     if row.get("genres"):
         metadata.append(" · ".join(row["genres"]))
@@ -2228,7 +2266,7 @@ def render_progress_page() -> None:
             number = episode.get("episode")
             ep_title = escape(str(episode.get("title") or ""))
             poster = escape(_poster_url(show), quote=True)
-            image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+            image_html = _poster_html(poster, row.get("type") or "")
             watched = int(row.get("watched_episodes") or 0)
             total = int(row.get("total_episodes") or 0)
             remaining = int(row.get("remaining_episodes") or 0)
@@ -2400,7 +2438,7 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
         return
     for row in rows:
         poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
-        image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+        image_html = _poster_html(poster, row.get("type") or "")
         title = escape(str(row.get("title") or "Titre inconnu"))
         year = f" ({int(row['year'])})" if row.get("year") else ""
         episode_label = escape(str(row.get("episode_label") or ""))
@@ -2549,21 +2587,6 @@ def render_ghost_page() -> None:
         )
         return
 
-    tonight = finishable_tonight(rows, limit=3)
-    if tonight:
-        st.markdown("### ⚡ Tu peux finir ça ce soir")
-        st.caption("Du temps restant connu le plus court au plus long.")
-        tonight_cols = st.columns(len(tonight))
-        for column, row in zip(tonight_cols, tonight):
-            with column:
-                label = row.get("episode_label") or row.get("type")
-                st.markdown(f"**{escape(str(row.get('title') or 'Titre'))}**")
-                st.caption(
-                    f"{escape(str(label))} · reste environ "
-                    f"{_format_minutes(int(row.get('remaining_minutes') or 0))} · "
-                    f"{float(row.get('progress') or 0):.1f}% vu"
-                )
-
     st.divider()
     type_col, progress_col, sort_col, limit_col = st.columns([0.18, 0.24, 0.40, 0.18])
     media_filter = type_col.selectbox(
@@ -2604,7 +2627,7 @@ def render_ghost_page() -> None:
 
     for row in visible[:display_limit]:
         poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
-        image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+        image_html = _poster_html(poster, row.get("type") or "")
         title = escape(str(row.get("title") or "Titre inconnu"))
         year = f" ({int(row['year'])})" if row.get("year") else ""
         episode_label = escape(str(row.get("episode_label") or ""))
@@ -3649,7 +3672,7 @@ def render_calendar_page() -> None:
         for index, row in enumerate(shown):
             with columns[index % 2]:
                 poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
-                image_html = f'<img src="{poster}" alt="" loading="lazy">' if poster else ""
+                image_html = _poster_html(poster, row.get("type") or "")
                 title = escape(str(row.get("title") or "Titre inconnu"))
                 year = f" ({int(row['year'])})" if row.get("year") else ""
                 episode = escape(str(row.get("episode_label") or ""))
@@ -4411,14 +4434,22 @@ def page_dashboard() -> None:
             st.rerun()
 
     # ── 2. Choix de la source ────────────────────────────────────────────────
+    st.markdown(
+        '<div class="accent-callout"><strong>👋 BIENVENUE</strong> · '
+        'Choisis <strong>une seule source de données</strong> pour commencer : '
+        '🔵 MDBList (en direct) ou 🟢 ton export ZIP Trakt (lecture seule). '
+        'Tu pourras changer de source à tout moment.</div>',
+        unsafe_allow_html=True,
+    )
     mdb_col, zip_col = st.columns(2, gap="large")
     with mdb_col:
         st.markdown(
             """
             <div class="source-card">
-                <span class="source-badge">TEMPS RÉEL · LECTURE/ÉCRITURE</span>
+                <span class="source-badge">🔵 EN DIRECT · LECTURE/ÉCRITURE</span>
                 <h3>🔗 Connecter MDBList</h3>
-                <p>Historique, Watchlist, notes, listes, progression, statistiques.</p>
+                <p>Historique, Watchlist, notes, listes, progression et statistiques,
+                synchronisés avec ton compte. <strong>Recommandé</strong> si tu utilises MDBList.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -4434,9 +4465,11 @@ def page_dashboard() -> None:
         st.markdown(
             """
             <div class="source-card">
-                <span class="source-badge">IMPORT LOCAL · LECTURE SEULE</span>
+                <span class="source-badge">🟢 IMPORT LOCAL · LECTURE SEULE</span>
                 <h3>📦 Importer un ZIP Trakt</h3>
-                <p>Historique complet, rewatches, Watchlist, notes et listes, sans API Trakt.</p>
+                <p>Ton export Trakt complet (historique, rewatches, Watchlist, notes,
+                listes) en lecture seule : parfait pour faire le ménage ou préparer
+                une migration vers MDBList.</p>
             </div>
             """,
             unsafe_allow_html=True,
@@ -4444,6 +4477,11 @@ def page_dashboard() -> None:
         if st.button("Préparer l'import ZIP Trakt", type="primary", key="choose_zip", use_container_width=True):
             st.session_state["pending_source"] = "trakt_zip"
             st.rerun()
+    st.caption(
+        "💡 Sur mobile, les deux cartes s'affichent l'une sous l'autre : "
+        "il suffit d'en choisir une. Les données affichées correspondent "
+        "toujours à la source choisie (badge en haut de page)."
+    )
 
     # ── 3. Actions en attente (connexion ou import) ─────────────────────────
     pending = st.session_state.get("pending_source")

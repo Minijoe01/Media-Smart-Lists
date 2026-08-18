@@ -163,7 +163,7 @@ Décision (V48) : le script CLI reste **dans Media Smart Lists**, dossier
 
 ---
 
-## 🎨 Futur thème « vivant » — PROGRESSION (V52 : dashboard en rubans ✅ · V53 : bandeaux de cartes partout ✅ · V54 : valeurs blanches + créneau lisible ✅)
+## 🎨 Futur thème « vivant » — PROGRESSION (V52-V55 : rubans ✅ · bandeaux ✅ · valeurs blanches ✅ · cartes contenus + tuiles fallback ✅)
 
 L'utilisateur a validé le principe (« si tu te sens capable d'appliquer le
 nouveau skin au site, vas-y, mais fais gaffe à pas tout péter »). Un backup
@@ -171,7 +171,7 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 (hors dépôt, dans le workspace). **V53 = uniformisation de tous les onglets**
 (le user veut « de la modernité » et « uniformiser tout l'outil »).
 
-### Fait en V52-V54
+### Fait en V52-V55
 - [x] **Rubans déroulants** avec icône en tuile + titre + méta + chevron
       (rythme, derniers visionnages + les 8 widgets restaurés).
 - [x] **Comet biseauté** sur la barre du haut, en vert `#00A392` + citron
@@ -193,11 +193,27 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] **V54 — créneau préféré lisible** : étiquettes grandes (`.lb` 1.05rem),
       info-bulle retirée, horaires affichés sous chaque étiquette (`.pl`),
       % en grand et blanc.
+- [x] **V55 — mobile** : `padding-top: 3.6rem` + `margin-top` sur le
+      brand-title (le wordmark respire sous le bandeau).
+- [x] **V55 — cartes contenus** : hover léger sur `.media-list-card`
+      (soulèvement + lueur) + **tuile fallback** `.msl-poster-fallback`
+      (helper `_poster_html`) quand un poster manque — appliqué à En cours,
+      Fantômes, Calendrier, Que regarder ?.
+- [x] **V55 — Progression Fantôme** : posters (ou tuile fallback) + liens
+      TMDB/MDBList ; bloc « ⚡ Tu peux finir ça ce soir » SUPPRIMÉ
+      (redondant avec les filtres) ; import `finishable_tonight` retiré.
+- [x] **V55 — choix de source clarifié** (mobile) : callout « 👋 BIENVENUE »,
+      badges 🔵/🟢, descriptions guidées, rappel « une seule source ».
+- [x] **V55 — maquette variante** `docs/preview-bandeau-jaune.html`
+      (comet/swoosh jaune citron) — à montrer au user, le vert reste en place.
 
-### Reste à faire (modernité des cartes contenus)
-- [ ] **Cartes contenus** (En cours de lecture, Fantômes, Que regarder ?) :
-      ajouter le survol lumineux + icône/affichage façon preview-look (les
-      cartes ont déjà posters + infos — à embellir sans tout casser).
+### Reste à faire (modernité des cartes contenus — suite)
+- [ ] Éventuels badges/icônes en plus sur les cartes contenus (Que regarder ?,
+      En cours) si le user valide la direction V55.
+- [ ] Wordmark avec logo-tuile dans le header natif Streamlit (optionnel,
+      délicat — à faire prudemment).
+- [ ] Avis utilisateur sur la maquette **bandeau jaune** (docs/preview-bandeau-jaune.html)
+      → décider si on garde le vert (probable) ou on essaie une variante.
 - [ ] **Wordmark avec logo-tuile** dans le header natif Streamlit (optionnel,
       délicat — à faire prudemment).
 - [ ] Avis utilisateur sur la V53 → ajustements éventuels (couleurs,
