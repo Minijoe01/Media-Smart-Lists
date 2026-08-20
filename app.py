@@ -800,6 +800,42 @@ st.markdown(
         box-shadow: 0 8px 22px rgba(0, 163, 146, .18);
     }
 
+    /* Cartes contenus premium (V56) : posters liserés, en-tête chip/note,
+       badges type et note publique uniformes sur toutes les pages. */
+    .media-list-card img {
+        border-radius: 10px;
+        border: 1px solid rgba(0, 163, 146, .35);
+        box-shadow: 0 4px 14px rgba(0, 0, 0, .35), inset 0 0 0 1px rgba(255, 255, 255, .04);
+    }
+    .media-list-card strong { font-size: 1.02rem; }
+    .mc-head {
+        display: flex; align-items: center; gap: 8px;
+        margin-bottom: 6px;
+    }
+    .mc-chip {
+        display: inline-block;
+        font-size: .68rem; font-weight: 800; letter-spacing: .4px;
+        color: var(--am-text);
+        background: rgba(0, 163, 146, .16);
+        border: 1px solid rgba(0, 163, 146, .4);
+        border-radius: 999px;
+        padding: 2px 9px;
+    }
+    .mc-note {
+        display: inline-block;
+        font-size: .68rem; font-weight: 800;
+        color: var(--am-lime);
+        background: rgba(206, 220, 0, .12);
+        border: 1px solid rgba(206, 220, 0, .38);
+        border-radius: 999px;
+        padding: 2px 9px;
+    }
+    .mc-pct {
+        margin-left: auto;
+        font-size: .82rem; font-weight: 800; color: var(--am-lime);
+    }
+    .mc-head .mc-pct { margin-left: auto; }
+
     /* Tuile fallback quand un poster est absent (fantômes, reprises) :
        emoji sur fond dégradé, mêmes dimensions qu'un poster — la carte
        n'est plus jamais vide. */
@@ -1391,6 +1427,43 @@ def _poster_html(poster: str, media_type: str = "") -> str:
     return f'<div class="msl-poster-fallback">{emoji}</div>'
 
 
+def _type_chip(kind: str) -> str:
+    """Petit badge du type de contenu (uniforme sur toutes les cartes)."""
+    k = str(kind or "").strip().casefold()
+    if k in {"film", "movie", "movies"}:
+        return '<span class="mc-chip">🎬 Film</span>'
+    if k in {"épisode", "episode", "ep"}:
+        return '<span class="mc-chip">📺 Épisode</span>'
+    if k in {"série", "serie", "show", "shows"}:
+        return '<span class="mc-chip">📺 Série</span>'
+    if k:
+        return f'<span class="mc-chip">{escape(k)}</span>'
+    return '<span class="mc-chip">📺</span>'
+
+
+def _public_note(item: Any) -> float | None:
+    """Note publique (communauté) d'un média, sur 10, si disponible."""
+    if not isinstance(item, dict):
+        return None
+    for key in ("score_average", "score"):
+        try:
+            value = float(item.get(key) or 0)
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            if value > 10:
+                value = value / 10.0
+            return max(0.0, min(value, 10.0))
+    return None
+
+
+def _public_note_html(item: Any) -> str:
+    note = _public_note(item)
+    if note is None:
+        return ""
+    return f'<span class="mc-note">⭐ {note:.1f}/10</span>'
+
+
 def _score(item: dict) -> str:
     if not isinstance(item, dict):
         return ""
@@ -1814,9 +1887,10 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     # Liens uniformisés (mêmes badges que En cours / Fantôme / Calendrier).
     item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
+    head = f'<div class="mc-head">{_type_chip(str(row.get("type") or ""))}{_public_note_html(item)}</div>'
     st.markdown(
         f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
-        f'{roulette_badge}<strong>{row.get("type")} — {title}</strong>'
+        f'{roulette_badge}{head}<strong>{title}</strong>'
         f'<span>{(" (" + year + ")") if year else ""}</span>'
         f'<small>{escape(" · ".join(metadata))}</small>{links_html}'
         f'<span class="score-badge">Score personnel {int(round(row.get("score", 0)))}/100 · '
@@ -2307,9 +2381,15 @@ def render_progress_page() -> None:
                 progress_line = f"📊 {watched} épisode(s) vu(s) (progression totale inconnue sans MDBList)"
                 time_line = f"⏱️ {watched_time} de visionnage"
                 bar_html = ""
+            head = (
+                f'<div class="mc-head">{_type_chip("Série")}'
+                f'{_public_note_html(show)}'
+                f'<span class="mc-pct">{percent:.0f}%</span></div>'
+            )
             st.markdown(
                 f'<div class="media-list-card upnext-card">{image_html}'
                 f'<div class="media-list-content" style="width:100%;">'
+                f'{head}'
                 f'<strong style="font-size:1.05rem;">{title}</strong>'
                 f'{genres_html}'
                 f'<div style="margin:.35rem 0;">{dates_html}</div>'
@@ -2648,10 +2728,12 @@ def render_ghost_page() -> None:
         episode_html = f'<small>▶️ {episode_label}</small>' if episode_label else ""
         row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
         links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
+        head = f'<div class="mc-head">{_type_chip(str(row.get("type") or ""))}{_public_note_html(row)}</div>'
         st.markdown(
             f'<div class="media-list-card upnext-card">{image_html}'
             f'<div class="media-list-content" style="width:100%;">'
-            f'<strong>{escape(str(row.get("type") or "Lecture"))} — {title}{year}</strong>'
+            f'{head}'
+            f'<strong>{title}{year}</strong>'
             f'{episode_html}<small>{escape(" · ".join(details))}</small>'
             f'<div class="progress-bar-container"><div class="progress-bar-fill" '
             f'style="width:{max(0,min(progress,100))}%;"></div></div>'
@@ -3689,10 +3771,14 @@ def render_calendar_page() -> None:
                 meta_html = f'<small>{escape(" · ".join(meta))}</small>' if meta else ""
                 row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
                 links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
+                head = (
+                    f'<div class="mc-head">{_type_chip(str(row.get("type") or ""))}'
+                    f'{_public_note_html(row)}</div>'
+                )
                 st.markdown(
                     f'<div class="media-list-card poster-card">{image_html}'
                     f'<div class="media-list-content" style="width:100%;">'
-                    f'<span class="source-badge">{escape(str(row.get("type") or "SORTIE").upper())}</span><br>'
+                    f'{head}'
                     f'<strong>{title}{year}</strong>{episode_html}{meta_html}{links_html}'
                     f'</div></div>',
                     unsafe_allow_html=True,

@@ -3,8 +3,8 @@
 > À transmettre avec `MEDIA-SMART-LISTS-TODO.md` si la conversation Arena
 > arrive à sa limite. Copie-colle l'URL de cette conversation à l'agent de
 > remplacement, ou donne-lui ce fichier.
-> **Dernière mise à jour : 18 août 2026 · version déployée : V54 (V55 prête à
-> livrer).**
+> **Dernière mise à jour : 18 août 2026 · version déployée : V54 · V55 et V56
+> prêtes à livrer (les deux dernières étapes).**
 >
 > ⚠️ **Contexte clé** : la « déconnexion durable » (`?msl_logged_out=1`) a été
 > RETIRÉE en V38/V39 (fausses déconnexions). On reste connecté au F5 ; la
@@ -142,14 +142,19 @@ Le user adore `docs/preview-look.html` et veut « de la modernité » +
   sous chaque étiquette (`.pl`, ex. « 18 h → 22 h »), % en grand blanc,
   barre colorée 4 segments (vert foncé/vert/citron/menthe). Info-bulle
   retirée.
-- **Cartes contenus** : `.media-list-card` a maintenant un hover léger
-  (V55). **Tuile fallback** `.msl-poster-fallback` (emoji sur fond dégradé)
-  quand un poster manque (helper `_poster_html(poster, media_type)`).
+- **Cartes contenus (V56, premium)** : en-tête uniforme avec **badge de
+  type** (`.mc-chip` via `_type_chip`), **note publique** (`.mc-note` via
+  `_public_note_html`), **% en gros** (`.mc-pct`, En cours) ; **posters
+  liserés** (bordure verte + ombre sur `.media-list-card img`) ; titres
+  épurés (Que regarder ? sans « Type — ») ; tuiles fallback
+  `.msl-poster-fallback` (`_poster_html`) quand le poster manque.
+  Appliqué à : Que regarder ?, En cours de lecture, Progression Fantôme,
+  Calendrier.
 - **Mobile** (V55) : `padding-top: 3.6rem` + `margin-top` sur le brand-title
   (le wordmark respire sous le bandeau).
-- **Maquette variante** : `docs/preview-bandeau-jaune.html` (comet/swoosh
-  jaune citron) — proposition à montrer au user, on garde le vert pour
-  l'instant.
+- **Maquettes** : `docs/preview-bandeau-jaune.html` (variante jaune, idée)
+  et `docs/preview-bandeau-vert.html` (**vert officiel** = référence).
+  `docs/demo-skin-dashboard.html` = démo du dashboard + cartes contenus.
 
 ## Points sensibles / leçons apprises
 
@@ -185,7 +190,7 @@ Le user adore `docs/preview-look.html` et veut « de la modernité » +
     + rappeler les 3 façons de revenir en arrière (message à l'IA, revert
     GitHub, zip de backup).
 
-## V55 (prête à livrer — à déployer avec le user)
+## V55-V56 (prêtes à livrer — à déployer avec le user)
 
 - **Mobile** : espace entre le bandeau du haut et le wordmark (padding-top
   3.6rem + margin-top).
@@ -200,6 +205,9 @@ Le user adore `docs/preview-look.html` et veut « de la modernité » +
   affichées suivent toujours la source choisie).
 - **Maquette** `docs/preview-bandeau-jaune.html` (idée à montrer, on garde
   le vert).
+
+**V56** : cartes contenus premium (chips type + note publique + % + posters
+liserés) sur 4 pages ; maquette verte officielle ; démo mise à jour.
 
 ## Prochaines étapes (voir TODO pour le détail)
 

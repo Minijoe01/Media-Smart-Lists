@@ -2,6 +2,18 @@
 
 Toutes les évolutions notables de Media Smart Lists.
 
+## [V56] — 18 août 2026
+
+- 🎨 **Cartes contenus premium sur 4 pages** (Que regarder ?, En cours de lecture, Progression Fantôme, Calendrier) — toutes mes idées, sans être bridé :
+  - **en-tête de carte** uniforme : badge de type (🎬 Film / 📺 Série / 📺 Épisode), **note publique** ⭐ x.x/10 (en badge citron), et **% de progression** en gros (En cours de lecture) ;
+  - **posters liserés** : bordure verte + ombre interne/externe (plus de poster « plat ») ;
+  - **titres affinés** (Que regarder ? n'affiche plus « Type — » en doublon du badge) ;
+  - tuiles fallback (🎬/📺) déjà en place quand le poster manque.
+  - Toutes les infos, fonctionnalités et liens (TMDB/MDBList/Où regarder) sont conservés.
+- 🖼️ **Maquette vert Aston Martin** `docs/preview-bandeau-vert.html` : la même que la jaune, mais avec le **vert officiel** `#00A392` + vert foncé `#00524B` (référence du thème).
+- 🖥️ La démo `docs/demo-skin-dashboard.html` montre les nouvelles cartes (En cours, Fantôme, Que regarder ?) avec chips + tuiles fallback.
+- 🧪 13/13 tests OK, app sans erreur (AppTest).
+
 ## [V55] — 18 août 2026
 
 - 📱 **Mobile** : espace ajouté entre le bandeau du haut et le wordmark (le titre respire sous le menu ⋮).

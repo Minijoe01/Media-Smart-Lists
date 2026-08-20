@@ -163,7 +163,7 @@ Décision (V48) : le script CLI reste **dans Media Smart Lists**, dossier
 
 ---
 
-## 🎨 Futur thème « vivant » — PROGRESSION (V52-V55 : rubans ✅ · bandeaux ✅ · valeurs blanches ✅ · cartes contenus + tuiles fallback ✅)
+## 🎨 Futur thème « vivant » — PROGRESSION (V52-V56 : rubans ✅ · bandeaux ✅ · valeurs blanches ✅ · cartes contenus premium ✅)
 
 L'utilisateur a validé le principe (« si tu te sens capable d'appliquer le
 nouveau skin au site, vas-y, mais fais gaffe à pas tout péter »). Un backup
@@ -171,7 +171,7 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 (hors dépôt, dans le workspace). **V53 = uniformisation de tous les onglets**
 (le user veut « de la modernité » et « uniformiser tout l'outil »).
 
-### Fait en V52-V55
+### Fait en V52-V56
 - [x] **Rubans déroulants** avec icône en tuile + titre + méta + chevron
       (rythme, derniers visionnages + les 8 widgets restaurés).
 - [x] **Comet biseauté** sur la barre du haut, en vert `#00A392` + citron
@@ -206,14 +206,23 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       badges 🔵/🟢, descriptions guidées, rappel « une seule source ».
 - [x] **V55 — maquette variante** `docs/preview-bandeau-jaune.html`
       (comet/swoosh jaune citron) — à montrer au user, le vert reste en place.
+- [x] **V56 — cartes contenus premium** (4 pages : Que regarder ?, En cours,
+      Fantômes, Calendrier) : en-tête uniforme avec **badge de type**
+      (`_type_chip`) + **note publique** (`_public_note_html`) + **%** en
+      gros (En cours) ; **posters liserés** (bordure verte + ombre) ; titres
+      épurés (plus de « Film — » en doublon) ; tuiles fallback conservées.
+      Helpers : `_type_chip`, `_public_note`, `_public_note_html`.
+- [x] **V56 — maquette vert Aston Martin** `docs/preview-bandeau-vert.html`
+      (comet/swoosh/survol en vert officiel) — référence du thème.
+- [x] **V56 — démo** `docs/demo-skin-dashboard.html` : section « Cartes
+      contenus » avec chips + tuiles.
 
-### Reste à faire (modernité des cartes contenus — suite)
-- [ ] Éventuels badges/icônes en plus sur les cartes contenus (Que regarder ?,
-      En cours) si le user valide la direction V55.
+### Reste à faire (idées en attente)
 - [ ] Wordmark avec logo-tuile dans le header natif Streamlit (optionnel,
       délicat — à faire prudemment).
-- [ ] Avis utilisateur sur la maquette **bandeau jaune** (docs/preview-bandeau-jaune.html)
-      → décider si on garde le vert (probable) ou on essaie une variante.
+- [ ] Avis utilisateur sur la maquette **bandeau jaune** vs **verte**
+      (docs/preview-bandeau-jaune.html / preview-bandeau-vert.html) —
+      le vert officiel reste la référence.
 - [ ] **Wordmark avec logo-tuile** dans le header natif Streamlit (optionnel,
       délicat — à faire prudemment).
 - [ ] Avis utilisateur sur la V53 → ajustements éventuels (couleurs,
