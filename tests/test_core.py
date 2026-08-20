@@ -149,6 +149,36 @@ class TestStats(unittest.TestCase):
         self.assertEqual(keys, sorted(keys))
 
 
+class TestRecommendationPresets(unittest.TestCase):
+    """Presets « Que regarder ? » — nouveaux presets de la V57."""
+
+    def test_new_presets(self):
+        from recommendation_engine import PRESET_NAMES, preset_matches
+
+        profile = {"genre_affinity": {}}
+        self.assertIn("🎬 Film marathon — 2h30 et plus", PRESET_NAMES)
+        self.assertIn("🌙 Séries à épisodes courts (≤ 30 min)", PRESET_NAMES)
+        self.assertIn("♾️ Séries interminables (100+ épisodes)", PRESET_NAMES)
+        self.assertIn("🕵️ Polars & thrillers", PRESET_NAMES)
+        self.assertIn("🚀 Science-fiction", PRESET_NAMES)
+        self.assertIn("❤️ Romance", PRESET_NAMES)
+        self.assertIn("🎞️ Documentaires", PRESET_NAMES)
+
+        film_long = {"type": "Film", "runtime": 175, "note": 7.0, "genres": ["Action"]}
+        self.assertTrue(preset_matches("🎬 Film marathon — 2h30 et plus", film_long, profile))
+        self.assertFalse(preset_matches("🎬 Film marathon — 2h30 et plus",
+                                        {"type": "Film", "runtime": 90, "genres": []}, profile))
+
+        serie_courte = {"type": "Série", "runtime": 25, "genres": ["Comédie"]}
+        self.assertTrue(preset_matches("🌙 Séries à épisodes courts (≤ 30 min)", serie_courte, profile))
+
+        serie_longue = {"type": "Série", "runtime": 45, "genres": [], "total_episodes": 120}
+        self.assertTrue(preset_matches("♾️ Séries interminables (100+ épisodes)", serie_longue, profile))
+
+        polar = {"type": "Film", "runtime": 100, "genres": ["Crime"]}
+        self.assertTrue(preset_matches("🕵️ Polars & thrillers", polar, profile))
+
+
 class TestDashboardWidgets(unittest.TestCase):
     """Widgets restaurés du tableau de bord (compute_widgets, 0 appel API)."""
 
