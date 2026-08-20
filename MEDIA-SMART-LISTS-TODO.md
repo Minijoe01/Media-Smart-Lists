@@ -163,7 +163,7 @@ Décision (V48) : le script CLI reste **dans Media Smart Lists**, dossier
 
 ---
 
-## 🎨 Futur thème « vivant » — PROGRESSION (V52-V56 : rubans ✅ · bandeaux ✅ · valeurs blanches ✅ · cartes contenus premium ✅)
+## 🎨 Futur thème « vivant » — PROGRESSION (V52-V57 : rubans ✅ · bandeaux ✅ · valeurs blanches ✅ · cartes premium ✅ · Que regarder ? boosté ✅)
 
 L'utilisateur a validé le principe (« si tu te sens capable d'appliquer le
 nouveau skin au site, vas-y, mais fais gaffe à pas tout péter »). Un backup
@@ -171,7 +171,7 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 (hors dépôt, dans le workspace). **V53 = uniformisation de tous les onglets**
 (le user veut « de la modernité » et « uniformiser tout l'outil »).
 
-### Fait en V52-V56
+### Fait en V52-V57
 - [x] **Rubans déroulants** avec icône en tuile + titre + méta + chevron
       (rythme, derniers visionnages + les 8 widgets restaurés).
 - [x] **Comet biseauté** sur la barre du haut, en vert `#00A392` + citron
@@ -216,13 +216,25 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       (comet/swoosh/survol en vert officiel) — référence du thème.
 - [x] **V56 — démo** `docs/demo-skin-dashboard.html` : section « Cartes
       contenus » avec chips + tuiles.
+- [x] **V57 — preview comète test** `docs/preview-comet-test.html` :
+      couleurs #042E2B + #00A392 (simple test — l'app garde vert+citron).
+- [x] **V57 — Up Next** : badge « 📺 Série » retiré (séries évidentes) ;
+      étiquettes Film/Série conservées sur les points de reprise.
+- [x] **V57 — Que regarder ? boosté** :
+      - 7 nouveaux presets (28) : Film marathon 2h30+, Séries courtes ≤30min,
+        Séries 100+ ép., Polars & thrillers, Science-fiction, Romance,
+        Documentaires ;
+      - 6 tris inversés : Plus long d'abord, Notes basses, Moins populaires,
+        Ajouté le plus ancien, Anciens d'abord, Plus exigeant ;
+      - filtre « Durée minimum » (≥1h → ≥3h) ;
+      - genres MULTIPLES ET/OU (multiselect + recherche intégrée).
+- [x] **V57 — test unitaire** `TestRecommendationPresets` (14 tests OK).
 
 ### Reste à faire (idées en attente)
 - [ ] Wordmark avec logo-tuile dans le header natif Streamlit (optionnel,
       délicat — à faire prudemment).
-- [ ] Avis utilisateur sur la maquette **bandeau jaune** vs **verte**
-      (docs/preview-bandeau-jaune.html / preview-bandeau-vert.html) —
-      le vert officiel reste la référence.
+- [ ] Avis utilisateur : preview comète test #042E2B+#00A392 (décider si on
+      garde vert+citron ou on change) + maquette jaune vs verte.
 - [ ] **Wordmark avec logo-tuile** dans le header natif Streamlit (optionnel,
       délicat — à faire prudemment).
 - [ ] Avis utilisateur sur la V53 → ajustements éventuels (couleurs,

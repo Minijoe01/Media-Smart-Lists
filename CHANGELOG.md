@@ -2,6 +2,17 @@
 
 Toutes les évolutions notables de Media Smart Lists.
 
+## [V57] — 20 août 2026
+
+- 🖼️ **Preview comète test** `docs/preview-comet-test.html` : bandeau avec les couleurs `#042E2B` + `#00A392` (simple test — les couleurs actuelles restent en place).
+- 🎬 **En cours de lecture (Up Next)** : le badge « 📺 Série » est retiré (inutile quand tout est des séries). S'il y a un point de reprise, les étiquettes Film/Série restent affichées (page Progression Fantôme).
+- 🎯 **Que regarder ? — beaucoup plus de filtres et de tris** :
+  - **7 nouveaux presets** (28 au total) : 🎬 Film marathon (2h30+), 🌙 Séries à épisodes courts (≤ 30 min), ♾️ Séries interminables (100+ ép.), 🕵️ Polars & thrillers, 🚀 Science-fiction, ❤️ Romance, 🎞️ Documentaires ;
+  - **tris inversés** : ⏱️ Plus long d'abord, ⭐ Notes les plus basses, 🔥 Moins populaires, 📥 Ajouté le plus ancien, 🆒 Plus anciens d'abord, 🚪 Le plus exigeant ;
+  - **filtre « Durée minimum »** (≥ 1h / 1h30 / 2h / 2h30 / 3h) — pour trouver le film le plus long possible ;
+  - **filtre de genres multiples** (multiselect avec recherche intégrée, comme « Signaux à rechercher » du Nettoyage) + choix **ET (tous les genres) / OU (au moins un)**.
+- 🧪 14 tests unitaires OK, app sans erreur (AppTest).
+
 ## [V56] — 18 août 2026
 
 - 🎨 **Cartes contenus premium sur 4 pages** (Que regarder ?, En cours de lecture, Progression Fantôme, Calendrier) — toutes mes idées, sans être bridé :

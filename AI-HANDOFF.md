@@ -3,8 +3,8 @@
 > À transmettre avec `MEDIA-SMART-LISTS-TODO.md` si la conversation Arena
 > arrive à sa limite. Copie-colle l'URL de cette conversation à l'agent de
 > remplacement, ou donne-lui ce fichier.
-> **Dernière mise à jour : 18 août 2026 · version déployée : V54 · V55 et V56
-> prêtes à livrer (les deux dernières étapes).**
+> **Dernière mise à jour : 20 août 2026 · version déployée : V54 · V55 à V57
+> prêtes à livrer (les dernières étapes).**
 >
 > ⚠️ **Contexte clé** : la « déconnexion durable » (`?msl_logged_out=1`) a été
 > RETIRÉE en V38/V39 (fausses déconnexions). On reste connecté au F5 ; la
@@ -190,7 +190,7 @@ Le user adore `docs/preview-look.html` et veut « de la modernité » +
     + rappeler les 3 façons de revenir en arrière (message à l'IA, revert
     GitHub, zip de backup).
 
-## V55-V56 (prêtes à livrer — à déployer avec le user)
+## V55-V57 (prêtes à livrer — à déployer avec le user)
 
 - **Mobile** : espace entre le bandeau du haut et le wordmark (padding-top
   3.6rem + margin-top).
@@ -208,6 +208,11 @@ Le user adore `docs/preview-look.html` et veut « de la modernité » +
 
 **V56** : cartes contenus premium (chips type + note publique + % + posters
 liserés) sur 4 pages ; maquette verte officielle ; démo mise à jour.
+
+**V57** : preview comète test `docs/preview-comet-test.html` (#042E2B + #00A392) ;
+Up Next sans badge « Série » ; Que regarder ? boosté : 7 nouveaux presets (28),
+6 tris inversés (dont « Plus long d'abord »), filtre « Durée minimum », genres
+multiples ET/OU (multiselect + recherche, mode « Tous (ET) » filtré en local).
 
 ## Prochaines étapes (voir TODO pour le détail)
 

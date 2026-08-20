@@ -1799,6 +1799,9 @@ def _reset_recommendation_filters() -> None:
         "qr_status": "Tous les statuts",
         "qr_sort": "✨ Pour moi (recommandé)",
         "qr_preset": "Aucun preset",
+        "qr_genres": [],
+        "qr_genre_mode": "Au moins un (OU)",
+        "qr_duration_min": "Aucune",
     }
     for key, value in defaults.items():
         st.session_state[key] = value
@@ -2000,8 +2003,31 @@ def render_watchlist_page() -> None:
                         seen.add(name)
                         genre_by_title[str(name)] = str(name)
         genre_titles = sorted(seen, key=str.casefold)
-    selected_genre = genre_col.selectbox("Genre", ["Tous"] + genre_titles, key="watchlist_genre")
+    selected_genres = genre_col.multiselect(
+        "Genres (recherche intégrée)",
+        genre_titles,
+        key="qr_genres",
+        placeholder="Choisis 1+ genres…",
+    )
     selected_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
+
+    dur_col, mode_col = st.columns([0.3, 0.7])
+    duration_min = dur_col.selectbox(
+        "Durée minimum",
+        ["Aucune", "≥ 1h", "≥ 1h30", "≥ 2h", "≥ 2h30", "≥ 3h"],
+        key="qr_duration_min",
+    )
+    genre_mode = mode_col.radio(
+        "Correspondance des genres",
+        ["Tous (ET)", "Au moins un (OU)"],
+        key="qr_genre_mode",
+        horizontal=True,
+    )
+    st.caption(
+        "🎭 Genre(s) : « Tous (ET) » = le contenu doit avoir TOUS les genres choisis "
+        "(ex. Animation ET Biographie) · « Au moins un (OU) » = n'importe lequel. "
+        "La recherche intégrée du champ permet de retrouver n'importe quel genre."
+    )
 
     f1, f2, f3, f4 = st.columns(4)
     search = f1.text_input("Recherche", key="qr_search", placeholder="Titre…")
@@ -2028,11 +2054,17 @@ def render_watchlist_page() -> None:
         [
             "✨ Pour moi (recommandé)",
             "⭐ Meilleures notes",
+            "⭐ Notes les plus basses",
             "⏱️ Plus rapide",
+            "⏱️ Plus long d'abord",
             "🔥 Populaires",
+            "🔥 Moins populaires",
             "📥 Ajouté récemment",
+            "📥 Ajouté le plus ancien",
             "🆕 Nouveautés",
+            "🆒 Plus anciens d'abord",
             "🚪 Zéro effort",
+            "🚪 Le plus exigeant",
             "🎬 Films d’abord",
             "📺 Séries d’abord",
             "🙅 Pas pour moi",
@@ -2044,8 +2076,7 @@ def render_watchlist_page() -> None:
 
     items = list(source["movies"]) + list(source["shows"])
     api_calls_extra = 0
-    if selected_genre != "Tous":
-        slug = genre_by_title.get(selected_genre, selected_genre.lower())
+    if selected_genres:
         cache = st.session_state.setdefault("_source_genre_cache", {})
         member_keys = source.get("members") or [source["key"]]
         combined_movies = []
@@ -2060,22 +2091,24 @@ def render_watchlist_page() -> None:
             return
         try:
             provider = MDBListProvider(mdb_oauth.access_token())
-            with st.spinner(f"Filtrage MDBList : {selected_genre}…"):
-                for member_key in member_keys:
-                    member = source_by_key.get(member_key)
-                    if not member:
-                        continue
-                    cache_key = f"{member_key}:{slug}"
-                    response = cache.get(cache_key)
-                    if not isinstance(response, dict):
-                        if member["kind"] == "watchlist":
-                            response = provider.watchlist(slug)
-                        else:
-                            response = provider.list_items(int(member["id"]), slug)
-                        cache[cache_key] = response
-                        api_calls_extra += 1
-                    combined_movies.extend(response.get("movies") or [])
-                    combined_shows.extend(response.get("shows") or [])
+            with st.spinner(f"Filtrage MDBList : {len(selected_genres)} genre(s)…"):
+                for genre_name in selected_genres:
+                    slug = genre_by_title.get(genre_name, str(genre_name).lower())
+                    for member_key in member_keys:
+                        member = source_by_key.get(member_key)
+                        if not member:
+                            continue
+                        cache_key = f"{member_key}:{slug}"
+                        response = cache.get(cache_key)
+                        if not isinstance(response, dict):
+                            if member["kind"] == "watchlist":
+                                response = provider.watchlist(slug)
+                            else:
+                                response = provider.list_items(int(member["id"]), slug)
+                            cache[cache_key] = response
+                            api_calls_extra += 1
+                        combined_movies.extend(response.get("movies") or [])
+                        combined_shows.extend(response.get("shows") or [])
             st.session_state["_source_genre_cache"] = cache
             account = mdb_oauth.account_summary()
             if provider.rate_limit_remaining is not None and account:
@@ -2090,13 +2123,28 @@ def render_watchlist_page() -> None:
             )
             return
         items = dedupe(combined_movies) + dedupe(combined_shows)
+        # Application locale du mode ET / OU sur les genres choisis
+        # (la réunion API correspond au OU ; le ET est filtré ici).
+        if genre_mode == "Tous (ET)":
+            wanted = {str(genre).casefold() for genre in selected_genres}
+
+            def _has_all_genres(media: dict) -> bool:
+                names = set()
+                for genre in media.get("genres") or []:
+                    if isinstance(genre, dict):
+                        genre = genre.get("name") or genre.get("slug")
+                    if genre:
+                        names.add(str(genre).casefold())
+                return wanted.issubset(names)
+
+            items = [item for item in items if _has_all_genres(item)]
 
     scored = [
         score_item(
             item,
             profile,
             source_name=source["name"],
-            known_genre=(selected_genre if selected_genre != "Tous" else None),
+            known_genre=(selected_genres[0] if len(selected_genres) == 1 else None),
         )
         for item in items
     ]
@@ -2128,6 +2176,11 @@ def render_watchlist_page() -> None:
             continue
         if not time_ok(row):
             continue
+        if duration_min != "Aucune":
+            minutes = row.get("runtime") or 0
+            minimums = {"≥ 1h": 60, "≥ 1h30": 90, "≥ 2h": 120, "≥ 2h30": 150, "≥ 3h": 180}
+            if not minutes or minutes < minimums[duration_min]:
+                continue
         if status_filter != "Tous les statuts":
             if row["type"] != "Série":
                 continue
@@ -2151,16 +2204,28 @@ def render_watchlist_page() -> None:
     display_rows = list(filtered)
     if sort_mode.startswith("✨"):
         display_rows.sort(key=lambda row: (-row["score"], -row["friction"]))
+    elif sort_mode.startswith("⭐ Notes"):
+        display_rows.sort(key=lambda row: ((row.get("note") or 0), -row["score"]))
     elif sort_mode.startswith("⭐"):
         display_rows.sort(key=lambda row: (-(row.get("note") or 0), -row["score"]))
+    elif sort_mode.startswith("⏱️ Plus long"):
+        display_rows.sort(key=lambda row: (-(needed_minutes(row) or 10**9), -row["score"]))
     elif sort_mode.startswith("⏱️"):
         display_rows.sort(key=lambda row: (needed_minutes(row) or 10**9, -row["score"]))
+    elif sort_mode.startswith("🔥 Moins"):
+        display_rows.sort(key=lambda row: ((row.get("votes") or 0), -row["score"]))
     elif sort_mode.startswith("🔥"):
         display_rows.sort(key=lambda row: (-(row.get("votes") or 0), -row["score"]))
+    elif sort_mode.startswith("📥 Ajouté le plus ancien"):
+        display_rows.sort(key=lambda row: (row.get("added_days") is None, -(row.get("added_days") or 0), -row["score"]))
     elif sort_mode.startswith("📥"):
         display_rows.sort(key=lambda row: (row.get("added_days") is None, row.get("added_days") or 0, -row["score"]))
+    elif sort_mode.startswith("🆒"):
+        display_rows.sort(key=lambda row: ((row.get("year") or 0), -row["score"]))
     elif sort_mode.startswith("🆕"):
         display_rows.sort(key=lambda row: (-(row.get("year") or 0), -row["score"]))
+    elif sort_mode.startswith("🚪 Le plus exigeant"):
+        display_rows.sort(key=lambda row: ((row["friction"]), -row["score"]))
     elif sort_mode.startswith("🚪"):
         display_rows.sort(key=lambda row: (-row["friction"], -row["score"]))
     elif sort_mode.startswith("🎬"):
@@ -2176,7 +2241,7 @@ def render_watchlist_page() -> None:
     source_note = (
         f"filtre MDBList actualisé ({api_calls_extra} appel(s)), puis mémorisé pour cette session"
         if api_calls_extra else
-        ("filtre déjà mémorisé pour cette session" if selected_genre != "Tous" else "analyse locale · quota MDBList préservé")
+        ("filtre déjà mémorisé pour cette session" if selected_genres else "analyse locale · quota MDBList préservé")
     )
     st.markdown(
         f'<div class="accent-callout"><strong>{len(display_rows)} RÉSULTAT(S)</strong> · '
@@ -2382,7 +2447,7 @@ def render_progress_page() -> None:
                 time_line = f"⏱️ {watched_time} de visionnage"
                 bar_html = ""
             head = (
-                f'<div class="mc-head">{_type_chip("Série")}'
+                f'<div class="mc-head">'
                 f'{_public_note_html(show)}'
                 f'<span class="mc-pct">{percent:.0f}%</span></div>'
             )

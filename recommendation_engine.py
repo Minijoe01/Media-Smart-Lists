@@ -754,6 +754,13 @@ PRESET_NAMES = [
     "🗳️ Plébiscite critique + public",
     "🚪 Zéro effort ce soir",
     "🌍 Cinéma du monde",
+    "🎬 Film marathon — 2h30 et plus",
+    "🌙 Séries à épisodes courts (≤ 30 min)",
+    "♾️ Séries interminables (100+ épisodes)",
+    "🕵️ Polars & thrillers",
+    "🚀 Science-fiction",
+    "❤️ Romance",
+    "🎞️ Documentaires",
 ]
 
 
@@ -807,4 +814,18 @@ def preset_matches(name: str, row: dict[str, Any], profile: dict[str, Any]) -> b
         return row.get("friction", 0) >= 90
     if name.startswith("🌍"):
         return bool(row.get("country") and row["country"] != "us" and note >= 7)
+    if name.startswith("🎬 Film marathon"):
+        return row["type"] == "Film" and (row.get("runtime") or 0) >= 150
+    if name.startswith("🌙"):
+        return row["type"] == "Série" and 0 < (row.get("runtime") or 0) <= 30
+    if name.startswith("♾️"):
+        return row["type"] == "Série" and (row.get("total_episodes") or 0) >= 100
+    if name.startswith("🕵️"):
+        return bool(genres & {"crime", "thriller", "mystery", "detective"})
+    if name.startswith("🚀"):
+        return bool(genres & {"science fiction", "sci-fi", "scifi"})
+    if name.startswith("❤️"):
+        return bool(genres & {"romance"})
+    if name.startswith("🎞️"):
+        return bool(genres & {"documentary", "documentaire"})
     return True
