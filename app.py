@@ -227,9 +227,9 @@ st.markdown(
     }
 
     .accent-callout {
-        background: linear-gradient(135deg, rgba(0, 163, 146, .12), rgba(0, 0, 0, .12));
-        border: 1px solid rgba(0, 163, 146, .40);
-        border-left: 4px solid var(--am-green);
+        background: linear-gradient(135deg, rgba(0, 163, 146, .18), rgba(0, 0, 0, .32));
+        border: 1px solid rgba(255, 225, 0, .55);
+        border-left: 4px solid var(--am-yellow);
         border-radius: 13px;
         color: var(--am-text);
         font-size: .88rem;
@@ -274,9 +274,9 @@ st.markdown(
     }
     .source-card { min-height: 185px; }
     .guide-step {
-        background: rgba(0, 163, 146, .08);
-        border: 1px solid rgba(0, 163, 146, .30);
-        border-left: 3px solid var(--am-green);
+        background: linear-gradient(135deg, rgba(0, 163, 146, .16), rgba(0, 0, 0, .30));
+        border: 1px solid rgba(255, 225, 0, .45);
+        border-left: 3px solid var(--am-yellow);
         border-radius: 10px;
         color: var(--am-text) !important;
         font-size: .86rem;
@@ -393,16 +393,15 @@ st.markdown(
         min-width: 0;
     }
     .progress-bar-container {
-        background: rgba(0, 0, 0, .45);
-        border: 1px solid rgba(255, 255, 255, .10);
+        background: linear-gradient(90deg, #FFE100, #FFC400);
         border-radius: 8px;
-        height: 10px;
-        margin: .55rem 0;
+        height: 12px;
+        margin: .58rem 0;
         overflow: hidden;
         width: 100%;
     }
     .progress-bar-fill {
-        background: linear-gradient(90deg, #00524B 0%, #00A392 92%, #FFE100 100%);
+        background: var(--am-green);
         border-radius: 8px;
         height: 100%;
         transition: width .6s cubic-bezier(.4,0,.2,1);
@@ -422,14 +421,14 @@ st.markdown(
     }
 
     .source-badge {
-        background: rgba(255,225,0,.12);
-        border: 1px solid rgba(255,225,0,.42);
+        background: linear-gradient(135deg, rgba(0, 163, 146, .18), rgba(0, 0, 0, .32));
+        border: 1px solid rgba(255, 225, 0, .55);
         border-radius: 999px;
-        color: var(--am-yellow);
+        color: var(--am-text);
         display: inline-block;
         font-size: .72rem;
         font-weight: 800;
-        padding: .24rem .55rem;
+        padding: .24rem .6rem;
     }
     /* Liens contenus : petits badges discrets, neutres, jaune au survol. */
     .link-pill {
@@ -470,11 +469,21 @@ st.markdown(
         border-radius: 16px !important;
         box-shadow: none !important;
         color: var(--am-text) !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
         font-weight: 600 !important;
         min-height: 3rem;
         padding: .75em 1.3em !important;
         text-shadow: none !important;
         width: 100% !important;
+    }
+    .stButton > button p,
+    div[data-testid="stButton"] > button p,
+    [data-testid="stButton"] button p {
+        text-align: center !important;
+        margin: 0 !important;
     }
     .stButton > button:hover,
     div[data-testid="stButton"] > button:hover,
@@ -558,13 +567,12 @@ st.markdown(
     /* Barres de progression : remplissage vert (pointe jaune), piste carbone. */
     div[data-testid="stProgress"] [role="progressbar"] > div > div,
     div[data-testid="stProgress"] [role="progressbar"] > div > div > div {
-        background: linear-gradient(90deg, #00524B 0%, #00A392 92%, #FFE100 100%) !important;
+        background: linear-gradient(90deg, #00524B, #00A392) !important;
         border-radius: 999px;
     }
     div[data-testid="stProgress"] [role="progressbar"] > div,
     div[data-testid="stProgress"] > div > div > div {
-        background: rgba(0, 0, 0, 0.45) !important;
-        border: 1px solid rgba(255, 255, 255, 0.10) !important;
+        background: linear-gradient(90deg, #FFE100, #FFC400) !important;
         border-radius: 999px;
     }
 
@@ -622,8 +630,8 @@ st.markdown(
         from { opacity: 0; transform: translateY(14px); }
         to   { opacity: 1; transform: translateY(0); }
     }
-    /* Comet biseauté sur la barre du haut (vert + touches jaune/blanche,
-       sur fond carbone — thème F1 2026). */
+    /* Comet biseauté sur la barre du haut : version précédente, fines
+       rayures discrètes (vert + jaune subtil). */
     header[data-testid="stHeader"]::before {
         content: "";
         position: absolute; top: 0; bottom: 0; left: 0; right: 0;
@@ -631,9 +639,8 @@ st.markdown(
         -webkit-clip-path: polygon(21px 0, 100% 0, calc(100% - 21px) 100%, 0 100%);
                 clip-path: polygon(21px 0, 100% 0, calc(100% - 21px) 100%, 0 100%);
         background: repeating-linear-gradient(115deg,
-            rgba(0, 163, 146, .96) 0px, rgba(0, 163, 146, .96) 6px,
-            rgba(255, 225, 0, .90) 6px, rgba(255, 225, 0, .90) 8px,
-            rgba(255, 255, 255, .85) 8px, rgba(255, 255, 255, .85) 9px);
+            rgba(0, 163, 146, .95) 0px, rgba(0, 163, 146, .95) 2px,
+            rgba(255, 225, 0, .25) 2px, rgba(255, 225, 0, .25) 5px);
         -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,.16) 0%, rgba(0,0,0,.5) 55%, rgba(0,0,0,1) 100%);
                 mask-image: linear-gradient(90deg, rgba(0,0,0,.16) 0%, rgba(0,0,0,.5) 55%, rgba(0,0,0,1) 100%);
         animation: msl-comet 8s linear infinite;
@@ -812,7 +819,7 @@ st.markdown(
         margin-bottom: 4px;
     }
     .mc-head strong { flex: 1 1 auto; min-width: 0; }
-    .mc-year { color: var(--am-text-muted); }
+    .mc-year { color: var(--am-text-muted); font-size: .84rem; font-weight: 600; margin-left: .4rem; white-space: nowrap; }
     .mc-type {
         display: inline-flex; align-items: center;
         color: var(--am-text-muted);
@@ -883,6 +890,11 @@ st.markdown(
         margin-top: 2px;
         text-transform: uppercase;
     }
+    .mc-inline-pct {
+        display: none;
+        color: var(--am-yellow);
+        font-weight: 800;
+    }
 
     @media (max-width: 768px) {
         .msl-grid2 { grid-template-columns: 1fr; }
@@ -900,25 +912,10 @@ st.markdown(
         }
         .msl-poster-fallback { height: 114px; width: 76px; }
         .media-list-card.upnext-card .msl-poster-fallback { height: 126px; width: 84px; }
-        /* Sur mobile, la métrique (%, score, horaire) devient une pastille
-           flottante en haut à droite : elle ne consomme plus de largeur de
-           colonne, les textes ne sautent plus à la ligne. */
-        .media-list-card { position: relative; }
-        .media-list-content { padding-right: 3.1rem; }
-        .media-list-pct {
-            position: absolute;
-            top: .45rem;
-            right: .5rem;
-            min-width: 0;
-            border-left: none;
-            background: rgba(0, 0, 0, .45);
-            border: 1px solid rgba(255, 225, 0, .35);
-            border-radius: 9px;
-            padding: .22rem .4rem;
-            font-size: .95rem;
-            line-height: 1;
-        }
-        .media-list-pct .sub { font-size: .48rem; margin-top: 1px; }
+        /* Sur mobile, la métrique (%, score, horaire) s'affiche en ligne
+           dans le texte : plus de colonne dédiée, aucun espace perdu. */
+        .media-list-pct { display: none !important; }
+        .mc-inline-pct { display: inline !important; }
     }
     </style>
     """,
@@ -1770,13 +1767,15 @@ def render_data_loader() -> None:
     is_mdblist_data = bool(data and str(data.get("source") or "") == "mdblist")
     cached = bool(is_mdblist_data and data.get("_cached"))
     if is_mdblist_data:
-        label = "🔄 Actualiser mes données MDBList"
+        label = "🔄 Actualiser les données MDBList"
         help_text = "Recharge depuis l'API MDBList (le cache d'une heure est ignoré)."
+        button_type = "secondary"
     else:
         label = "📥 Charger mes données MDBList"
         help_text = "Un chargement complet (historique, Watchlist, listes, notes, progression)."
+        button_type = "primary"
     st.caption(help_text)
-    if st.button(label, type="primary", key="load_mdblist_dataset", use_container_width=True):
+    if st.button(label, type=button_type, key="load_mdblist_dataset", use_container_width=True):
         with st.spinner("Chargement MDBList en lecture seule…"):
             # L'actualisation ignore le cache persistant.
             _load_mdblist_cached.clear()
@@ -1788,6 +1787,7 @@ def render_data_loader() -> None:
         loaded_at = str(data.get("loaded_at") or "").replace("T", " ").replace("Z", " UTC")
         source_txt = " (extrait du cache)" if cached else ""
         st.caption(f"Données chargées{source_txt} : {loaded_at} · {request_count} requête(s) API")
+        st.caption("ℹ️ Actualiser recharge depuis l'API et consomme ton quota journalier MDBList (~1000 appels/jour).")
         if errors:
             st.markdown(
                 f'<div class="accent-callout"><strong>CHARGEMENT PARTIEL</strong> · '
@@ -1939,7 +1939,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     # Liens uniformisés (mêmes badges que En cours / Fantôme / Calendrier).
     item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
-    year_suffix = f' ({year})' if year else ''
+    year_suffix = f'· {year}' if year else ''
     head = (
         f'<div class="mc-head">'
         f'{_type_chip(str(row.get("type") or ""))}'
@@ -1954,10 +1954,11 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         f'<div class="media-list-pct">{score_val}'
         f'<span class="sub">score /100</span></div>'
     )
+    inline_score = f'<span class="mc-inline-pct">Score {score_val}/100 · </span>'
     st.markdown(
         f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
-        f'<small>{escape(" · ".join(metadata))}</small>{links_html}'
+        f'<small>{inline_score}{escape(" · ".join(metadata))}</small>{links_html}'
         f'<span class="score-badge">Friction {friction_val}/100</span>'
         f'<div class="progress-bar-container"><div class="progress-bar-fill" '
         f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
@@ -2512,7 +2513,8 @@ def render_progress_page() -> None:
                 info_parts.append(f'🗓️ {escape(" · ".join(dates))}')
             info_parts.append(progress_line)
             info_parts.append(time_line)
-            info_html = '<small>' + '<br>'.join(info_parts) + '</small>'
+            inline_pct = f'<span class="mc-inline-pct">{percent:.0f}% · </span>'
+            info_html = '<small>' + inline_pct + '<br>'.join(info_parts) + '</small>'
             note_html = _public_note_html(show)
             head = (
                 f'<div class="mc-head">'
@@ -2673,7 +2675,8 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
             info_parts.append(f"▶️ {episode_label}")
         if details:
             info_parts.append(escape(" · ".join(details)))
-        info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
+        inline_pct = f'<span class="mc-inline-pct">{progress:.0f}% · </span>'
+        info_html = f'<small>{inline_pct}{"<br>".join(info_parts)}</small>' if info_parts else f'<small>{inline_pct}</small>'
         head = (
             f'<div class="mc-head">'
             f'{_type_chip(str(row.get("type") or ""))}'
@@ -2879,7 +2882,8 @@ def render_ghost_page() -> None:
             info_parts.append(f"▶️ {episode_label}")
         if details:
             info_parts.append(escape(" · ".join(details)))
-        info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
+        inline_pct = f'<span class="mc-inline-pct">{progress:.0f}% · </span>'
+        info_html = f'<small>{inline_pct}{"<br>".join(info_parts)}</small>' if info_parts else f'<small>{inline_pct}</small>'
         row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
         links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
         head = (
@@ -3933,7 +3937,8 @@ def render_calendar_page() -> None:
                     info_parts.append(f"▶️ {episode}")
                 if meta:
                     info_parts.append(escape(" · ".join(meta)))
-                info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
+                inline_time = f'<span class="mc-inline-pct">🕒 {escape(time_text)} · </span>' if time_text else ''
+                info_html = f'<small>{inline_time}{"<br>".join(info_parts)}</small>' if (info_parts or inline_time) else ""
                 row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
                 links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
                 head = (
@@ -4687,15 +4692,11 @@ def _render_source_status(connected: bool, has_data: bool, source: str) -> None:
     if connected:
         account = mdb_oauth.account_summary() or {}
         badges.append(
-            f'<span class="mc-chip">✓ {escape(str(account.get("username") or "MDBList"))}</span>'
+            f'<span class="source-badge">✓ {escape(str(account.get("username") or "MDBList"))}</span>'
         )
     if has_data:
         if source == "trakt_zip":
-            badges.append(
-                '<span class="source-badge" style="background:rgba(0,208,132,.12);'
-                'border-color:rgba(0,208,132,.45);color:#00D084;">'
-                '🟢 TRAKT ZIP · LECTURE SEULE</span>'
-            )
+            badges.append('<span class="source-badge">🟢 TRAKT ZIP · LECTURE SEULE</span>')
         else:
             badges.append('<span class="source-badge">🔵 MDBLIST · TEMPS RÉEL</span>')
     else:
