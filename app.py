@@ -830,11 +830,6 @@ st.markdown(
         border-radius: 999px;
         padding: 2px 9px;
     }
-    .mc-pct {
-        margin-left: auto;
-        font-size: .82rem; font-weight: 800; color: var(--am-lime);
-    }
-    .mc-head .mc-pct { margin-left: auto; }
 
     /* Tuile fallback quand un poster est absent (fantômes, reprises) :
        emoji sur fond dégradé, mêmes dimensions qu'un poster — la carte
@@ -847,6 +842,39 @@ st.markdown(
         box-shadow: inset 0 1px 0 rgba(255,255,255,.08), inset 0 0 0 1px rgba(0,163,146,.14);
     }
     .media-list-card.upnext-card .msl-poster-fallback { height: 150px; width: 100px; }
+
+    /* ── Cartes contenus compactes (V57) : hauteur proche du poster,
+       métrique (%, score, horaire) recentrée verticalement à droite. ── */
+    .media-list-card {
+        padding: .5rem .6rem;
+        gap: .7rem;
+    }
+    .media-list-content { line-height: 1.4; }
+    .media-list-content small { margin-top: .14rem; }
+    .media-list-pct {
+        align-self: stretch;
+        align-items: center;
+        border-left: 1px solid rgba(0, 163, 146, .20);
+        color: var(--am-lime);
+        display: flex;
+        flex: 0 0 auto;
+        flex-direction: column;
+        font-size: 1.3rem;
+        font-weight: 800;
+        justify-content: center;
+        min-width: 78px;
+        padding: .25rem .55rem;
+        text-align: center;
+    }
+    .media-list-pct .sub {
+        color: var(--am-text-muted);
+        display: block;
+        font-size: .6rem;
+        font-weight: 600;
+        letter-spacing: .05em;
+        margin-top: 2px;
+        text-transform: uppercase;
+    }
 
     @media (max-width: 768px) {
         .msl-grid2 { grid-template-columns: 1fr; }
@@ -864,6 +892,7 @@ st.markdown(
         }
         .msl-poster-fallback { height: 114px; width: 76px; }
         .media-list-card.upnext-card .msl-poster-fallback { height: 126px; width: 84px; }
+        .media-list-pct { min-width: 62px; font-size: 1.05rem; }
     }
     </style>
     """,
@@ -1891,16 +1920,21 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
     head = f'<div class="mc-head">{_type_chip(str(row.get("type") or ""))}{_public_note_html(item)}</div>'
+    score_val = int(round(row.get("score", 0)))
+    friction_val = int(row.get("friction", 0))
+    score_pct = (
+        f'<div class="media-list-pct">{score_val}'
+        f'<span class="sub">score /100</span></div>'
+    )
     st.markdown(
         f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}<strong>{title}</strong>'
         f'<span>{(" (" + year + ")") if year else ""}</span>'
         f'<small>{escape(" · ".join(metadata))}</small>{links_html}'
-        f'<span class="score-badge">Score personnel {int(round(row.get("score", 0)))}/100 · '
-        f'Friction {int(row.get("friction", 0))}/100</span>'
+        f'<span class="score-badge">Friction {friction_val}/100</span>'
         f'<div class="progress-bar-container"><div class="progress-bar-fill" '
         f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
-        f'<div>{pills}</div></div></div>',
+        f'<div>{pills}</div></div>{score_pct}</div>',
         unsafe_allow_html=True,
     )
 
@@ -2413,9 +2447,6 @@ def render_progress_page() -> None:
             watched_time = _format_minutes(int(row.get("watched_minutes") or 0))
             remaining_time = _format_minutes(int(row.get("remaining_minutes") or 0))
             genres = progress_genres(row)
-            genres_html = (
-                f'<small>🎭 {escape(" · ".join(genres))}</small>' if genres else ""
-            )
             dates = []
             last_watched = _format_date(row.get("last_watched_at"))
             if last_watched:
@@ -2426,7 +2457,6 @@ def render_progress_page() -> None:
                     dates.append(f"Épisode à voir sorti le {latest_available}")
                 else:
                     dates.append(f"Dernier épisode disponible : {latest_available}")
-            dates_html = f'<small>🗓️ {escape(" · ".join(dates))}</small>' if dates else ""
             show_ref = row.get("show") if isinstance(row.get("show"), dict) else {}
             show_ids = show_ref.get("ids") if isinstance(show_ref.get("ids"), dict) else {}
             raw_show_title = str(show_ref.get("title") or row.get("title") or "")
@@ -2434,7 +2464,7 @@ def render_progress_page() -> None:
             # Progression connue (MDBList) ou inconnue (ZIP Trakt sans métadonnées).
             if total and number:
                 progress_line = (
-                    f"📊 {watched}/{total} épisode(s) vu(s) · {percent:.1f}% · il en reste {remaining} · "
+                    f"📊 {watched}/{total} épisode(s) vu(s) · il en reste {remaining} · "
                     f"▶️ Prochain : S{int(season or 0):02d}E{int(number or 0):02d}"
                 )
                 time_line = f"⏱️ {watched_time} de visionnage · reste {remaining_time}"
@@ -2446,23 +2476,31 @@ def render_progress_page() -> None:
                 progress_line = f"📊 {watched} épisode(s) vu(s) (progression totale inconnue sans MDBList)"
                 time_line = f"⏱️ {watched_time} de visionnage"
                 bar_html = ""
-            head = (
-                f'<div class="mc-head">'
-                f'{_public_note_html(show)}'
-                f'<span class="mc-pct">{percent:.0f}%</span></div>'
+            # Informations regroupées en un seul bloc compact (toutes conservées) ;
+            # le % de finition part à droite, centré verticalement sur la carte.
+            info_parts = []
+            if genres:
+                info_parts.append(f'🎭 {escape(" · ".join(genres))}')
+            if dates:
+                info_parts.append(f'🗓️ {escape(" · ".join(dates))}')
+            info_parts.append(progress_line)
+            info_parts.append(time_line)
+            info_html = '<small>' + '<br>'.join(info_parts) + '</small>'
+            note_html = _public_note_html(show)
+            head = f'<div class="mc-head">{note_html}</div>' if note_html else ""
+            pct_html = (
+                f'<div class="media-list-pct">{percent:.0f}%'
+                f'<span class="sub">vu</span></div>'
             )
             st.markdown(
                 f'<div class="media-list-card upnext-card">{image_html}'
                 f'<div class="media-list-content" style="width:100%;">'
                 f'{head}'
                 f'<strong style="font-size:1.05rem;">{title}</strong>'
-                f'{genres_html}'
-                f'<div style="margin:.35rem 0;">{dates_html}</div>'
-                f'<div style="margin:.15rem 0;"><small>{progress_line}</small></div>'
-                f'<div style="margin:.15rem 0;"><small>{time_line}</small></div>'
+                f'{info_html}'
                 f'{bar_html}'
                 f'{links_html}'
-                f'</div></div>',
+                f'</div>{pct_html}</div>',
                 unsafe_allow_html=True,
             )
 
@@ -2590,7 +2628,7 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
         progress = float(row.get("progress") or 0)
         runtime = int(row.get("runtime") or 0)
         remaining = int(row.get("remaining_minutes") or 0)
-        details = [f"progression estimée {progress:.1f}%"]
+        details = []
         if runtime:
             details.append(f"reste environ {_format_minutes(remaining)}")
         if row.get("is_manual"):
@@ -2599,16 +2637,25 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
             details.append("scrobble actif")
         if row.get("possibly_ended"):
             details.append("nouveau contrôle conseillé")
-        episode_html = f'<small>▶️ {episode_label}</small>' if episode_label else ""
+        info_parts = []
+        if episode_label:
+            info_parts.append(f"▶️ {episode_label}")
+        if details:
+            info_parts.append(escape(" · ".join(details)))
+        info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
+        pct_html = (
+            f'<div class="media-list-pct">{progress:.0f}%'
+            f'<span class="sub">vu</span></div>'
+        )
         st.markdown(
             f'<div class="media-list-card upnext-card">{image_html}'
             f'<div class="media-list-content" style="width:100%;">'
             f'<span class="source-badge">EN COURS MAINTENANT</span><br>'
             f'<strong>{escape(str(row.get("type") or "Lecture"))} — {title}{year}</strong>'
-            f'{episode_html}<small>{escape(" · ".join(details))}</small>'
+            f'{info_html}'
             f'<div class="progress-bar-container"><div class="progress-bar-fill" '
             f'style="width:{max(0,min(progress,100))}%;"></div></div>'
-            f'</div></div>',
+            f'</div>{pct_html}</div>',
             unsafe_allow_html=True,
         )
     checked = datetime.fromtimestamp(float(fetched_at)).strftime("%H:%M:%S")
@@ -2780,7 +2827,7 @@ def render_ghost_page() -> None:
         runtime = int(row.get("runtime") or 0)
         remaining = int(row.get("remaining_minutes") or 0)
         updated = _format_date(row.get("updated_at"))
-        details = [f"{progress:.1f}% visionné"]
+        details = []
         if runtime:
             details.append(f"durée {_format_minutes(runtime)}")
             details.append(f"reste environ {_format_minutes(remaining)}")
@@ -2790,20 +2837,29 @@ def render_ghost_page() -> None:
             details.append(f"dernière activité {updated}")
         if row.get("is_manual"):
             details.append("progression manuelle")
-        episode_html = f'<small>▶️ {episode_label}</small>' if episode_label else ""
+        info_parts = []
+        if episode_label:
+            info_parts.append(f"▶️ {episode_label}")
+        if details:
+            info_parts.append(escape(" · ".join(details)))
+        info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
         row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
         links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
         head = f'<div class="mc-head">{_type_chip(str(row.get("type") or ""))}{_public_note_html(row)}</div>'
+        pct_html = (
+            f'<div class="media-list-pct">{progress:.0f}%'
+            f'<span class="sub">vu</span></div>'
+        )
         st.markdown(
             f'<div class="media-list-card upnext-card">{image_html}'
             f'<div class="media-list-content" style="width:100%;">'
             f'{head}'
             f'<strong>{title}{year}</strong>'
-            f'{episode_html}<small>{escape(" · ".join(details))}</small>'
+            f'{info_html}'
             f'<div class="progress-bar-container"><div class="progress-bar-fill" '
             f'style="width:{max(0,min(progress,100))}%;"></div></div>'
             f'{links_html}'
-            f'</div></div>',
+            f'</div>{pct_html}</div>',
             unsafe_allow_html=True,
         )
 
@@ -3826,26 +3882,33 @@ def render_calendar_page() -> None:
                 event_datetime = row.get("datetime")
                 time_text = event_datetime.strftime("%H:%M") if event_datetime and any((event_datetime.hour, event_datetime.minute)) else ""
                 meta = []
-                if time_text:
-                    meta.append(f"🕒 {time_text}")
                 if row.get("genres"):
                     meta.append("🎭 " + " · ".join(row["genres"]))
                 if row.get("source") and row.get("source") != "Calendrier MDBList":
                     meta.append(str(row["source"]))
-                episode_html = f'<small>▶️ {episode}</small>' if episode else ""
-                meta_html = f'<small>{escape(" · ".join(meta))}</small>' if meta else ""
+                info_parts = []
+                if episode:
+                    info_parts.append(f"▶️ {episode}")
+                if meta:
+                    info_parts.append(escape(" · ".join(meta)))
+                info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
                 row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
                 links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
                 head = (
                     f'<div class="mc-head">{_type_chip(str(row.get("type") or ""))}'
                     f'{_public_note_html(row)}</div>'
                 )
+                time_pct = (
+                    f'<div class="media-list-pct">{escape(time_text)}'
+                    f'<span class="sub">horaire</span></div>'
+                    if time_text else ""
+                )
                 st.markdown(
                     f'<div class="media-list-card poster-card">{image_html}'
                     f'<div class="media-list-content" style="width:100%;">'
                     f'{head}'
-                    f'<strong>{title}{year}</strong>{episode_html}{meta_html}{links_html}'
-                    f'</div></div>',
+                    f'<strong>{title}{year}</strong>{info_html}{links_html}'
+                    f'</div>{time_pct}</div>',
                     unsafe_allow_html=True,
                 )
         remaining -= len(shown)
@@ -4537,57 +4600,94 @@ def pending_source_now() -> bool:
     return bool(st.session_state.get("pending_source"))
 
 
-def _source_badge_html(source: str, has_data: bool) -> str:
-    """Badge indiquant clairement la source des données consultées."""
-    if not has_data:
-        return (
-            '<div class="accent-callout"><strong>⚠️ AUCUNE DONNÉE CHARGÉE</strong> · '
-            'Connecte MDBList ou importe un ZIP Trakt ci-dessous.</div>'
-        )
-    if source == "trakt_zip":
-        return (
-            '<div class="accent-callout" style="border-left-color:#00D084;">'
-            '<strong>🟢 DONNÉES TRAKT · IMPORT ZIP</strong> · '
-            'Tu consultes les données de ton export ZIP Trakt (lecture seule).</div>'
-        )
-    return (
-        '<div class="accent-callout">'
-        '<strong>🔵 DONNÉES MDBLIST · TEMPS RÉEL</strong> · '
-        'Tu consultes les données de ton compte MDBList.</div>'
-    )
-
-
-def page_dashboard() -> None:
-    st.markdown('<div class="page-title">🏠 Tableau de bord</div>', unsafe_allow_html=True)
-
-    loaded = _dataset()
-    has_data = bool(loaded and isinstance(loaded, dict) and loaded.get("sections"))
-    source = str(loaded.get("source") or "mdblist") if has_data else "none"
-
-    # ── 1. Quelle source consulte-t-on ? ─────────────────────────────────────
-    st.markdown(_source_badge_html(source, has_data), unsafe_allow_html=True)
-
-    # ── 0. Auto-restore : après un F5, recharger depuis le cache (0 API si chaud).
-    if (
-        not has_data
-        and not pending_source_now()
-        and mdb_oauth.is_connected()
-        and not st.session_state.get("_auto_restore_tried")
-    ):
-        st.session_state["_auto_restore_tried"] = True
+def _handle_source_action(action: str) -> None:
+    """Actions de la barre de statut : changer de source ou se déconnecter."""
+    if action == "_action_switch_zip":
+        # Ouvre l'écran d'import ZIP Trakt (sans toucher aux données actuelles).
+        st.session_state["pending_source"] = "trakt_zip"
+        st.rerun()
+    elif action == "_action_switch_mdblist":
+        # Revenir à MDBList : retire les données affichées puis charge le compte.
+        st.session_state.pop("_normalized_dataset", None)
+        st.session_state.pop("_source_genre_cache", None)
+        st.session_state.pop("_mdblist_playback_poster_cache", None)
+        st.session_state["pending_source"] = "mdblist"
+        st.rerun()
+    elif action == "_action_disconnect":
+        mdb_oauth.disconnect(cookies)
         try:
-            has_flag = str(cookies.get("msl_mdblist_data_loaded") or "") == "1"
+            cookies.remove("msl_mdblist_data_loaded")
         except Exception:
-            has_flag = False
-        if has_flag:
-            with st.spinner("🔄 Rechargement de vos données MDBList (cache)…"):
-                load_mdblist_dataset()
-            st.rerun()
+            pass
+        for key in (
+            "_normalized_dataset",
+            "_source_genre_cache",
+            "_mdblist_now_playing_live",
+            "_mdblist_playback_poster_cache",
+            "_mdblist_calendar_cache",
+        ):
+            st.session_state.pop(key, None)
+        st.session_state.pop("pending_source", None)
+        st.rerun()
 
-    # ── 2. Choix de la source ────────────────────────────────────────────────
+
+def _render_source_status(connected: bool, has_data: bool, source: str) -> None:
+    """Barre compacte : source active + compte connecté + switch + déconnexion.
+
+    Remplace l'ancien grand bandeau « bienvenue / choisir une source » : une
+    fois connecté (ou des données chargées), on ne montre plus qu'une ligne
+    discrète avec les actions utiles.
+    """
+    badges = []
+    if connected:
+        account = mdb_oauth.account_summary() or {}
+        badges.append(
+            f'<span class="mc-chip">✓ {escape(str(account.get("username") or "MDBList"))}</span>'
+        )
+    if has_data:
+        if source == "trakt_zip":
+            badges.append(
+                '<span class="source-badge" style="background:rgba(0,208,132,.12);'
+                'border-color:rgba(0,208,132,.45);color:#00D084;">'
+                '🟢 TRAKT ZIP · LECTURE SEULE</span>'
+            )
+        else:
+            badges.append('<span class="source-badge">🔵 MDBLIST · TEMPS RÉEL</span>')
+    else:
+        badges.append('<span class="source-badge" style="opacity:.6;">⏳ AUCUNE DONNÉE</span>')
+
+    badge_col, action_col = st.columns([0.62, 0.38])
+    with badge_col:
+        st.markdown(
+            '<div style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;'
+            'min-height:2.75rem;">' + "".join(badges) + '</div>',
+            unsafe_allow_html=True,
+        )
+
+    actions: list[tuple[str, str]] = []
+    if connected:
+        if has_data and source == "trakt_zip":
+            actions.append(("🔵 Revenir à MDBList", "_action_switch_mdblist"))
+        else:
+            actions.append(("📦 Utiliser un ZIP Trakt", "_action_switch_zip"))
+        actions.append(("🔌 Se déconnecter", "_action_disconnect"))
+    elif has_data and source == "trakt_zip":
+        actions.append(("🔵 Connecter MDBList", "_action_switch_mdblist"))
+
+    with action_col:
+        if actions:
+            cols = st.columns(len(actions))
+            for index, (label, key) in enumerate(actions):
+                with cols[index]:
+                    if st.button(label, key=key, use_container_width=True):
+                        _handle_source_action(key)
+
+
+def _render_welcome_cards() -> None:
+    """Écran d'accueil : deux cartes claires pour choisir sa source de données."""
     st.markdown(
         '<div class="accent-callout"><strong>👋 BIENVENUE</strong> · '
-        'Choisis <strong>une seule source de données</strong> pour commencer : '
+        'Choisis <strong>une source de données</strong> pour commencer : '
         '🔵 MDBList (en direct) ou 🟢 ton export ZIP Trakt (lecture seule). '
         'Tu pourras changer de source à tout moment.</div>',
         unsafe_allow_html=True,
@@ -4605,13 +4705,9 @@ def page_dashboard() -> None:
             """,
             unsafe_allow_html=True,
         )
-        if mdb_oauth.is_connected():
-            account = mdb_oauth.account_summary() or {}
-            st.caption(f"✓ Connecté : **{account.get('username') or 'Compte MDBList'}**")
-        else:
-            if st.button("Préparer la connexion MDBList", type="primary", key="choose_mdblist", use_container_width=True):
-                st.session_state["pending_source"] = "mdblist"
-                st.rerun()
+        if st.button("🔗 Connecter MDBList", type="primary", key="choose_mdblist", use_container_width=True):
+            st.session_state["pending_source"] = "mdblist"
+            st.rerun()
     with zip_col:
         st.markdown(
             """
@@ -4625,7 +4721,7 @@ def page_dashboard() -> None:
             """,
             unsafe_allow_html=True,
         )
-        if st.button("Préparer l'import ZIP Trakt", type="primary", key="choose_zip", use_container_width=True):
+        if st.button("📦 Importer un ZIP Trakt", type="primary", key="choose_zip", use_container_width=True):
             st.session_state["pending_source"] = "trakt_zip"
             st.rerun()
     st.caption(
@@ -4634,89 +4730,147 @@ def page_dashboard() -> None:
         "toujours à la source choisie (badge en haut de page)."
     )
 
-    # ── 3. Actions en attente (connexion ou import) ─────────────────────────
+
+def _render_zip_import_screen() -> None:
+    """Écran dédié d'import ZIP Trakt (lecture seule)."""
+    st.markdown('<div class="page-title">📦 Import ZIP Trakt</div>', unsafe_allow_html=True)
+    st.caption(
+        "Dépose ton export ZIP Trakt ci-dessous. "
+        "Lecture seule, aucune écriture sur aucun compte. Les protections ZIP sont actives."
+    )
+    with st.expander("❓ Comment obtenir mon ZIP Trakt ? (guide pas à pas)", expanded=False):
+        st.markdown(
+            """
+            <div class="guide-step"><strong>1 · OBTENIR L'EXPORT</strong> — Va sur
+            <a href="https://app.trakt.tv/settings/data?mode=media" target="_blank" rel="noopener noreferrer">app.trakt.tv/settings/data?mode=media</a>
+            et connecte-toi avec ton compte Trakt.</div>
+            <div class="guide-step"><strong>2 · EXPORTER</strong> — Scrolle jusqu'à la section
+            « Export » puis clique sur « Exporter maintenant ».</div>
+            <div class="guide-step"><strong>3 · ATTENDRE</strong> — Trakt prépare ton export :
+            ça peut prendre quelques minutes.</div>
+            <div class="guide-step"><strong>4 · TÉLÉCHARGER</strong> — Une fois prêt, Trakt te
+            donne un lien de téléchargement (<code>export-trakt-*.zip</code>).</div>
+            <div class="guide-step"><strong>5 · IMPORTER ICI</strong> — Reviens sur cette page,
+            dépose le ZIP ci-dessous puis clique sur « 📥 Importer et charger mes données ».</div>
+            <div class="accent-callout"><strong>🔒 LECTURE SEULE</strong> ·
+            Tes données Trakt ne sont jamais modifiées, et le ZIP n'est pas conservé après la session.</div>
+            """,
+            unsafe_allow_html=True,
+        )
+    zip_file = st.file_uploader("Choisis le fichier ZIP Trakt", type=["zip"], key="trakt_zip_uploader")
+    if zip_file is not None:
+        st.caption(f"Fichier : **{zip_file.name}** · {zip_file.size // 1024} Ko")
+        if st.button("📥 Importer et charger mes données", type="primary", key="import_trakt_zip"):
+            with st.spinner("Analyse sécurisée du ZIP Trakt…"):
+                try:
+                    raw_bytes = zip_file.getvalue()
+                    data = trakt_zip_provider.load_trakt_zip(raw_bytes)
+                except trakt_zip_provider.TraktZipError as exc:
+                    st.error(f"Import impossible : {exc}")
+                    data = None
+                except Exception as exc:
+                    st.error(f"Erreur inattendue pendant l'analyse : {exc}")
+                    data = None
+            if data:
+                st.session_state["_normalized_dataset"] = data
+                st.session_state.pop("_source_genre_cache", None)
+                st.session_state.pop("_mdblist_playback_poster_cache", None)
+                counts = trakt_zip_provider.summarize(data)
+                enrich_msg = ""
+                if mdb_oauth.is_connected():
+                    with st.spinner("Enrichissement automatique avec MDBList…"):
+                        ok_enrich, enrich_msg = _enrich_zip_dataset()
+                    if not ok_enrich:
+                        enrich_msg = f" (enrichissement : {enrich_msg})"
+                st.markdown(
+                    f'<div class="accent-callout"><strong>✓ ZIP TRAKT IMPORTÉ</strong> · '
+                    f'{counts["films_vus"]} film(s) vu(s) · {counts["episodes_vus"]} épisode(s) vu(s) · '
+                    f'{counts["series_vues"]} série(s) · {counts["notes"]} note(s) · '
+                    f'{counts["watchlist"]} contenu(s) en watchlist · {counts["listes"]} liste(s).'
+                    f'{enrich_msg}</div>',
+                    unsafe_allow_html=True,
+                )
+                st.session_state.pop("pending_source", None)
+                st.rerun()
+    if st.button("← Annuler et revenir au tableau de bord", key="cancel_zip_import"):
+        st.session_state.pop("pending_source", None)
+        st.rerun()
+
+
+def page_dashboard() -> None:
+    st.markdown('<div class="page-title">🏠 Tableau de bord</div>', unsafe_allow_html=True)
+
+    loaded = _dataset()
+    has_data = bool(loaded and isinstance(loaded, dict) and loaded.get("sections"))
+    source = str(loaded.get("source") or "mdblist") if has_data else "none"
+    connected = mdb_oauth.is_connected()
+
+    # ── Auto-restore : après un F5, recharger depuis le cache (0 API si chaud).
+    if (
+        not has_data
+        and not pending_source_now()
+        and connected
+        and not st.session_state.get("_auto_restore_tried")
+    ):
+        st.session_state["_auto_restore_tried"] = True
+        try:
+            has_flag = str(cookies.get("msl_mdblist_data_loaded") or "") == "1"
+        except Exception:
+            has_flag = False
+        if has_flag:
+            with st.spinner("🔄 Rechargement de vos données MDBList (cache)…"):
+                load_mdblist_dataset()
+            st.rerun()
+
+    # ── Écrans dédiés de connexion / import (quand une action est en attente).
     pending = st.session_state.get("pending_source")
-    if pending == "mdblist":
-        st.divider()
+    if pending == "mdblist" and not connected:
         st.markdown('<div class="page-title">🔐 Connexion MDBList</div>', unsafe_allow_html=True)
         render_mdblist_connector()
-        if mdb_oauth.is_connected():
+        if st.button("← Retour au tableau de bord", key="cancel_mdblist_login"):
             st.session_state.pop("pending_source", None)
-    elif pending == "trakt_zip":
-        st.divider()
-        st.markdown('<div class="page-title">📦 Import ZIP Trakt</div>', unsafe_allow_html=True)
-        st.caption(
-            "Dépose ton export ZIP Trakt ci-dessous. "
-            "Lecture seule, aucune écriture sur aucun compte. Les protections ZIP sont actives."
-        )
-        with st.expander("❓ Comment obtenir mon ZIP Trakt ? (guide pas à pas)", expanded=False):
-            st.markdown(
-                """
-                <div class="guide-step"><strong>1 · OBTENIR L'EXPORT</strong> — Va sur
-                <a href="https://app.trakt.tv/settings/data?mode=media" target="_blank" rel="noopener noreferrer">app.trakt.tv/settings/data?mode=media</a>
-                et connecte-toi avec ton compte Trakt.</div>
-                <div class="guide-step"><strong>2 · EXPORTER</strong> — Scrolle jusqu'à la section
-                « Export » puis clique sur « Exporter maintenant ».</div>
-                <div class="guide-step"><strong>3 · ATTENDRE</strong> — Trakt prépare ton export :
-                ça peut prendre quelques minutes.</div>
-                <div class="guide-step"><strong>4 · TÉLÉCHARGER</strong> — Une fois prêt, Trakt te
-                donne un lien de téléchargement (<code>export-trakt-*.zip</code>).</div>
-                <div class="guide-step"><strong>5 · IMPORTER ICI</strong> — Reviens sur cette page,
-                dépose le ZIP ci-dessous puis clique sur « 📥 Importer et charger mes données ».</div>
-                <div class="accent-callout"><strong>🔒 LECTURE SEULE</strong> ·
-                Tes données Trakt ne sont jamais modifiées, et le ZIP n'est pas conservé après la session.</div>
-                """,
-                unsafe_allow_html=True,
-            )
-        zip_file = st.file_uploader("Choisis le fichier ZIP Trakt", type=["zip"], key="trakt_zip_uploader")
-        if zip_file is not None:
-            st.caption(f"Fichier : **{zip_file.name}** · {zip_file.size // 1024} Ko")
-            if st.button("📥 Importer et charger mes données", type="primary", key="import_trakt_zip"):
-                with st.spinner("Analyse sécurisée du ZIP Trakt…"):
-                    try:
-                        raw_bytes = zip_file.getvalue()
-                        data = trakt_zip_provider.load_trakt_zip(raw_bytes)
-                    except trakt_zip_provider.TraktZipError as exc:
-                        st.error(f"Import impossible : {exc}")
-                        data = None
-                    except Exception as exc:
-                        st.error(f"Erreur inattendue pendant l'analyse : {exc}")
-                        data = None
-                if data:
-                    st.session_state["_normalized_dataset"] = data
-                    st.session_state.pop("_source_genre_cache", None)
-                    st.session_state.pop("_mdblist_playback_poster_cache", None)
-                    counts = trakt_zip_provider.summarize(data)
-                    enrich_msg = ""
-                    if mdb_oauth.is_connected():
-                        with st.spinner("Enrichissement automatique avec MDBList…"):
-                            ok_enrich, enrich_msg = _enrich_zip_dataset()
-                        if not ok_enrich:
-                            enrich_msg = f" (enrichissement : {enrich_msg})"
-                    st.markdown(
-                        f'<div class="accent-callout"><strong>✓ ZIP TRAKT IMPORTÉ</strong> · '
-                        f'{counts["films_vus"]} film(s) vu(s) · {counts["episodes_vus"]} épisode(s) vu(s) · '
-                        f'{counts["series_vues"]} série(s) · {counts["notes"]} note(s) · '
-                        f'{counts["watchlist"]} contenu(s) en watchlist · {counts["listes"]} liste(s).'
-                        f'{enrich_msg}</div>',
-                        unsafe_allow_html=True,
-                    )
-                    st.session_state.pop("pending_source", None)
-                    st.rerun()
+            st.rerun()
+        return
+    if pending == "trakt_zip":
+        _render_zip_import_screen()
+        return
+    if pending == "mdblist" and connected:
+        # Déjà connecté : on nettoie simplement le marqueur d'action.
+        st.session_state.pop("pending_source", None)
 
-    # ── 4. Données actives et leurs boutons ─────────────────────────────────
-    if has_data and source == "trakt_zip":
+    # ── Barre de statut compacte (source + switch + déconnexion).
+    if connected or has_data:
+        _render_source_status(connected, has_data, source)
+
+    # ── Écran d'accueil : uniquement quand rien n'est choisi ni chargé.
+    if not has_data and not connected:
+        _render_welcome_cards()
+        return
+
+    # ── Connecté à MDBList, données pas encore chargées → écran de chargement.
+    if not has_data and connected:
+        st.divider()
+        st.markdown('<div class="page-title">📥 Charger mes données MDBList</div>', unsafe_allow_html=True)
+        render_data_loader()
+        st.markdown(
+            '<div class="accent-callout"><strong>PAS ENCORE CHARGÉ</strong> · '
+            'Clique « Charger mes données MDBList » ci-dessus pour afficher '
+            'ton analyse (films, séries, statistiques…).</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    # ── Données ZIP Trakt affichées ──────────────────────────────────────────
+    if source == "trakt_zip":
         st.divider()
         st.markdown('<div class="page-title">📥 Vos données Trakt (import ZIP)</div>', unsafe_allow_html=True)
         st.caption("Lecture seule · aucune écriture. Toutes les pages utilisent ces données.")
-        # Permet de quitter les données ZIP pour revenir au choix de source
-        # (et basculer sur MDBList).
-        if st.button("🚪 Quitter les données ZIP Trakt", type="primary", key="leave_zip_data", use_container_width=True):
+        if st.button("🚪 Quitter les données ZIP Trakt", key="leave_zip_data"):
             st.session_state.pop("_normalized_dataset", None)
             st.session_state.pop("_source_genre_cache", None)
             st.session_state.pop("_mdblist_playback_poster_cache", None)
             st.rerun()
-        if mdb_oauth.is_connected():
+        if connected:
             st.caption("Connecté à MDBList (lecture seule) : enrichis ces données avec les métadonnées MDBList.")
             st.caption("Quelques appels groupés (200 identifiants max par appel). Aucune écriture.")
             if st.button(
@@ -4739,33 +4893,18 @@ def page_dashboard() -> None:
         render_dashboard_widgets()
         return
 
-    if mdb_oauth.is_connected():
-        st.divider()
-        st.markdown('<div class="page-title">📥 Vos données MDBList</div>', unsafe_allow_html=True)
-        render_data_loader()
-        # Ruban compte/quota/listes toujours visible (avec Actualiser les
-        # compteurs et Se déconnecter) — plus besoin d'un bouton « Gérer ».
+    # ── Données MDBList affichées ────────────────────────────────────────────
+    st.divider()
+    st.markdown('<div class="page-title">📥 Vos données MDBList</div>', unsafe_allow_html=True)
+    render_data_loader()
+    # Compte/quota replié (discret) : disponible sans encombrer l'écran.
+    with st.expander("🎫 Compte MDBList & quota", expanded=False):
         try:
             _render_connected_mdblist()
         except Exception:
             pass
-        if has_data:
-            render_dataset_overview()
-            render_dashboard_widgets()
-        else:
-            st.markdown(
-                '<div class="accent-callout"><strong>PAS ENCORE CHARGÉ</strong> · '
-                'Clique « Charger mes données MDBList » ci-dessus pour afficher '
-                'ton analyse (films, séries, statistiques…).</div>',
-                unsafe_allow_html=True,
-            )
-        return
-
-    if not has_data:
-        st.caption(
-            "Choisis une source ci-dessus : connecte MDBList (temps réel) ou "
-            "importe ton ZIP Trakt (local, sans API)."
-        )
+    render_dataset_overview()
+    render_dashboard_widgets()
 
 
 def render_migration_page() -> None:
