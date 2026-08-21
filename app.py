@@ -819,8 +819,17 @@ st.markdown(
         margin-bottom: 4px;
     }
     .mc-head strong { flex: 1 1 auto; min-width: 0; }
-    .mc-year { color: var(--am-text-muted); font-size: .9rem; font-weight: 500; white-space: nowrap; }
-    .mc-title-pct { color: var(--am-yellow); font-weight: 800; white-space: nowrap; }
+    .mc-year {
+        display: inline-block;
+        color: var(--am-yellow);
+        background: linear-gradient(135deg, rgba(0, 163, 146, .16), rgba(0, 0, 0, .50));
+        border: 1px solid rgba(255, 225, 0, .45);
+        border-radius: 999px;
+        padding: .05rem .5rem;
+        font-size: .72rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
     .mc-type {
         display: inline-flex; align-items: center;
         color: var(--am-text-muted);
@@ -895,6 +904,12 @@ st.markdown(
         display: none;
         color: var(--am-yellow);
         font-weight: 800;
+        background: linear-gradient(135deg, rgba(0, 163, 146, .16), rgba(0, 0, 0, .50));
+        border: 1px solid rgba(255, 225, 0, .50);
+        border-radius: 999px;
+        padding: .12rem .5rem;
+        font-size: .75rem;
+        white-space: nowrap;
     }
 
     @media (max-width: 768px) {
@@ -916,7 +931,7 @@ st.markdown(
         /* Sur mobile, la métrique (%, score, horaire) s'affiche en ligne
            dans le texte : plus de colonne dédiée, aucun espace perdu. */
         .media-list-pct { display: none !important; }
-        .mc-inline-pct { display: inline !important; }
+        .mc-inline-pct { display: inline-block !important; }
     }
     </style>
     """,
@@ -1768,33 +1783,27 @@ def render_data_loader() -> None:
     is_mdblist_data = bool(data and str(data.get("source") or "") == "mdblist")
     cached = bool(is_mdblist_data and data.get("_cached"))
     if is_mdblist_data:
-        label = "🔄 Actualiser les données MDBList"
-        help_text = "Recharge depuis l'API MDBList (le cache d'une heure est ignoré)."
-        button_type = "secondary"
-    else:
-        label = "📥 Charger mes données MDBList"
-        help_text = "Un chargement complet (historique, Watchlist, listes, notes, progression)."
-        button_type = "primary"
-    st.caption(help_text)
-    if st.button(label, type=button_type, key="load_mdblist_dataset", use_container_width=True):
-        with st.spinner("Chargement MDBList en lecture seule…"):
-            # L'actualisation ignore le cache persistant.
-            _load_mdblist_cached.clear()
-            load_mdblist_dataset()
-        st.rerun()
-    if is_mdblist_data:
+        # Données déjà chargées : plus de bouton ici (évite un appel API
+        # involontaire). L'actualisation est disponible en bas du tableau de bord.
         errors = data.get("errors") or []
         request_count = data.get("request_count", 0)
         loaded_at = str(data.get("loaded_at") or "").replace("T", " ").replace("Z", " UTC")
         source_txt = " (extrait du cache)" if cached else ""
         st.caption(f"Données chargées{source_txt} : {loaded_at} · {request_count} requête(s) API")
-        st.caption("ℹ️ Actualiser recharge depuis l'API et consomme ton quota journalier MDBList (~1000 appels/jour).")
         if errors:
             st.markdown(
                 f'<div class="accent-callout"><strong>CHARGEMENT PARTIEL</strong> · '
                 f'{len(errors)} section(s) indisponible(s). Les autres restent utilisables.</div>',
                 unsafe_allow_html=True,
             )
+        return
+    # Pas encore de données : bouton de chargement initial.
+    st.caption("Un chargement complet (historique, Watchlist, listes, notes, progression).")
+    if st.button("📥 Charger mes données MDBList", type="primary", key="load_mdblist_dataset", use_container_width=True):
+        with st.spinner("Chargement MDBList en lecture seule…"):
+            _load_mdblist_cached.clear()
+            load_mdblist_dataset()
+        st.rerun()
 
 
 def render_dataset_overview() -> None:
@@ -1862,7 +1871,7 @@ def _justwatch_url(title: str) -> str:
     return "https://www.justwatch.com/fr/recherche?q=" + quote(str(title or ""))
 
 
-def _content_links_html(ids: dict, title: str, is_show: bool = False) -> str:
+def _content_links_html(ids: dict, title: str, is_show: bool = False, prefix: str = "") -> str:
     """Liens discrets, uniformisés en petits badges avec info-bulle, vers :
     JustWatch (où regarder), TMDB (fiche) et MDBList (fiche)."""
     if not isinstance(ids, dict):
@@ -1887,7 +1896,7 @@ def _content_links_html(ids: dict, title: str, is_show: bool = False) -> str:
             f'<a class="link-pill" href="https://mdblist.com/{base}/{str(imdb)}" '
             f'target="_blank" rel="noopener noreferrer" title="Lien vers la fiche MDBList">MDBL</a>'
         )
-    return f'<div style="margin-top:.35rem;">{" ".join(links)}</div>'
+    return f'<div style="margin-top:.35rem;">{prefix}{" ".join(links)}</div>'
 
 
 def _signal_pill(signal: dict) -> str:
@@ -1940,29 +1949,31 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     # Liens uniformisés (mêmes badges que En cours / Fantôme / Calendrier).
     item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
-    year_in_title = f' <span class="mc-year">({year})</span>' if year else ''
+    year_pill = f'<span class="mc-year">{year}</span>' if year else ''
     head = (
         f'<div class="mc-head">'
         f'{_type_chip(str(row.get("type") or ""))}'
-        f'<strong>{title}{year_in_title}</strong>'
+        f'<strong>{title}</strong>'
+        f'{year_pill}'
         f'{_public_note_html(item)}'
         f'</div>'
     )
     score_val = int(round(row.get("score", 0)))
     friction_val = int(row.get("friction", 0))
-    score_pct = (
+    score_col = (
         f'<div class="media-list-pct">{score_val}'
         f'<span class="sub">score /100</span></div>'
     )
-    inline_score = f'<span class="mc-inline-pct">Score {score_val}/100 · </span>'
+    score_inline = f'<span class="mc-inline-pct">Score {score_val}/100</span>'
+    links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"), prefix=score_inline)
     st.markdown(
         f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
-        f'<small>{inline_score}{escape(" · ".join(metadata))}</small>{links_html}'
+        f'<small>{escape(" · ".join(metadata))}</small>{links_html}'
         f'<span class="score-badge">Friction {friction_val}/100</span>'
         f'<div class="progress-bar-container"><div class="progress-bar-fill" '
         f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
-        f'<div>{pills}</div></div>{score_pct}</div>',
+        f'<div>{pills}</div></div>{score_col}</div>',
         unsafe_allow_html=True,
     )
 
@@ -2488,7 +2499,9 @@ def render_progress_page() -> None:
             show_ref = row.get("show") if isinstance(row.get("show"), dict) else {}
             show_ids = show_ref.get("ids") if isinstance(show_ref.get("ids"), dict) else {}
             raw_show_title = str(show_ref.get("title") or row.get("title") or "")
-            links_html = _content_links_html(show_ids, raw_show_title, is_show=True)
+            pct_col = f'<div class="media-list-pct">{percent:.0f}%<span class="sub">vu</span></div>'
+            pct_inline = f'<span class="mc-inline-pct">{percent:.0f}%</span>'
+            links_html = _content_links_html(show_ids, raw_show_title, is_show=True, prefix=pct_inline)
             # Progression connue (MDBList) ou inconnue (ZIP Trakt sans métadonnées).
             if total and number:
                 progress_line = (
@@ -2515,10 +2528,9 @@ def render_progress_page() -> None:
             info_parts.append(time_line)
             info_html = '<small>' + '<br>'.join(info_parts) + '</small>'
             note_html = _public_note_html(show)
-            title_pct = f' <span class="mc-title-pct">- {percent:.0f}%</span>'
             head = (
                 f'<div class="mc-head">'
-                f'<strong style="font-size:1.05rem;">{title}{title_pct}</strong>'
+                f'<strong style="font-size:1.05rem;">{title}</strong>'
                 f'{note_html}'
                 f'</div>'
             )
@@ -2529,7 +2541,7 @@ def render_progress_page() -> None:
                 f'{info_html}'
                 f'{bar_html}'
                 f'{links_html}'
-                f'</div></div>',
+                f'</div>{pct_col}</div>',
                 unsafe_allow_html=True,
             )
 
@@ -2672,11 +2684,13 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
         if details:
             info_parts.append(escape(" · ".join(details)))
         info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
-        title_pct = f' <span class="mc-title-pct">- {progress:.0f}%</span>'
+        pct_col = f'<div class="media-list-pct">{progress:.0f}%<span class="sub">vu</span></div>'
+        pct_inline = f'<span class="mc-inline-pct">{progress:.0f}%</span>'
         head = (
             f'<div class="mc-head">'
             f'{_type_chip(str(row.get("type") or ""))}'
-            f'<strong>{title}{year}{title_pct}</strong>'
+            f'<strong>{title}{year}</strong>'
+            f'{pct_inline}'
             f'<span class="source-badge">EN COURS MAINTENANT</span>'
             f'</div>'
         )
@@ -2687,7 +2701,7 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
             f'{info_html}'
             f'<div class="progress-bar-container"><div class="progress-bar-fill" '
             f'style="width:{max(0,min(progress,100))}%;"></div></div>'
-            f'</div></div>',
+            f'</div>{pct_col}</div>',
             unsafe_allow_html=True,
         )
     checked = datetime.fromtimestamp(float(fetched_at)).strftime("%H:%M:%S")
@@ -2875,13 +2889,14 @@ def render_ghost_page() -> None:
         if details:
             info_parts.append(escape(" · ".join(details)))
         info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
+        pct_col = f'<div class="media-list-pct">{progress:.0f}%<span class="sub">vu</span></div>'
+        pct_inline = f'<span class="mc-inline-pct">{progress:.0f}%</span>'
         row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
-        links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
-        title_pct = f' <span class="mc-title-pct">- {progress:.0f}%</span>'
+        links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), prefix=pct_inline)
         head = (
             f'<div class="mc-head">'
             f'{_type_chip(str(row.get("type") or ""))}'
-            f'<strong>{title}{year}{title_pct}</strong>'
+            f'<strong>{title}{year}</strong>'
             f'{_public_note_html(row)}'
             f'</div>'
         )
@@ -2893,7 +2908,7 @@ def render_ghost_page() -> None:
             f'<div class="progress-bar-container"><div class="progress-bar-fill" '
             f'style="width:{max(0,min(progress,100))}%;"></div></div>'
             f'{links_html}'
-            f'</div></div>',
+            f'</div>{pct_col}</div>',
             unsafe_allow_html=True,
         )
 
@@ -3925,10 +3940,10 @@ def render_calendar_page() -> None:
                     info_parts.append(f"▶️ {episode}")
                 if meta:
                     info_parts.append(escape(" · ".join(meta)))
-                inline_time = f'<span class="mc-inline-pct">🕒 {escape(time_text)} · </span>' if time_text else ''
-                info_html = f'<small>{inline_time}{"<br>".join(info_parts)}</small>' if (info_parts or inline_time) else ""
+                inline_time = f'<span class="mc-inline-pct">🕒 {escape(time_text)}</span>' if time_text else ''
+                info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
                 row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
-                links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
+                links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), prefix=inline_time)
                 head = (
                     f'<div class="mc-head">'
                     f'{_type_chip(str(row.get("type") or ""))}'
@@ -4936,6 +4951,18 @@ def page_dashboard() -> None:
             pass
     render_dataset_overview()
     render_dashboard_widgets()
+    # Actualisation discrète, en bas de page : uniquement quand les données
+    # sont déjà chargées (pas d'appel API involontaire en haut de page).
+    st.divider()
+    st.caption(
+        "ℹ️ L'actualisation recharge depuis l'API MDBList et consomme ton "
+        "quota journalier (~1000 appels/jour)."
+    )
+    if st.button("🔄 Actualiser les données MDBList", key="refresh_mdblist_bottom", use_container_width=True):
+        with st.spinner("Actualisation MDBList…"):
+            _load_mdblist_cached.clear()
+            load_mdblist_dataset()
+        st.rerun()
 
 
 def render_migration_page() -> None:
