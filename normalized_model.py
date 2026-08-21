@@ -298,6 +298,42 @@ def build_progress(sections: dict[str, Any]) -> list[dict[str, Any]]:
     return output
 
 
+def _identity_keys(media: dict[str, Any]) -> set[str]:
+    """Toutes les identités d'un média (clés `kind:provider:value`), depuis le
+    bloc `ids` ET les champs à plat (`id`, `imdb_id`, `tvdb_id`, `tmdb_id`).
+    Les items de Watchlist MDBList n'ont pas de bloc `ids` imbriqué."""
+    kind = media_type(media)
+    ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+    output: set[str] = set()
+    for provider, value in (
+        ("tmdb", ids.get("tmdb")),
+        ("imdb", ids.get("imdb")),
+        ("tvdb", ids.get("tvdb")),
+        ("trakt", ids.get("trakt")),
+        ("mdblist", ids.get("mdblist")),
+    ):
+        if value not in (None, "", 0, "0"):
+            output.add(f"{kind}:{provider}:{value}")
+    # Champs à plat (format Watchlist / playback MDBList).
+    flat = {
+        "tmdb": media.get("tmdb_id") or media.get("tmdbid") or media.get("tmdb"),
+        "imdb": media.get("imdb_id") or media.get("imdb"),
+        "tvdb": media.get("tvdb_id") or media.get("tvdb"),
+    }
+    for provider, value in flat.items():
+        if value not in (None, "", 0, "0"):
+            output.add(f"{kind}:{provider}:{value}")
+    # L'id MDBList d'un média correspond à son id TMDb.
+    raw_id = media.get("id")
+    try:
+        candidate = int(raw_id)
+    except (TypeError, ValueError):
+        candidate = None
+    if candidate and candidate > 0:
+        output.add(f"{kind}:tmdb:{candidate}")
+    return output
+
+
 def _genre_lookup(sections: dict[str, Any]) -> dict[str, list[str]]:
     """Indexe les genres connus par identité de média (tmdb/imdb/tvdb/…).
 
@@ -313,16 +349,6 @@ def _genre_lookup(sections: dict[str, Any]) -> dict[str, list[str]]:
                 return nested
         return item
 
-    def identity(item: dict[str, Any]) -> str | None:
-        media = unwrap(item)
-        kind = media_type(media)
-        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
-        for key in ("tmdb", "imdb", "tvdb", "trakt", "mdblist"):
-            value = ids.get(key)
-            if value not in (None, "", 0, "0"):
-                return f"{kind}:{key}:{value}"
-        return None
-
     lookup: dict[str, list[str]] = {}
 
     def add(item: Any) -> None:
@@ -332,8 +358,7 @@ def _genre_lookup(sections: dict[str, Any]) -> dict[str, list[str]]:
         names = _genre_names(media)
         if not names:
             return
-        key = identity(media)
-        if key:
+        for key in _identity_keys(media):
             lookup.setdefault(key, names)
 
     watched = sections.get("watched") or {}
@@ -391,13 +416,8 @@ def _fill_watchlist_genres(sections: dict[str, Any]) -> None:
 
 
 def _find_genre(lookup: dict[str, list[str]], item: dict[str, Any]) -> list[str] | None:
-    ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-    kind = media_type(item)
-    for key in ("tmdb", "imdb", "tvdb", "trakt", "mdblist"):
-        value = ids.get(key)
-        if value in (None, "", 0, "0"):
-            continue
-        names = lookup.get(f"{kind}:{key}:{value}")
+    for key in _identity_keys(item):
+        names = lookup.get(key)
         if names:
             return names
     return None

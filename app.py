@@ -340,8 +340,16 @@ st.markdown(
         margin-top: .4rem;
         padding: .28rem .5rem;
     }
-    .score-badge[data-tooltip] { position: relative; cursor: help; }
-    .score-badge[data-tooltip]::after {
+    .score-badge[data-tooltip], .mc-note[data-tooltip], .mc-type[data-tooltip],
+    .mc-year[data-tooltip], .media-list-pct[data-tooltip], .mc-inline-pct[data-tooltip] {
+        position: relative; cursor: help;
+    }
+    .score-badge[data-tooltip]::after,
+    .mc-note[data-tooltip]::after,
+    .mc-type[data-tooltip]::after,
+    .mc-year[data-tooltip]::after,
+    .media-list-pct[data-tooltip]::after,
+    .mc-inline-pct[data-tooltip]::after {
         content: attr(data-tooltip);
         position: absolute;
         bottom: calc(100% + 8px);
@@ -366,7 +374,12 @@ st.markdown(
         text-align: left;
         white-space: normal;
     }
-    .score-badge[data-tooltip]:hover::after {
+    .score-badge[data-tooltip]:hover::after,
+    .mc-note[data-tooltip]:hover::after,
+    .mc-type[data-tooltip]:hover::after,
+    .mc-year[data-tooltip]:hover::after,
+    .media-list-pct[data-tooltip]:hover::after,
+    .mc-inline-pct[data-tooltip]:hover::after {
         opacity: 1;
         visibility: visible;
         transform: translateX(-50%) translateY(0);
@@ -881,8 +894,8 @@ st.markdown(
         display: inline-block;
         font-size: .68rem; font-weight: 800;
         color: var(--am-yellow);
-        background: rgba(255, 225, 0, .12);
-        border: 1px solid rgba(255, 225, 0, .38);
+        background: linear-gradient(135deg, rgba(0, 163, 146, .16), rgba(0, 0, 0, .50));
+        border: 1px solid rgba(255, 225, 0, .50);
         border-radius: 999px;
         padding: 2px 9px;
     }
@@ -1527,14 +1540,14 @@ def _type_chip(kind: str) -> str:
     """Type de contenu compact, intégré à la ligne de titre (uniforme)."""
     k = str(kind or "").strip().casefold()
     if k in {"film", "movie", "movies"}:
-        return '<span class="mc-type">🎬 Film</span>'
+        return '<span class="mc-type" data-tooltip="Type de contenu">🎬 Film</span>'
     if k in {"épisode", "episode", "ep"}:
-        return '<span class="mc-type">📺 Épisode</span>'
+        return '<span class="mc-type" data-tooltip="Type de contenu">📺 Épisode</span>'
     if k in {"série", "serie", "show", "shows"}:
-        return '<span class="mc-type">📺 Série</span>'
+        return '<span class="mc-type" data-tooltip="Type de contenu">📺 Série</span>'
     if k:
-        return f'<span class="mc-type">{escape(k)}</span>'
-    return '<span class="mc-type">📺</span>'
+        return f'<span class="mc-type" data-tooltip="Type de contenu">{escape(k)}</span>'
+    return '<span class="mc-type" data-tooltip="Type de contenu">📺</span>'
 
 
 def _public_note(item: Any) -> float | None:
@@ -1557,7 +1570,8 @@ def _public_note_html(item: Any) -> str:
     note = _public_note(item)
     if note is None:
         return ""
-    return f'<span class="mc-note">⭐ {note:.1f}/10</span>'
+    tip = "Note moyenne de la communauté (sur 10)."
+    return f'<span class="mc-note" data-tooltip="{escape(tip, quote=True)}">⭐ {note:.1f}/10</span>'
 
 
 def _score(item: dict) -> str:
@@ -1725,6 +1739,107 @@ def _mdblist_cache_key(access_token: str) -> str:
     return hashlib.sha256((access_token or "").encode("utf-8")).hexdigest()[:16]
 
 
+def _watchlist_missing_genre_ids(data: dict) -> tuple[list[int], list[str]]:
+    """Identifiants TMDb/IMDb des contenus de la Watchlist dépourvus de genres."""
+    watchlist = (data.get("sections") or {}).get("watchlist") or {}
+    tmdb_ids: list[int] = []
+    imdb_ids: list[str] = []
+    seen_tmdb: set[int] = set()
+    seen_imdb: set[str] = set()
+
+    def scan(item: Any) -> None:
+        if not isinstance(item, dict) or item.get("genres"):
+            return
+        ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+        tmdb = ids.get("tmdb") or item.get("tmdb_id") or item.get("tmdbid")
+        if tmdb in (None, ""):
+            raw_id = item.get("id")
+            try:
+                tmdb = int(raw_id) if raw_id not in (None, "", 0, "0") else None
+            except (TypeError, ValueError):
+                tmdb = None
+        try:
+            tmdb = int(tmdb) if tmdb not in (None, "", 0, "0") else None
+        except (TypeError, ValueError):
+            tmdb = None
+        imdb = str(ids.get("imdb") or item.get("imdb_id") or item.get("imdb") or "").strip()
+        if not imdb.startswith("tt"):
+            imdb = ""
+        if tmdb and tmdb not in seen_tmdb:
+            seen_tmdb.add(tmdb)
+            tmdb_ids.append(tmdb)
+        elif imdb and imdb not in seen_imdb:
+            seen_imdb.add(imdb)
+            imdb_ids.append(imdb)
+
+    for item in (watchlist.get("movies") or []) + (watchlist.get("shows") or []):
+        scan(item)
+    return tmdb_ids, imdb_ids
+
+
+def _enrich_watchlist_genres(provider: "MDBListProvider", data: dict) -> None:
+    """Complète les genres manquants de la Watchlist via des appels groupés
+    (200 identifiants max par appel). Uniquement pour les contenus sans genres,
+    les listes et l'historique fournissant déjà les leurs. Le résultat est mis
+    en cache avec le dataset : aucun appel supplémentaire après un F5."""
+    tmdb_ids, imdb_ids = _watchlist_missing_genre_ids(data)
+    if not tmdb_ids and not imdb_ids:
+        return
+    by_tmdb: dict[int, list[str]] = {}
+    by_imdb: dict[str, list[str]] = {}
+    for index in range(0, max(len(tmdb_ids), len(imdb_ids), 1), 200):
+        tchunk = tmdb_ids[index:index + 200]
+        ichunk = imdb_ids[index:index + 200]
+        try:
+            items = provider.media_info_batch(tmdb_ids=tchunk or None, imdb_ids=ichunk or None)
+        except Exception:
+            continue
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+            raw_tmdb = ids.get("tmdb")
+            try:
+                tmdb = int(raw_tmdb) if raw_tmdb not in (None, "", 0) else None
+            except (TypeError, ValueError):
+                tmdb = None
+            imdb = str(ids.get("imdb") or item.get("imdb_id") or "").strip()
+            names = []
+            for genre in item.get("genres") or []:
+                if isinstance(genre, dict):
+                    genre = genre.get("name") or genre.get("title") or genre.get("slug")
+                if genre:
+                    names.append(str(genre).strip().title())
+            names = sorted({n for n in names if n}, key=str.casefold)
+            if not names:
+                continue
+            if tmdb:
+                by_tmdb[tmdb] = names
+            if imdb.startswith("tt"):
+                by_imdb[imdb] = names
+
+    watchlist = (data.get("sections") or {}).get("watchlist") or {}
+    for item in (watchlist.get("movies") or []) + (watchlist.get("shows") or []):
+        if not isinstance(item, dict) or item.get("genres"):
+            continue
+        ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+        raw_tmdb = ids.get("tmdb") or item.get("tmdb_id") or item.get("tmdbid")
+        if raw_tmdb in (None, ""):
+            raw_id = item.get("id")
+            try:
+                raw_tmdb = int(raw_id) if raw_id not in (None, "", 0, "0") else None
+            except (TypeError, ValueError):
+                raw_tmdb = None
+        try:
+            tmdb = int(raw_tmdb) if raw_tmdb not in (None, "", 0, "0") else None
+        except (TypeError, ValueError):
+            tmdb = None
+        imdb = str(ids.get("imdb") or item.get("imdb_id") or item.get("imdb") or "").strip()
+        names = by_tmdb.get(tmdb) or (by_imdb.get(imdb) if imdb.startswith("tt") else None)
+        if names:
+            item["genres"] = names
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_mdblist_cached(cache_key: str, access_token: str) -> dict[str, Any]:
     """Charge le dataset MDBList avec un cache persistant (1 h).
@@ -1736,6 +1851,7 @@ def _load_mdblist_cached(cache_key: str, access_token: str) -> dict[str, Any]:
     """
     provider = MDBListProvider(access_token)
     raw_data = provider.load_dataset()
+    _enrich_watchlist_genres(provider, raw_data)
     data = normalize_provider_dataset(raw_data)
     data["_cached"] = True
     return data
@@ -1986,7 +2102,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     roulette_badge = '<span class="source-badge">CHOIX DE LA ROULETTE</span><br>' if highlighted else ""
     # Liens uniformisés (mêmes badges que En cours / Fantôme / Calendrier).
     item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-    year_pill = f'<span class="mc-year">{year}</span>' if year else ''
+    year_pill = f'<span class="mc-year" data-tooltip="Année de sortie">{year}</span>' if year else ''
     head = (
         f'<div class="mc-head">'
         f'{_type_chip(str(row.get("type") or ""))}'
@@ -2000,7 +2116,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     friction_tip = "Friction : l'effort nécessaire pour lancer ce contenu (durée, exigence, accessibilité). Plus elle est basse, plus c'est facile à commencer."
     score_tip = "Score personnel : adéquation estimée avec tes goûts, calculée sur ton appareil. Plus il est haut, mieux le contenu te correspond."
     score_col = (
-        f'<div class="media-list-pct" title="{escape(score_tip, quote=True)}">{score_val}'
+        f'<div class="media-list-pct" data-tooltip="{escape(score_tip, quote=True)}">{score_val}'
         f'<span class="sub">score /100</span></div>'
     )
     score_inline = f'<span class="score-badge gsm-only" data-tooltip="{escape(score_tip, quote=True)}">{score_val}/100</span>'
@@ -2540,8 +2656,8 @@ def render_progress_page() -> None:
             show_ref = row.get("show") if isinstance(row.get("show"), dict) else {}
             show_ids = show_ref.get("ids") if isinstance(show_ref.get("ids"), dict) else {}
             raw_show_title = str(show_ref.get("title") or row.get("title") or "")
-            pct_col = f'<div class="media-list-pct">{percent:.0f}%<span class="sub">vu</span></div>'
-            pct_inline = f'<span class="mc-inline-pct">{percent:.0f}%</span>'
+            pct_col = f'<div class="media-list-pct" data-tooltip="Pourcentage de la série déjà visionné">{percent:.0f}%<span class="sub">vu</span></div>'
+            pct_inline = f'<span class="mc-inline-pct" data-tooltip="Pourcentage de la série déjà visionné">{percent:.0f}%</span>'
             links_html = _content_links_html(show_ids, raw_show_title, is_show=True, suffix=pct_inline)
             # Progression connue (MDBList) ou inconnue (ZIP Trakt sans métadonnées).
             if total and number:
@@ -2725,8 +2841,8 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
         if details:
             info_parts.append(escape(" · ".join(details)))
         info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
-        pct_col = f'<div class="media-list-pct">{progress:.0f}%<span class="sub">vu</span></div>'
-        pct_inline = f'<span class="mc-inline-pct">{progress:.0f}%</span>'
+        pct_col = f'<div class="media-list-pct" data-tooltip="Progression visionnée">{progress:.0f}%<span class="sub">vu</span></div>'
+        pct_inline = f'<span class="mc-inline-pct" data-tooltip="Progression visionnée">{progress:.0f}%</span>'
         head = (
             f'<div class="mc-head">'
             f'{_type_chip(str(row.get("type") or ""))}'
@@ -2930,8 +3046,8 @@ def render_ghost_page() -> None:
         if details:
             info_parts.append(escape(" · ".join(details)))
         info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
-        pct_col = f'<div class="media-list-pct">{progress:.0f}%<span class="sub">vu</span></div>'
-        pct_inline = f'<span class="mc-inline-pct">{progress:.0f}%</span>'
+        pct_col = f'<div class="media-list-pct" data-tooltip="Progression visionnée">{progress:.0f}%<span class="sub">vu</span></div>'
+        pct_inline = f'<span class="mc-inline-pct" data-tooltip="Progression visionnée">{progress:.0f}%</span>'
         row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
         links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), suffix=pct_inline)
         head = (
@@ -3981,7 +4097,7 @@ def render_calendar_page() -> None:
                     info_parts.append(f"▶️ {episode}")
                 if meta:
                     info_parts.append(escape(" · ".join(meta)))
-                inline_time = f'<span class="mc-inline-pct">🕒 {escape(time_text)}</span>' if time_text else ''
+                inline_time = f'<span class="mc-inline-pct" data-tooltip="Horaire de diffusion">🕒 {escape(time_text)}</span>' if time_text else ''
                 info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
                 row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
                 links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), suffix=inline_time)
@@ -3993,7 +4109,7 @@ def render_calendar_page() -> None:
                     f'</div>'
                 )
                 time_pct = (
-                    f'<div class="media-list-pct">{escape(time_text)}'
+                    f'<div class="media-list-pct" data-tooltip="Horaire de diffusion">{escape(time_text)}'
                     f'<span class="sub">horaire</span></div>'
                     if time_text else ""
                 )
@@ -4930,8 +5046,8 @@ def page_dashboard() -> None:
         if not st.session_state.get("_auto_load_done"):
             st.session_state["_auto_load_done"] = True
             try:
-                with st.spinner("Chargement automatique de vos données MDBList…"):
-                    load_mdblist_dataset()
+                # Sert le cache st.cache_data : 0 appel API après un F5 à chaud.
+                load_mdblist_dataset()
             except Exception:
                 pass
             st.rerun()
@@ -4952,7 +5068,7 @@ def page_dashboard() -> None:
         st.divider()
         st.markdown('<div class="page-title">📥 Vos données Trakt (import ZIP)</div>', unsafe_allow_html=True)
         st.caption("Lecture seule · aucune écriture. Toutes les pages utilisent ces données.")
-        if st.button("🚪 Quitter les données ZIP Trakt", key="leave_zip_data"):
+        if st.button("🚪 Quitter les données ZIP Trakt", type="primary", key="leave_zip_data"):
             st.session_state.pop("_normalized_dataset", None)
             st.session_state.pop("_source_genre_cache", None)
             st.session_state.pop("_mdblist_playback_poster_cache", None)
