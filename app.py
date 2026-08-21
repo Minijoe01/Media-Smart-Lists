@@ -20,6 +20,7 @@ from streamlit_cookies_controller import CookieController
 import json
 
 import pandas as pd
+import requests
 
 import mdblist_oauth as mdb_oauth
 import achievements_engine as achievements_mod
@@ -1840,6 +1841,70 @@ def _enrich_watchlist_genres(provider: "MDBListProvider", data: dict) -> None:
             item["genres"] = names
 
 
+def _tmdb_api_key() -> str:
+    """Clé TMDB (optionnelle) depuis les Secrets Streamlit."""
+    try:
+        return str(st.secrets.get("TMDB_API_KEY") or "").strip()
+    except Exception:
+        return ""
+
+
+def _enrich_watchlist_genres_tmdb(data: dict) -> None:
+    """Complète les genres manquants de la Watchlist via l'API TMDB.
+
+    La Watchlist MDBList (et l'endpoint Media Info) ne renvoient pas de
+    `genres` : c'est une limitation de l'API MDBList. TMDB, qui est la source
+    de métadonnées de MDBList, fournit les genres. Un seul appel par contenu
+    manquant, uniquement pour ceux qui n'ont encore aucun genre, et le résultat
+    est mis en cache avec le dataset (aucun appel supplémentaire après un F5).
+    """
+    key = _tmdb_api_key()
+    if not key:
+        return
+    watchlist = (data.get("sections") or {}).get("watchlist") or {}
+    processed = 0
+    for item in (watchlist.get("movies") or []) + (watchlist.get("shows") or []):
+        if not isinstance(item, dict) or item.get("genres"):
+            continue
+        ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+        tmdb = ids.get("tmdb") or item.get("tmdb_id") or item.get("tmdbid")
+        if tmdb in (None, ""):
+            raw_id = item.get("id")
+            try:
+                tmdb = int(raw_id) if raw_id not in (None, "", 0, "0") else None
+            except (TypeError, ValueError):
+                tmdb = None
+        try:
+            tmdb = int(tmdb) if tmdb not in (None, "", 0, "0") else None
+        except (TypeError, ValueError):
+            tmdb = None
+        if not tmdb:
+            continue
+        mediatype = str(item.get("mediatype") or item.get("type") or "").lower()
+        kind = "movie" if ("movie" in mediatype or "film" in mediatype) else "tv"
+        try:
+            response = requests.get(
+                f"https://api.themoviedb.org/3/{kind}/{tmdb}",
+                params={"api_key": key, "language": "en-US"},
+                timeout=10,
+            )
+            if response.status_code != 200:
+                continue
+            payload = response.json()
+        except Exception:
+            continue
+        genres = payload.get("genres") or []
+        names = sorted(
+            {str(g.get("name") or "").strip().title() for g in genres if isinstance(g, dict) and g.get("name")},
+            key=str.casefold,
+        )
+        if names:
+            item["genres"] = names
+            processed += 1
+        if processed >= 400:
+            break
+
+
 @st.cache_data(ttl=3600, show_spinner=False)
 def _load_mdblist_cached(cache_key: str, access_token: str) -> dict[str, Any]:
     """Charge le dataset MDBList avec un cache persistant (1 h).
@@ -1852,6 +1917,7 @@ def _load_mdblist_cached(cache_key: str, access_token: str) -> dict[str, Any]:
     provider = MDBListProvider(access_token)
     raw_data = provider.load_dataset()
     _enrich_watchlist_genres(provider, raw_data)
+    _enrich_watchlist_genres_tmdb(raw_data)
     data = normalize_provider_dataset(raw_data)
     data["_cached"] = True
     return data

@@ -192,7 +192,7 @@ class MDBListProvider:
             try:
                 response = self._post(
                     f"/{provider_name}/any",
-                    {"ids": unique, "append_to_response": "genres,description"},
+                    {"ids": unique, "append_to_response": ["genres", "description"]},
                 )
             except MDBListReadError:
                 # Certaines versions de l'API refusent append_to_response sur
