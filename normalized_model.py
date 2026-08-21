@@ -298,9 +298,115 @@ def build_progress(sections: dict[str, Any]) -> list[dict[str, Any]]:
     return output
 
 
+def _genre_lookup(sections: dict[str, Any]) -> dict[str, list[str]]:
+    """Indexe les genres connus par identité de média (tmdb/imdb/tvdb/…).
+
+    Permet de compléter les contenus de la Watchlist dont le champ `genres`
+    est absent (certaines réponses MDBList l'omettent), sans aucun appel API.
+    """
+    def unwrap(item: Any) -> dict[str, Any]:
+        if not isinstance(item, dict):
+            return {}
+        for key in ("movie", "show", "episode"):
+            nested = item.get(key)
+            if isinstance(nested, dict):
+                return nested
+        return item
+
+    def identity(item: dict[str, Any]) -> str | None:
+        media = unwrap(item)
+        kind = media_type(media)
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        for key in ("tmdb", "imdb", "tvdb", "trakt", "mdblist"):
+            value = ids.get(key)
+            if value not in (None, "", 0, "0"):
+                return f"{kind}:{key}:{value}"
+        return None
+
+    lookup: dict[str, list[str]] = {}
+
+    def add(item: Any) -> None:
+        media = unwrap(item)
+        if not media:
+            return
+        names = _genre_names(media)
+        if not names:
+            return
+        key = identity(media)
+        if key:
+            lookup.setdefault(key, names)
+
+    watched = sections.get("watched") or {}
+    for row in watched.get("movies") or []:
+        add(row)
+    for row in watched.get("shows") or []:
+        add(row)
+    for row in watched.get("episodes") or []:
+        episode = row.get("episode") if isinstance(row.get("episode"), dict) else {}
+        add(episode.get("show") if isinstance(episode.get("show"), dict) else episode)
+    ratings = sections.get("ratings") or {}
+    for row in ratings.get("movies") or []:
+        add(row)
+    for row in ratings.get("shows") or []:
+        add(row)
+    for item in sections.get("user_lists") or []:
+        if not isinstance(item, dict):
+            continue
+        for movie in item.get("movies") or []:
+            add(movie)
+        for show in item.get("shows") or []:
+            add(show)
+    for row in sections.get("upnext") or []:
+        if isinstance(row, dict):
+            add(row.get("show"))
+    for row in sections.get("playback") or []:
+        if isinstance(row, dict):
+            add(row.get("movie"))
+            add(row.get("show"))
+            episode = row.get("episode") if isinstance(row.get("episode"), dict) else {}
+            add(episode.get("show") if isinstance(episode.get("show"), dict) else episode)
+    dropped = sections.get("dropped") or {}
+    for show in dropped.get("shows") or []:
+        add(show)
+    return lookup
+
+
+def _fill_watchlist_genres(sections: dict[str, Any]) -> None:
+    """Complète les genres manquants des contenus de la Watchlist depuis les
+    autres sections (historique, listes, notes, progression) — 0 appel API."""
+    lookup = _genre_lookup(sections)
+    watchlist = sections.get("watchlist") or {}
+    for movie in watchlist.get("movies") or []:
+        if not isinstance(movie, dict) or _genre_names(movie):
+            continue
+        names = _find_genre(lookup, movie)
+        if names:
+            movie["genres"] = names
+    for show in watchlist.get("shows") or []:
+        if not isinstance(show, dict) or _genre_names(show):
+            continue
+        names = _find_genre(lookup, show)
+        if names:
+            show["genres"] = names
+
+
+def _find_genre(lookup: dict[str, list[str]], item: dict[str, Any]) -> list[str] | None:
+    ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+    kind = media_type(item)
+    for key in ("tmdb", "imdb", "tvdb", "trakt", "mdblist"):
+        value = ids.get(key)
+        if value in (None, "", 0, "0"):
+            continue
+        names = lookup.get(f"{kind}:{key}:{value}")
+        if names:
+            return names
+    return None
+
+
 def normalize_provider_dataset(raw: dict[str, Any]) -> dict[str, Any]:
     sections = raw.get("sections") if isinstance(raw.get("sections"), dict) else {}
     source_name = str(raw.get("source") or "mdblist")
+    _fill_watchlist_genres(sections)
     return {
         **raw,
         "schema_version": NORMALIZED_SCHEMA_VERSION,

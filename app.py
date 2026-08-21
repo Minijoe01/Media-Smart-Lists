@@ -340,6 +340,37 @@ st.markdown(
         margin-top: .4rem;
         padding: .28rem .5rem;
     }
+    .score-badge[data-tooltip] { position: relative; cursor: help; }
+    .score-badge[data-tooltip]::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%) translateY(4px);
+        background: rgba(0, 0, 0, .95);
+        border: 1px solid rgba(255, 225, 0, .50);
+        border-radius: 10px;
+        color: var(--am-text);
+        font-size: .72rem;
+        font-weight: 500;
+        line-height: 1.4;
+        max-width: 240px;
+        min-width: 180px;
+        width: max-content;
+        padding: .45rem .55rem;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: opacity .15s ease, transform .15s ease;
+        z-index: 9999;
+        text-align: left;
+        white-space: normal;
+    }
+    .score-badge[data-tooltip]:hover::after {
+        opacity: 1;
+        visibility: visible;
+        transform: translateX(-50%) translateY(0);
+    }
     .reason-pill, .warning-pill {
         border-radius: 999px;
         cursor: help;
@@ -911,6 +942,7 @@ st.markdown(
         font-size: .75rem;
         white-space: nowrap;
     }
+    .links-spacer { margin-left: auto; display: inline-flex; align-items: center; }
     .gsm-only { display: none; }
 
     @media (max-width: 768px) {
@@ -933,7 +965,7 @@ st.markdown(
            dans le texte : plus de colonne dédiée, aucun espace perdu. */
         .media-list-pct { display: none !important; }
         .mc-inline-pct { display: inline-block !important; }
-        .gsm-only { display: inline-block !important; margin-left: .35rem; }
+        .gsm-only { display: inline-block !important; margin-left: auto; }
     }
     </style>
     """,
@@ -1898,7 +1930,11 @@ def _content_links_html(ids: dict, title: str, is_show: bool = False, prefix: st
             f'<a class="link-pill" href="https://mdblist.com/{base}/{str(imdb)}" '
             f'target="_blank" rel="noopener noreferrer" title="Lien vers la fiche MDBList">MDBL</a>'
         )
-    return f'<div style="margin-top:.35rem;">{prefix}{" ".join(links)}{suffix}</div>'
+    spacer = f'<span class="links-spacer">{suffix}</span>' if suffix else ""
+    return (
+        f'<div style="margin-top:.35rem; display:flex; flex-wrap:wrap; align-items:center; gap:.2rem;">'
+        f'{prefix}{" ".join(links)}{spacer}</div>'
+    )
 
 
 def _signal_pill(signal: dict) -> str:
@@ -1950,7 +1986,6 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     roulette_badge = '<span class="source-badge">CHOIX DE LA ROULETTE</span><br>' if highlighted else ""
     # Liens uniformisés (mêmes badges que En cours / Fantôme / Calendrier).
     item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-    links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
     year_pill = f'<span class="mc-year">{year}</span>' if year else ''
     head = (
         f'<div class="mc-head">'
@@ -1962,17 +1997,21 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     )
     score_val = int(round(row.get("score", 0)))
     friction_val = int(row.get("friction", 0))
+    friction_tip = "Friction : l'effort nécessaire pour lancer ce contenu (durée, exigence, accessibilité). Plus elle est basse, plus c'est facile à commencer."
+    score_tip = "Score personnel : adéquation estimée avec tes goûts, calculée sur ton appareil. Plus il est haut, mieux le contenu te correspond."
     score_col = (
-        f'<div class="media-list-pct">{score_val}'
+        f'<div class="media-list-pct" title="{escape(score_tip, quote=True)}">{score_val}'
         f'<span class="sub">score /100</span></div>'
     )
-    score_inline = f'<span class="score-badge gsm-only">{score_val}/100</span>'
+    score_inline = f'<span class="score-badge gsm-only" data-tooltip="{escape(score_tip, quote=True)}">{score_val}/100</span>'
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
     st.markdown(
         f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
         f'<small>{escape(" · ".join(metadata))}</small>{links_html}'
-        f'<span class="score-badge">Friction {friction_val}/100</span>{score_inline}'
+        f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">'
+        f'<span class="score-badge" data-tooltip="{escape(friction_tip, quote=True)}">Friction {friction_val}/100</span>{score_inline}'
+        f'</div>'
         f'<div class="progress-bar-container"><div class="progress-bar-fill" '
         f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
         f'<div>{pills}</div></div>{score_col}</div>',
@@ -4957,8 +4996,8 @@ def page_dashboard() -> None:
     # sont déjà chargées (pas d'appel API involontaire en haut de page).
     st.divider()
     st.caption(
-        "ℹ️ L'actualisation recharge depuis l'API MDBList et consomme ton "
-        "quota journalier (~1000 appels/jour)."
+        "ℹ️ L'actualisation recharge depuis l'API MDBList et consomme ton quota journalier "
+        "(maximum de 1000 appels/jour pour un compte gratuit)."
     )
     if st.button("🔄 Actualiser les données MDBList", type="primary", key="refresh_mdblist_bottom", use_container_width=True):
         with st.spinner("Actualisation MDBList…"):
