@@ -330,10 +330,10 @@ st.markdown(
         min-height: 154px;
     }
     .score-badge {
-        background: linear-gradient(135deg, rgba(255, 255, 255, .07), rgba(0, 0, 0, .30));
+        background: linear-gradient(135deg, rgba(0, 163, 146, .16), rgba(0, 0, 0, .50));
         border: 1px solid rgba(255, 225, 0, .55);
         border-radius: 10px;
-        color: var(--am-text);
+        color: var(--am-yellow);
         display: inline-block;
         font-size: .82rem;
         font-weight: 800;
@@ -911,6 +911,7 @@ st.markdown(
         font-size: .75rem;
         white-space: nowrap;
     }
+    .gsm-only { display: none; }
 
     @media (max-width: 768px) {
         .msl-grid2 { grid-template-columns: 1fr; }
@@ -932,6 +933,7 @@ st.markdown(
            dans le texte : plus de colonne dédiée, aucun espace perdu. */
         .media-list-pct { display: none !important; }
         .mc-inline-pct { display: inline-block !important; }
+        .gsm-only { display: inline-block !important; margin-left: .35rem; }
     }
     </style>
     """,
@@ -1780,7 +1782,7 @@ def render_data_loader() -> None:
             'pour les retirer d’abord.</div>',
             unsafe_allow_html=True,
         )
-    is_mdblist_data = bool(data and str(data.get("source") or "") == "mdblist")
+    is_mdblist_data = bool(data and str(data.get("source") or "mdblist") == "mdblist")
     cached = bool(is_mdblist_data and data.get("_cached"))
     if is_mdblist_data:
         # Données déjà chargées : plus de bouton ici (évite un appel API
@@ -1871,7 +1873,7 @@ def _justwatch_url(title: str) -> str:
     return "https://www.justwatch.com/fr/recherche?q=" + quote(str(title or ""))
 
 
-def _content_links_html(ids: dict, title: str, is_show: bool = False, prefix: str = "") -> str:
+def _content_links_html(ids: dict, title: str, is_show: bool = False, prefix: str = "", suffix: str = "") -> str:
     """Liens discrets, uniformisés en petits badges avec info-bulle, vers :
     JustWatch (où regarder), TMDB (fiche) et MDBList (fiche)."""
     if not isinstance(ids, dict):
@@ -1896,7 +1898,7 @@ def _content_links_html(ids: dict, title: str, is_show: bool = False, prefix: st
             f'<a class="link-pill" href="https://mdblist.com/{base}/{str(imdb)}" '
             f'target="_blank" rel="noopener noreferrer" title="Lien vers la fiche MDBList">MDBL</a>'
         )
-    return f'<div style="margin-top:.35rem;">{prefix}{" ".join(links)}</div>'
+    return f'<div style="margin-top:.35rem;">{prefix}{" ".join(links)}{suffix}</div>'
 
 
 def _signal_pill(signal: dict) -> str:
@@ -1964,13 +1966,13 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         f'<div class="media-list-pct">{score_val}'
         f'<span class="sub">score /100</span></div>'
     )
-    score_inline = f'<span class="mc-inline-pct">Score {score_val}/100</span>'
-    links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"), prefix=score_inline)
+    score_inline = f'<span class="score-badge gsm-only">{score_val}/100</span>'
+    links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
     st.markdown(
         f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
         f'<small>{escape(" · ".join(metadata))}</small>{links_html}'
-        f'<span class="score-badge">Friction {friction_val}/100</span>'
+        f'<span class="score-badge">Friction {friction_val}/100</span>{score_inline}'
         f'<div class="progress-bar-container"><div class="progress-bar-fill" '
         f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
         f'<div>{pills}</div></div>{score_col}</div>',
@@ -2501,7 +2503,7 @@ def render_progress_page() -> None:
             raw_show_title = str(show_ref.get("title") or row.get("title") or "")
             pct_col = f'<div class="media-list-pct">{percent:.0f}%<span class="sub">vu</span></div>'
             pct_inline = f'<span class="mc-inline-pct">{percent:.0f}%</span>'
-            links_html = _content_links_html(show_ids, raw_show_title, is_show=True, prefix=pct_inline)
+            links_html = _content_links_html(show_ids, raw_show_title, is_show=True, suffix=pct_inline)
             # Progression connue (MDBList) ou inconnue (ZIP Trakt sans métadonnées).
             if total and number:
                 progress_line = (
@@ -2892,7 +2894,7 @@ def render_ghost_page() -> None:
         pct_col = f'<div class="media-list-pct">{progress:.0f}%<span class="sub">vu</span></div>'
         pct_inline = f'<span class="mc-inline-pct">{progress:.0f}%</span>'
         row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
-        links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), prefix=pct_inline)
+        links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), suffix=pct_inline)
         head = (
             f'<div class="mc-head">'
             f'{_type_chip(str(row.get("type") or ""))}'
@@ -3943,7 +3945,7 @@ def render_calendar_page() -> None:
                 inline_time = f'<span class="mc-inline-pct">🕒 {escape(time_text)}</span>' if time_text else ''
                 info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
                 row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
-                links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), prefix=inline_time)
+                links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), suffix=inline_time)
                 head = (
                     f'<div class="mc-head">'
                     f'{_type_chip(str(row.get("type") or ""))}'
@@ -4958,7 +4960,7 @@ def page_dashboard() -> None:
         "ℹ️ L'actualisation recharge depuis l'API MDBList et consomme ton "
         "quota journalier (~1000 appels/jour)."
     )
-    if st.button("🔄 Actualiser les données MDBList", key="refresh_mdblist_bottom", use_container_width=True):
+    if st.button("🔄 Actualiser les données MDBList", type="primary", key="refresh_mdblist_bottom", use_container_width=True):
         with st.spinner("Actualisation MDBList…"):
             _load_mdblist_cached.clear()
             load_mdblist_dataset()
