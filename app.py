@@ -227,7 +227,7 @@ st.markdown(
     }
 
     .accent-callout {
-        background: linear-gradient(135deg, rgba(0, 163, 146, .18), rgba(0, 0, 0, .32));
+        background: linear-gradient(135deg, rgba(0, 163, 146, .08), rgba(0, 0, 0, .55));
         border: 1px solid rgba(255, 225, 0, .55);
         border-left: 4px solid var(--am-yellow);
         border-radius: 13px;
@@ -274,7 +274,7 @@ st.markdown(
     }
     .source-card { min-height: 185px; }
     .guide-step {
-        background: linear-gradient(135deg, rgba(0, 163, 146, .16), rgba(0, 0, 0, .30));
+        background: linear-gradient(135deg, rgba(0, 163, 146, .08), rgba(0, 0, 0, .55));
         border: 1px solid rgba(255, 225, 0, .45);
         border-left: 3px solid var(--am-yellow);
         border-radius: 10px;
@@ -284,8 +284,8 @@ st.markdown(
         margin: .25rem 0;
         padding: .45rem .7rem;
     }
-    .guide-step strong, .guide-step a { color: var(--am-yellow); }
-    .guide-step a { text-decoration: underline; }
+    .guide-step strong { color: var(--am-text); }
+    .guide-step a { color: var(--am-yellow); text-decoration: underline; }
     .source-card h3 {
         color: var(--am-text);
         margin: .45rem 0 .5rem;
@@ -819,7 +819,8 @@ st.markdown(
         margin-bottom: 4px;
     }
     .mc-head strong { flex: 1 1 auto; min-width: 0; }
-    .mc-year { color: var(--am-text-muted); font-size: .84rem; font-weight: 600; margin-left: .4rem; white-space: nowrap; }
+    .mc-year { color: var(--am-text-muted); font-size: .9rem; font-weight: 500; white-space: nowrap; }
+    .mc-title-pct { color: var(--am-yellow); font-weight: 800; white-space: nowrap; }
     .mc-type {
         display: inline-flex; align-items: center;
         color: var(--am-text-muted);
@@ -1939,12 +1940,11 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     # Liens uniformisés (mêmes badges que En cours / Fantôme / Calendrier).
     item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
-    year_suffix = f'· {year}' if year else ''
+    year_in_title = f' <span class="mc-year">({year})</span>' if year else ''
     head = (
         f'<div class="mc-head">'
         f'{_type_chip(str(row.get("type") or ""))}'
-        f'<strong>{title}</strong>'
-        f'<span class="mc-year">{year_suffix}</span>'
+        f'<strong>{title}{year_in_title}</strong>'
         f'{_public_note_html(item)}'
         f'</div>'
     )
@@ -2513,18 +2513,14 @@ def render_progress_page() -> None:
                 info_parts.append(f'🗓️ {escape(" · ".join(dates))}')
             info_parts.append(progress_line)
             info_parts.append(time_line)
-            inline_pct = f'<span class="mc-inline-pct">{percent:.0f}% · </span>'
-            info_html = '<small>' + inline_pct + '<br>'.join(info_parts) + '</small>'
+            info_html = '<small>' + '<br>'.join(info_parts) + '</small>'
             note_html = _public_note_html(show)
+            title_pct = f' <span class="mc-title-pct">- {percent:.0f}%</span>'
             head = (
                 f'<div class="mc-head">'
-                f'<strong style="font-size:1.05rem;">{title}</strong>'
+                f'<strong style="font-size:1.05rem;">{title}{title_pct}</strong>'
                 f'{note_html}'
                 f'</div>'
-            )
-            pct_html = (
-                f'<div class="media-list-pct">{percent:.0f}%'
-                f'<span class="sub">vu</span></div>'
             )
             st.markdown(
                 f'<div class="media-list-card upnext-card">{image_html}'
@@ -2533,7 +2529,7 @@ def render_progress_page() -> None:
                 f'{info_html}'
                 f'{bar_html}'
                 f'{links_html}'
-                f'</div>{pct_html}</div>',
+                f'</div></div>',
                 unsafe_allow_html=True,
             )
 
@@ -2675,18 +2671,14 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
             info_parts.append(f"▶️ {episode_label}")
         if details:
             info_parts.append(escape(" · ".join(details)))
-        inline_pct = f'<span class="mc-inline-pct">{progress:.0f}% · </span>'
-        info_html = f'<small>{inline_pct}{"<br>".join(info_parts)}</small>' if info_parts else f'<small>{inline_pct}</small>'
+        info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
+        title_pct = f' <span class="mc-title-pct">- {progress:.0f}%</span>'
         head = (
             f'<div class="mc-head">'
             f'{_type_chip(str(row.get("type") or ""))}'
-            f'<strong>{title}{year}</strong>'
+            f'<strong>{title}{year}{title_pct}</strong>'
             f'<span class="source-badge">EN COURS MAINTENANT</span>'
             f'</div>'
-        )
-        pct_html = (
-            f'<div class="media-list-pct">{progress:.0f}%'
-            f'<span class="sub">vu</span></div>'
         )
         st.markdown(
             f'<div class="media-list-card upnext-card">{image_html}'
@@ -2695,7 +2687,7 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
             f'{info_html}'
             f'<div class="progress-bar-container"><div class="progress-bar-fill" '
             f'style="width:{max(0,min(progress,100))}%;"></div></div>'
-            f'</div>{pct_html}</div>',
+            f'</div></div>',
             unsafe_allow_html=True,
         )
     checked = datetime.fromtimestamp(float(fetched_at)).strftime("%H:%M:%S")
@@ -2882,20 +2874,16 @@ def render_ghost_page() -> None:
             info_parts.append(f"▶️ {episode_label}")
         if details:
             info_parts.append(escape(" · ".join(details)))
-        inline_pct = f'<span class="mc-inline-pct">{progress:.0f}% · </span>'
-        info_html = f'<small>{inline_pct}{"<br>".join(info_parts)}</small>' if info_parts else f'<small>{inline_pct}</small>'
+        info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
         row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
         links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"))
+        title_pct = f' <span class="mc-title-pct">- {progress:.0f}%</span>'
         head = (
             f'<div class="mc-head">'
             f'{_type_chip(str(row.get("type") or ""))}'
-            f'<strong>{title}{year}</strong>'
+            f'<strong>{title}{year}{title_pct}</strong>'
             f'{_public_note_html(row)}'
             f'</div>'
-        )
-        pct_html = (
-            f'<div class="media-list-pct">{progress:.0f}%'
-            f'<span class="sub">vu</span></div>'
         )
         st.markdown(
             f'<div class="media-list-card upnext-card">{image_html}'
@@ -2905,7 +2893,7 @@ def render_ghost_page() -> None:
             f'<div class="progress-bar-container"><div class="progress-bar-fill" '
             f'style="width:{max(0,min(progress,100))}%;"></div></div>'
             f'{links_html}'
-            f'</div>{pct_html}</div>',
+            f'</div></div>',
             unsafe_allow_html=True,
         )
 
