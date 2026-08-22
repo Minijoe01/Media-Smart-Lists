@@ -2076,7 +2076,7 @@ def _enrich_tmdb_metadata(data: dict) -> None:
     need_genres = [(m, k) for m, k in all_media if not m.get("genres")]
     need_credits = [(m, k) for m, k in all_media if m.get("genres") and (not m.get("studios") or not m.get("actors"))]
 
-    budget = 600  # sécurité, élevé : ne coupe qu'en cas de bibliothèque énorme
+    budget = 2000  # sécurité : ne coupe qu'en cas de bibliothèque énorme
     targets: list[tuple[dict, str]] = []
     seen: set = set()
     for m, k in need_genres + need_credits:
@@ -2101,7 +2101,7 @@ def _enrich_tmdb_metadata(data: dict) -> None:
         list(executor.map(work, targets))
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : cache serveur partagé (PC + GSM)
 def _load_mdblist_cached(cache_key: str, access_token: str) -> dict[str, Any]:
     """Charge le dataset MDBList avec un cache persistant (1 h).
 
@@ -2201,6 +2201,8 @@ def render_data_loader() -> None:
         loaded_at = str(data.get("loaded_at") or "").replace("T", " ").replace("Z", " UTC")
         source_txt = " (extrait du cache)" if cached else ""
         st.caption(f"Données chargées{source_txt} : {loaded_at} · {request_count} requête(s) API")
+        if cached:
+            st.caption("♻️ Cache serveur partagé (7 jours) : le rechargement ne consomme aucun appel API, même depuis un autre appareil.")
         if errors:
             st.markdown(
                 f'<div class="accent-callout"><strong>CHARGEMENT PARTIEL</strong> · '
@@ -2305,7 +2307,7 @@ def _content_links_html(ids: dict, title: str, is_show: bool = False, prefix: st
         )
     imdb = ids.get("imdb")
     if imdb:
-        base = "show" if is_show else "m"
+        base = "show" if is_show else "movie"
         links.append(
             f'<a class="link-pill" href="https://mdblist.com/{base}/{str(imdb)}" '
             f'target="_blank" rel="noopener noreferrer" title="Lien vers la fiche MDBList">MDBL</a>'
@@ -2500,100 +2502,135 @@ def render_watchlist_page() -> None:
 
     source_by_label = {source_display_label(source): source for source in sources}
     source_by_key = {source["key"]: source for source in sources}
-    source_col, genre_col, type_col = st.columns(3)
-    selected_label = source_col.selectbox("Source", list(source_by_label), key="qr_source")
-    source = source_by_label[selected_label]
+    # ── 🗂️ Sélection : source, genres, type, acteurs, studios ──────────────
+    with st.expander("🗂️ Sélection de contenu", expanded=True):
+        source_col, genre_col, type_col = st.columns(3)
+        selected_label = source_col.selectbox("Source", list(source_by_label), key="qr_source")
+        source = source_by_label[selected_label]
 
-    genre_records = sections.get("genres") or []
-    if genre_records:
-        genre_by_title = {
-            str(item.get("title") or item.get("slug") or ""): str(item.get("slug") or "")
-            for item in genre_records
-            if isinstance(item, dict) and item.get("slug")
-        }
-        genre_titles = sorted([title for title in genre_by_title if title], key=str.casefold)
-    else:
-        # Import ZIP Trakt : construire la liste des genres depuis les contenus.
-        genre_by_title = {}
-        seen: set[str] = set()
-        for source in sources:
-            for item in (source.get("movies") or []) + (source.get("shows") or []):
-                for genre in item.get("genres") or []:
-                    name = genre.get("name") if isinstance(genre, dict) else str(genre)
-                    if name and name not in seen:
-                        seen.add(name)
-                        genre_by_title[str(name)] = str(name)
-        genre_titles = sorted(seen, key=str.casefold)
-    selected_genres = genre_col.multiselect(
-        "Genres (recherche intégrée)",
-        genre_titles,
-        key="qr_genres",
-        placeholder="Choisis 1+ genres…",
-    )
-    selected_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
+        genre_records = sections.get("genres") or []
+        if genre_records:
+            genre_by_title = {
+                str(item.get("title") or item.get("slug") or ""): str(item.get("slug") or "")
+                for item in genre_records
+                if isinstance(item, dict) and item.get("slug")
+            }
+            genre_titles = sorted([title for title in genre_by_title if title], key=str.casefold)
+        else:
+            # Import ZIP Trakt : construire la liste des genres depuis les contenus.
+            genre_by_title = {}
+            seen: set[str] = set()
+            for src in sources:
+                for item in (src.get("movies") or []) + (src.get("shows") or []):
+                    for genre in item.get("genres") or []:
+                        name = genre.get("name") if isinstance(genre, dict) else str(genre)
+                        if name and name not in seen:
+                            seen.add(name)
+                            genre_by_title[str(name)] = str(name)
+            genre_titles = sorted(seen, key=str.casefold)
+        selected_genres = genre_col.multiselect(
+            "Genres (recherche intégrée)",
+            genre_titles,
+            key="qr_genres",
+            placeholder="Choisis 1+ genres…",
+        )
+        selected_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
 
-    dur_col, mode_col = st.columns([0.3, 0.7])
-    duration_min = dur_col.selectbox(
-        "Durée minimum",
-        ["Aucune", "≥ 1h", "≥ 1h30", "≥ 2h", "≥ 2h30", "≥ 3h"],
-        key="qr_duration_min",
-    )
-    genre_mode = mode_col.radio(
-        "Correspondance des genres",
-        ["Tous (ET)", "Au moins un (OU)"],
-        key="qr_genre_mode",
-        horizontal=True,
-    )
-    st.caption(
-        "🎭 Genre(s) : « Tous (ET) » = le contenu doit avoir TOUS les genres choisis "
-        "(ex. Animation ET Biographie) · « Au moins un (OU) » = n'importe lequel. "
-        "La recherche intégrée du champ permet de retrouver n'importe quel genre."
-    )
+        # Acteurs / studios (0 appel API : liste GLOBALE sur tous les contenus).
+        all_actors = sorted({
+            str(a["name"]).strip()
+            for m, _k in _all_media(_dataset())
+            for a in (m.get("actors") or []) if isinstance(a, dict) and a.get("name")
+        }, key=str.casefold)
+        all_studios = sorted({
+            str(st_["name"]).strip()
+            for m, _k in _all_media(_dataset())
+            for st_ in (m.get("studios") or []) if isinstance(st_, dict) and st_.get("name")
+        }, key=str.casefold)
+        actor_col, studio_col, castmode_col = st.columns(3)
+        selected_actors = actor_col.multiselect(
+            "Acteurs",
+            all_actors,
+            key="qr_actors",
+            placeholder="Acteur…",
+        )
+        selected_studios = studio_col.multiselect(
+            "Studios",
+            all_studios,
+            key="qr_studios",
+            placeholder="Studio…",
+        )
+        cast_mode = castmode_col.radio(
+            "Correspondance des acteurs",
+            ["Au moins un (OU)", "Tous (ET)"],
+            key="qr_cast_mode",
+            horizontal=True,
+        )
+        genre_mode = st.radio(
+            "Correspondance des genres",
+            ["Tous (ET)", "Au moins un (OU)"],
+            key="qr_genre_mode",
+            horizontal=True,
+        )
+        st.caption(
+            "🎭 Genres : « Tous (ET) » = TOUS les genres choisis · « Au moins un (OU) » = n'importe lequel. "
+            "🎬 Acteurs : même logique ET/OU. 🏢 Studios : toujours « au moins un »."
+        )
 
-    f1, f2, f3, f4 = st.columns(4)
-    search = f1.text_input("Recherche", key="qr_search", placeholder="Titre…")
-    note_min = f2.select_slider(
-        "Note minimum",
-        options=[0.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0],
-        key="qr_note_min",
-    )
-    time_filter = f3.selectbox(
-        "Temps max",
-        ["Aucune limite", "Moins d'1h30", "Moins de 2h", "Moins de 3h", "Soirée (< 10h)", "Week-end (< 24h)"],
-        key="qr_time",
-    )
-    status_filter = f4.selectbox(
-        "Statut",
-        ["Tous les statuts", "Séries terminées", "Séries en cours", "Séries annulées"],
-        key="qr_status",
-    )
+    # ── 🔍 Filtres ────────────────────────────────────────────────────────
+    with st.expander("🔍 Filtres", expanded=True):
+        f1, f2, f3, f4 = st.columns(4)
+        search = f1.text_input("Recherche", key="qr_search", placeholder="Titre…")
+        note_min = f2.select_slider(
+            "Note minimum",
+            options=[0.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0],
+            key="qr_note_min",
+        )
+        time_filter = f3.selectbox(
+            "Temps max",
+            ["Aucune limite", "Moins d'1h30", "Moins de 2h", "Moins de 3h", "Soirée (< 10h)", "Week-end (< 24h)"],
+            key="qr_time",
+        )
+        status_filter = f4.selectbox(
+            "Statut",
+            ["Tous les statuts", "Séries terminées", "Séries en cours", "Séries annulées"],
+            key="qr_status",
+        )
+        duration_min = st.selectbox(
+            "Durée minimum",
+            ["Aucune", "≥ 1h", "≥ 1h30", "≥ 2h", "≥ 2h30", "≥ 3h"],
+            key="qr_duration_min",
+        )
 
-    p1, p2, p3 = st.columns([0.44, 0.34, 0.22])
-    preset = p1.selectbox("Preset rapide", PRESET_NAMES, key="qr_preset")
-    sort_mode = p2.selectbox(
-        "Trier par",
-        [
-            "✨ Pour moi (recommandé)",
-            "⭐ Meilleures notes",
-            "⭐ Notes les plus basses",
-            "⏱️ Plus rapide",
-            "⏱️ Plus long d'abord",
-            "🔥 Populaires",
-            "🔥 Moins populaires",
-            "📥 Ajouté récemment",
-            "📥 Ajouté le plus ancien",
-            "🆕 Nouveautés",
-            "🆒 Plus anciens d'abord",
-            "🚪 Zéro effort",
-            "🚪 Le plus exigeant",
-            "🎬 Films d’abord",
-            "📺 Séries d’abord",
-            "🙅 Pas pour moi",
-        ],
-        key="qr_sort",
-    )
-    display_limit = p3.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
-    st.button("Réinitialiser les filtres", on_click=_reset_recommendation_filters, key="reset_qr")
+    # ── 🔃 Tri & affichage ────────────────────────────────────────────────
+    with st.expander("🔃 Tri & affichage", expanded=True):
+        p1, p2, p3 = st.columns([0.44, 0.34, 0.22])
+        preset = p1.selectbox("Preset rapide", PRESET_NAMES, key="qr_preset")
+        sort_mode = p2.selectbox(
+            "Trier par",
+            [
+                "✨ Pour moi (recommandé)",
+                "⭐ Meilleures notes",
+                "⭐ Notes les plus basses",
+                "⏱️ Plus rapide",
+                "⏱️ Plus long d'abord",
+                "🔥 Populaires",
+                "🔥 Moins populaires",
+                "📥 Ajouté récemment",
+                "📥 Ajouté le plus ancien",
+                "🆕 Nouveautés",
+                "🆒 Plus anciens d'abord",
+                "🚪 Zéro effort",
+                "🚪 Le plus exigeant",
+                "🎬 Films d'abord",
+                "📺 Séries d'abord",
+                "🙅 Pas pour moi",
+            ],
+            key="qr_sort",
+        )
+        display_limit = p3.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
+        st.button("Réinitialiser les filtres", on_click=_reset_recommendation_filters, key="reset_qr")
+
 
     items = list(source["movies"]) + list(source["shows"])
     api_calls_extra = 0
@@ -2669,44 +2706,6 @@ def render_watchlist_page() -> None:
         )
         for item in items
     ]
-
-    # Filtres acteurs / studios (0 appel API : données déjà en cache TMDB).
-    # La liste couvre TOUS les contenus (historique + watchlist + listes),
-    # pas seulement la source affichée.
-    all_actors = sorted({
-        str(a["name"]).strip()
-        for m, _k in _all_media(_dataset())
-        for a in (m.get("actors") or []) if isinstance(a, dict) and a.get("name")
-    }, key=str.casefold)
-    all_studios = sorted({
-        str(st_["name"]).strip()
-        for m, _k in _all_media(_dataset())
-        for st_ in (m.get("studios") or []) if isinstance(st_, dict) and st_.get("name")
-    }, key=str.casefold)
-    actor_col, studio_col, castmode_col = st.columns(3)
-    selected_actors = actor_col.multiselect(
-        "Acteurs",
-        all_actors,
-        key="qr_actors",
-        placeholder="Acteur…",
-    )
-    selected_studios = studio_col.multiselect(
-        "Studios",
-        all_studios,
-        key="qr_studios",
-        placeholder="Studio…",
-    )
-    cast_mode = castmode_col.radio(
-        "Correspondance des acteurs",
-        ["Au moins un (OU)", "Tous (ET)"],
-        key="qr_cast_mode",
-        horizontal=True,
-    )
-    if selected_actors or selected_studios:
-        st.caption(
-            "🎭 Acteurs : « Tous (ET) » = le contenu doit inclure TOUS les acteurs choisis "
-            "· « Au moins un (OU) » = n'importe lequel. 🏢 Studios : toujours « au moins un »."
-        )
 
     def time_ok(row: dict) -> bool:
         if time_filter == "Aucune limite":
