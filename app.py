@@ -2636,7 +2636,7 @@ def render_watchlist_page() -> None:
             for m, _k in _all_media(_dataset())
             for st_ in (m.get("studios") or []) if isinstance(st_, dict) and st_.get("name")
         }, key=str.casefold)
-        actor_col, studio_col, castmode_col = st.columns(3)
+        actor_col, studio_col = st.columns(2)
         selected_actors = actor_col.multiselect(
             "Acteurs",
             all_actors,
@@ -2649,16 +2649,20 @@ def render_watchlist_page() -> None:
             key="qr_studios",
             placeholder="Studio…",
         )
-        cast_mode = castmode_col.radio(
-            "Correspondance des acteurs",
+        # Modes ET/OU réunis sur une même ligne : genres et acteurs traités de
+        # façon identique (OU en premier = comportement par défaut). Les studios
+        # restent toujours en « au moins un » (aucun sélecteur dédié nécessaire).
+        gmode_col, amode_col = st.columns(2)
+        genre_mode = gmode_col.radio(
+            "Genres : correspondance",
             ["Au moins un (OU)", "Tous (ET)"],
-            key="qr_cast_mode",
+            key="qr_genre_mode",
             horizontal=True,
         )
-        genre_mode = st.radio(
-            "Correspondance des genres",
-            ["Tous (ET)", "Au moins un (OU)"],
-            key="qr_genre_mode",
+        cast_mode = amode_col.radio(
+            "Acteurs : correspondance",
+            ["Au moins un (OU)", "Tous (ET)"],
+            key="qr_cast_mode",
             horizontal=True,
         )
         st.caption(
@@ -2667,7 +2671,10 @@ def render_watchlist_page() -> None:
         )
 
     # ── 🔍 Filtres ────────────────────────────────────────────────────────
-    with st.expander("🔍 Filtres", expanded=True):
+    # Replié par défaut : un nouvel utilisateur voit d'abord ses résultats
+    # (tri recommandé), puis ouvre ce menu pour affiner. Les valeurs par
+    # défaut s'appliquent même replié (aucun filtre actif au départ).
+    with st.expander("🔍 Filtres", expanded=False):
         f1, f2, f3, f4 = st.columns(4)
         search = f1.text_input("Recherche", key="qr_search", placeholder="Titre…")
         note_min = f2.select_slider(
@@ -2692,7 +2699,9 @@ def render_watchlist_page() -> None:
         )
 
     # ── 🔃 Tri & affichage ────────────────────────────────────────────────
-    with st.expander("🔃 Tri & affichage", expanded=True):
+    # Replié par défaut (même logique que Filtres) : le tri recommandé
+    # « ✨ Pour moi » s'applique sans ouvrir ce menu.
+    with st.expander("🔃 Tri & affichage", expanded=False):
         p1, p2, p3 = st.columns([0.44, 0.34, 0.22])
         preset = p1.selectbox("Preset rapide", PRESET_NAMES, key="qr_preset")
         sort_mode = p2.selectbox(
@@ -5575,14 +5584,31 @@ def page_dashboard() -> None:
     # sont déjà chargées (pas d'appel API involontaire en haut de page).
     st.divider()
     st.caption(
-        "ℹ️ L'actualisation recharge depuis l'API MDBList et consomme ton quota journalier "
-        "(maximum de 1000 appels/jour pour un compte gratuit)."
+        "🔄 « Actualiser MDBList » recharge tes données depuis l'API (quota ~1000 appels/jour). "
+        "Les données TMDB (acteurs, studios) sont mémorisées 30 jours par contenu et se mettent "
+        "à jour toutes seules sur tes nouveautés. « Actualiser acteurs & studios » force une mise "
+        "à jour TMDB complète (≈30 s, facultatif) si tu veux des données fraîches entre deux rafraîchissements."
     )
-    if st.button("🔄 Actualiser les données MDBList", type="primary", key="refresh_mdblist_bottom", use_container_width=True):
-        with st.spinner("Actualisation MDBList…"):
-            _load_mdblist_cached.clear()
-            load_mdblist_dataset()
-        st.rerun()
+    _refresh_m, _refresh_t = st.columns(2)
+    with _refresh_m:
+        if st.button("🔄 Actualiser les données MDBList", type="primary", key="refresh_mdblist_bottom", use_container_width=True):
+            with st.spinner("Actualisation MDBList…"):
+                _load_mdblist_cached.clear()
+                load_mdblist_dataset()
+            st.rerun()
+    with _refresh_t:
+        # Bouton FACULTATIF : force un re-fetch TMDB complet (acteurs + studios).
+        # N'apparaît que si une clé TMDB est configurée. Vide le cache TMDB par
+        # contenu (30 j) puis recharge : tous les titres sont ré-interrogés.
+        if _tmdb_api_key() and st.button(
+            "🎭 Actualiser acteurs & studios (TMDB)",
+            type="primary", key="refresh_tmdb_bottom", use_container_width=True,
+        ):
+            with st.spinner("Actualisation des données TMDB (acteurs, studios)… ≈30 s"):
+                _fetch_tmdb_item.clear()
+                _load_mdblist_cached.clear()
+                load_mdblist_dataset()
+            st.rerun()
 
 
 def render_migration_page() -> None:
