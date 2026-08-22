@@ -419,11 +419,11 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
     }
     favorite_studios = {
         key for key, count in studio_titles.items()
-        if count >= 3 and (key not in studio_ratings_by_key or studio_ratings_by_key[key][0] >= 7.5)
+        if count >= 2 and (key not in studio_ratings_by_key or studio_ratings_by_key[key][0] >= 7.5)
     }
     favorite_people = {
         key for key, count in people_titles.items()
-        if count >= 3 and (key not in people_ratings_by_key or people_ratings_by_key[key][0] >= 7.5)
+        if count >= 2 and (key not in people_ratings_by_key or people_ratings_by_key[key][0] >= 7.5)
     }
 
     sorted_runtimes = sorted(movie_runtimes)

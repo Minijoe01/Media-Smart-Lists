@@ -1740,105 +1740,225 @@ def _mdblist_cache_key(access_token: str) -> str:
     return hashlib.sha256((access_token or "").encode("utf-8")).hexdigest()[:16]
 
 
-def _watchlist_missing_genre_ids(data: dict) -> tuple[list[int], list[str]]:
-    """Identifiants TMDb/IMDb des contenus de la Watchlist dépourvus de genres."""
-    watchlist = (data.get("sections") or {}).get("watchlist") or {}
-    tmdb_ids: list[int] = []
-    imdb_ids: list[str] = []
-    seen_tmdb: set[int] = set()
-    seen_imdb: set[str] = set()
+def _media_tmdb_id(item: dict) -> int | None:
+    """Identifiant TMDB d'un média, depuis ids / tmdb_id / tmdbid / id (formats variés)."""
+    ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+    tmdb = ids.get("tmdb") or item.get("tmdb_id") or item.get("tmdbid")
+    if tmdb in (None, ""):
+        raw_id = item.get("id")
+        try:
+            tmdb = int(raw_id) if raw_id not in (None, "", 0, "0") else None
+        except (TypeError, ValueError):
+            tmdb = None
+    try:
+        return int(tmdb) if tmdb not in (None, "", 0, "0") else None
+    except (TypeError, ValueError):
+        return None
 
-    def scan(item: Any) -> None:
-        if not isinstance(item, dict) or item.get("genres"):
+
+def _unwrap_media(item: Any) -> dict:
+    """Désimbrique movie/show/episode pour obtenir le dictionnaire média."""
+    if not isinstance(item, dict):
+        return {}
+    for key in ("movie", "show", "episode"):
+        nested = item.get(key)
+        if isinstance(nested, dict):
+            return nested
+    return item
+
+
+def _kind_of(item: Any, fallback: str = "movie") -> str:
+    """Type (movie/tv) d'un média, depuis mediatype/type ou l'imbrication."""
+    if not isinstance(item, dict):
+        return fallback
+    value = str(item.get("mediatype") or item.get("type") or "").lower()
+    if value in {"movie", "movies"}:
+        return "movie"
+    if value in {"show", "shows", "tv", "series", "tvshow"}:
+        return "tv"
+    if isinstance(item.get("movie"), dict):
+        return "movie"
+    if isinstance(item.get("show"), dict):
+        return "tv"
+    return fallback
+
+
+def _history_media(dataset: dict) -> list[tuple[dict, str]]:
+    """Médias (media, kind) de l'historique et des notes — pour les favoris."""
+    seen: set = set()
+    out: list[tuple[dict, str]] = []
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+
+    def add(item: Any, fallback: str) -> None:
+        media = _unwrap_media(item)
+        if not media:
             return
-        ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-        tmdb = ids.get("tmdb") or item.get("tmdb_id") or item.get("tmdbid")
-        if tmdb in (None, ""):
-            raw_id = item.get("id")
-            try:
-                tmdb = int(raw_id) if raw_id not in (None, "", 0, "0") else None
-            except (TypeError, ValueError):
-                tmdb = None
-        try:
-            tmdb = int(tmdb) if tmdb not in (None, "", 0, "0") else None
-        except (TypeError, ValueError):
-            tmdb = None
-        imdb = str(ids.get("imdb") or item.get("imdb_id") or item.get("imdb") or "").strip()
-        if not imdb.startswith("tt"):
-            imdb = ""
-        if tmdb and tmdb not in seen_tmdb:
-            seen_tmdb.add(tmdb)
-            tmdb_ids.append(tmdb)
-        elif imdb and imdb not in seen_imdb:
-            seen_imdb.add(imdb)
-            imdb_ids.append(imdb)
+        tmdb = _media_tmdb_id(media)
+        key = tmdb if tmdb else id(media)
+        if key in seen:
+            return
+        seen.add(key)
+        out.append((media, _kind_of(item, fallback)))
 
-    for item in (watchlist.get("movies") or []) + (watchlist.get("shows") or []):
-        scan(item)
-    return tmdb_ids, imdb_ids
+    watched = sections.get("watched") or {}
+    for row in watched.get("movies") or []:
+        add(row, "movie")
+    for row in watched.get("shows") or []:
+        add(row, "tv")
+    for row in watched.get("episodes") or []:
+        episode = row.get("episode") if isinstance(row.get("episode"), dict) else {}
+        add(episode.get("show") if isinstance(episode.get("show"), dict) else episode, "tv")
+    ratings = sections.get("ratings") or {}
+    for section in ("movies", "shows", "episodes"):
+        fallback = "tv" if section in {"shows", "episodes"} else "movie"
+        for row in ratings.get(section) or []:
+            add(row, fallback)
+    return out
 
 
-def _enrich_watchlist_genres(provider: "MDBListProvider", data: dict) -> None:
-    """Complète les genres manquants de la Watchlist via des appels groupés
-    (200 identifiants max par appel). Uniquement pour les contenus sans genres,
-    les listes et l'historique fournissant déjà les leurs. Le résultat est mis
-    en cache avec le dataset : aucun appel supplémentaire après un F5."""
-    tmdb_ids, imdb_ids = _watchlist_missing_genre_ids(data)
-    if not tmdb_ids and not imdb_ids:
-        return
-    by_tmdb: dict[int, list[str]] = {}
-    by_imdb: dict[str, list[str]] = {}
-    for index in range(0, max(len(tmdb_ids), len(imdb_ids), 1), 200):
-        tchunk = tmdb_ids[index:index + 200]
-        ichunk = imdb_ids[index:index + 200]
-        try:
-            items = provider.media_info_batch(tmdb_ids=tchunk or None, imdb_ids=ichunk or None)
-        except Exception:
+def _all_media(dataset: dict) -> list[tuple[dict, str]]:
+    """Tous les médias du dataset (historique, notes, watchlist, listes)."""
+    seen: set = set()
+    out: list[tuple[dict, str]] = []
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+
+    def add(item: Any, fallback: str) -> None:
+        media = _unwrap_media(item)
+        if not media:
+            return
+        tmdb = _media_tmdb_id(media)
+        key = tmdb if tmdb else id(media)
+        if key in seen:
+            return
+        seen.add(key)
+        out.append((media, _kind_of(item, fallback)))
+
+    for media, kind in _history_media(dataset):
+        add(media, kind)
+    watchlist = sections.get("watchlist") or {}
+    for item in (watchlist.get("movies") or []):
+        add(item, "movie")
+    for item in (watchlist.get("shows") or []):
+        add(item, "tv")
+    for lst in sections.get("user_lists") or []:
+        if not isinstance(lst, dict):
             continue
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-            raw_tmdb = ids.get("tmdb")
-            try:
-                tmdb = int(raw_tmdb) if raw_tmdb not in (None, "", 0) else None
-            except (TypeError, ValueError):
-                tmdb = None
-            imdb = str(ids.get("imdb") or item.get("imdb_id") or "").strip()
-            names = []
-            for genre in item.get("genres") or []:
-                if isinstance(genre, dict):
-                    genre = genre.get("name") or genre.get("title") or genre.get("slug")
-                if genre:
-                    names.append(str(genre).strip().title())
-            names = sorted({n for n in names if n}, key=str.casefold)
-            if not names:
-                continue
-            if tmdb:
-                by_tmdb[tmdb] = names
-            if imdb.startswith("tt"):
-                by_imdb[imdb] = names
+        for item in (lst.get("movies") or []):
+            add(item, "movie")
+        for item in (lst.get("shows") or []):
+            add(item, "tv")
+    return out
 
-    watchlist = (data.get("sections") or {}).get("watchlist") or {}
-    for item in (watchlist.get("movies") or []) + (watchlist.get("shows") or []):
-        if not isinstance(item, dict) or item.get("genres"):
-            continue
-        ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-        raw_tmdb = ids.get("tmdb") or item.get("tmdb_id") or item.get("tmdbid")
-        if raw_tmdb in (None, ""):
-            raw_id = item.get("id")
-            try:
-                raw_tmdb = int(raw_id) if raw_id not in (None, "", 0, "0") else None
-            except (TypeError, ValueError):
-                raw_tmdb = None
-        try:
-            tmdb = int(raw_tmdb) if raw_tmdb not in (None, "", 0, "0") else None
-        except (TypeError, ValueError):
-            tmdb = None
-        imdb = str(ids.get("imdb") or item.get("imdb_id") or item.get("imdb") or "").strip()
-        names = by_tmdb.get(tmdb) or (by_imdb.get(imdb) if imdb.startswith("tt") else None)
-        if names:
-            item["genres"] = names
+
+def _collect_people_stats(dataset: dict) -> list[dict]:
+    """Acteurs triés par nombre d'apparitions (photo + id TMDB)."""
+    counts: dict[str, int] = {}
+    meta: dict[str, dict] = {}
+    for media, _kind in _history_media(dataset):
+        for actor in media.get("actors") or []:
+            if not isinstance(actor, dict):
+                continue
+            name = str(actor.get("name") or "").strip()
+            if not name:
+                continue
+            key = name.casefold()
+            counts[key] = counts.get(key, 0) + 1
+            meta.setdefault(key, {
+                "name": name,
+                "id": actor.get("id"),
+                "profile_path": actor.get("profile_path") or "",
+            })
+    stats = [
+        {"name": meta[key]["name"], "id": meta[key]["id"],
+         "profile_path": meta[key]["profile_path"], "count": counts[key]}
+        for key in counts
+    ]
+    stats.sort(key=lambda row: (-row["count"], row["name"].casefold()))
+    return stats
+
+
+def _collect_studio_stats(dataset: dict) -> list[dict]:
+    """Studios triés par nombre d'apparitions dans l'historique."""
+    counts: dict[str, int] = {}
+    meta: dict[str, dict] = {}
+    for media, _kind in _history_media(dataset):
+        for studio in media.get("studios") or []:
+            if not isinstance(studio, dict):
+                continue
+            name = str(studio.get("name") or "").strip()
+            if not name:
+                continue
+            key = name.casefold()
+            counts[key] = counts.get(key, 0) + 1
+            meta.setdefault(key, {"name": name, "id": studio.get("id")})
+    stats = [{"name": meta[key]["name"], "id": meta[key]["id"], "count": counts[key]} for key in counts]
+    stats.sort(key=lambda row: (-row["count"], row["name"].casefold()))
+    return stats
+
+
+def _tmdb_image_url(path: str, size: str = "w185") -> str:
+    return f"https://image.tmdb.org/t/p/{size}{path}" if path else ""
+
+
+def _tmdb_person_url(person_id: Any) -> str:
+    return f"https://www.themoviedb.org/person/{person_id}" if person_id else ""
+
+
+def _tmdb_company_url(company_id: Any) -> str:
+    return f"https://www.themoviedb.org/company/{company_id}" if company_id else ""
+
+
+def _render_people_cards(people: list[dict], limit: int = 8) -> str:
+    """Cartes acteurs (photo + lien TMDB), compactes et alignées sur le thème."""
+    if not people:
+        return ""
+    cards = []
+    for person in people[:limit]:
+        photo = _tmdb_image_url(str(person.get("profile_path") or ""))
+        url = _tmdb_person_url(person.get("id"))
+        name = escape(str(person.get("name") or ""))
+        count = int(person.get("count") or 0)
+        if photo:
+            img = (f'<img src="{photo}" alt="" loading="lazy" '
+                   f'style="width:44px;height:44px;border-radius:10px;object-fit:cover;'
+                   f'border:1px solid rgba(255,225,0,.45);">')
+        else:
+            img = ('<div style="width:44px;height:44px;border-radius:10px;display:flex;'
+                   'align-items:center;justify-content:center;font-size:20px;'
+                   'background:linear-gradient(180deg,#0C2E28,#041710);'
+                   'border:1px solid rgba(0,163,146,.35);">🎭</div>')
+        link = (f'<a class="link-pill" href="{url}" target="_blank" rel="noopener noreferrer" '
+                f'title="Fiche TMDB">TMDB</a>') if url else ""
+        cards.append(
+            f'<div style="display:flex;align-items:center;gap:.6rem;background:rgba(8,55,50,.62);'
+            f'border:1px solid rgba(0,163,146,.35);border-radius:12px;padding:.5rem .6rem;">'
+            f'{img}<div style="min-width:0;flex:1;"><div style="font-weight:700;font-size:.85rem;'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>'
+            f'<div style="color:#9DC5BF;font-size:.74rem;">{count} titre(s)</div></div>{link}</div>'
+        )
+    return ('<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));'
+            'gap:.5rem;margin:.4rem 0;">' + "".join(cards) + '</div>')
+
+
+def _render_studio_chips(studios: list[dict], limit: int = 10) -> str:
+    """Chips studios (lien TMDB), compactes."""
+    if not studios:
+        return ""
+    chips = []
+    for studio in studios[:limit]:
+        name = escape(str(studio.get("name") or ""))
+        count = int(studio.get("count") or 0)
+        url = _tmdb_company_url(studio.get("id"))
+        label = f"{name} · {count}"
+        if url:
+            chips.append(f'<a class="link-pill" href="{url}" target="_blank" rel="noopener noreferrer" '
+                         f'title="Fiche TMDB">🏢 {label}</a>')
+        else:
+            chips.append(f'<span class="mc-chip">🏢 {label}</span>')
+    return ('<div style="margin:.4rem 0;display:flex;flex-wrap:wrap;gap:.35rem;">'
+            + "".join(chips) + '</div>')
+
+
 
 
 def _tmdb_api_key() -> str:
@@ -1849,43 +1969,29 @@ def _tmdb_api_key() -> str:
         return ""
 
 
-def _enrich_watchlist_genres_tmdb(data: dict) -> None:
-    """Complète les genres manquants de la Watchlist via l'API TMDB.
+def _enrich_tmdb_metadata(data: dict) -> None:
+    """Complète genres, studios et acteurs via l'API TMDB (source de MDBList).
 
-    La Watchlist MDBList (et l'endpoint Media Info) ne renvoient pas de
-    `genres` : c'est une limitation de l'API MDBList. TMDB, qui est la source
-    de métadonnées de MDBList, fournit les genres. Un seul appel par contenu
-    manquant, uniquement pour ceux qui n'ont encore aucun genre, et le résultat
-    est mis en cache avec le dataset (aucun appel supplémentaire après un F5).
+    MDBList ne renvoie ni studios ni casting (et pas de genres pour la
+    Watchlist) : TMDB fournit tout en UN appel par contenu
+    (append_to_response=credits). Ne consomme AUCUN appel MDBList.
+    Le résultat est mis en cache avec le dataset : 0 appel après un F5.
+    Plafonné pour ne jamais devenir trop lourd.
     """
     key = _tmdb_api_key()
     if not key:
         return
-    watchlist = (data.get("sections") or {}).get("watchlist") or {}
     processed = 0
-    for item in (watchlist.get("movies") or []) + (watchlist.get("shows") or []):
-        if not isinstance(item, dict) or item.get("genres"):
-            continue
-        ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-        tmdb = ids.get("tmdb") or item.get("tmdb_id") or item.get("tmdbid")
-        if tmdb in (None, ""):
-            raw_id = item.get("id")
-            try:
-                tmdb = int(raw_id) if raw_id not in (None, "", 0, "0") else None
-            except (TypeError, ValueError):
-                tmdb = None
-        try:
-            tmdb = int(tmdb) if tmdb not in (None, "", 0, "0") else None
-        except (TypeError, ValueError):
-            tmdb = None
+    for media, kind in _all_media(data):
+        if media.get("studios") or media.get("actors"):
+            continue  # déjà enrichi (ou fourni par une autre source)
+        tmdb = _media_tmdb_id(media)
         if not tmdb:
             continue
-        mediatype = str(item.get("mediatype") or item.get("type") or "").lower()
-        kind = "movie" if ("movie" in mediatype or "film" in mediatype) else "tv"
         try:
             response = requests.get(
                 f"https://api.themoviedb.org/3/{kind}/{tmdb}",
-                params={"api_key": key, "language": "en-US"},
+                params={"api_key": key, "language": "en-US", "append_to_response": "credits"},
                 timeout=10,
             )
             if response.status_code != 200:
@@ -1893,15 +1999,58 @@ def _enrich_watchlist_genres_tmdb(data: dict) -> None:
             payload = response.json()
         except Exception:
             continue
-        genres = payload.get("genres") or []
-        names = sorted(
-            {str(g.get("name") or "").strip().title() for g in genres if isinstance(g, dict) and g.get("name")},
-            key=str.casefold,
-        )
-        if names:
-            item["genres"] = names
-            processed += 1
-        if processed >= 400:
+
+        # Genres (uniquement si absents, pour ne pas écraser l'existant).
+        if not media.get("genres"):
+            genres = payload.get("genres") or []
+            names = sorted(
+                {str(g.get("name") or "").strip().title() for g in genres if isinstance(g, dict) and g.get("name")},
+                key=str.casefold,
+            )
+            if names:
+                media["genres"] = names
+
+        # Studios (production_companies + networks, dédupliqués par nom).
+        studios: list[dict] = []
+        seen_studios: set[str] = set()
+        for company in (payload.get("production_companies") or []) + (payload.get("networks") or []):
+            if not isinstance(company, dict):
+                continue
+            name = str(company.get("name") or "").strip()
+            if not name or name in seen_studios:
+                continue
+            seen_studios.add(name)
+            studios.append({"name": name, "id": company.get("id")})
+        if studios:
+            media["studios"] = studios
+
+        # Acteurs principaux (top 10 du générique, avec photo + id).
+        credits = payload.get("credits") if isinstance(payload.get("credits"), dict) else {}
+        actors: list[dict] = []
+        for person in credits.get("cast") or []:
+            if not isinstance(person, dict):
+                continue
+            raw_order = person.get("order")
+            try:
+                order = int(raw_order) if raw_order is not None else 99
+            except (TypeError, ValueError):
+                order = 99
+            if order >= 10:
+                continue
+            name = str(person.get("name") or "").strip()
+            if not name:
+                continue
+            actors.append({
+                "name": name,
+                "id": person.get("id"),
+                "profile_path": person.get("profile_path") or "",
+                "order": order,
+            })
+        if actors:
+            media["actors"] = actors
+
+        processed += 1
+        if processed >= 300:
             break
 
 
@@ -1916,8 +2065,7 @@ def _load_mdblist_cached(cache_key: str, access_token: str) -> dict[str, Any]:
     """
     provider = MDBListProvider(access_token)
     raw_data = provider.load_dataset()
-    _enrich_watchlist_genres(provider, raw_data)
-    _enrich_watchlist_genres_tmdb(raw_data)
+    _enrich_tmdb_metadata(raw_data)
     data = normalize_provider_dataset(raw_data)
     data["_cached"] = True
     return data
@@ -2242,10 +2390,20 @@ def _render_taste_profile(profile: dict) -> None:
                 f"🎭 Métadonnées acteurs disponibles sur {people_count} titre(s)"
                 + (" · visages familiers : " + ", ".join(names[:8]) if names else "")
             )
-        if not studio_count and not people_count:
+
+        # ── Bloc « Tes studios / acteurs préférés » (données TMDB) ──
+        people_stats = _collect_people_stats(_dataset())
+        studio_stats = _collect_studio_stats(_dataset())
+        if people_stats:
+            st.markdown("**🎭 Tes acteurs récurrents**")
+            st.markdown(_render_people_cards(people_stats), unsafe_allow_html=True)
+        if studio_stats:
+            st.markdown("**🏢 Tes studios récurrents**")
+            st.markdown(_render_studio_chips(studio_stats), unsafe_allow_html=True)
+        if not people_stats and not studio_stats:
             st.caption(
-                "🏢🎭 MDBList ne fournit actuellement ni studio de film ni casting dans les réponses "
-                "de listes utilisées ici. Ces bonus restent désactivés plutôt que de lancer une requête par contenu."
+                "🏢🎭 Studios et acteurs seront détectés automatiquement dès que la clé "
+                "TMDB_API_KEY sera renseignée dans les Secrets Streamlit."
             )
 
 
@@ -4364,6 +4522,23 @@ def render_basic_stats_page() -> None:
         "👆 La vue d'ensemble ci-dessus est **non filtrée** (toutes périodes confondues). "
         "Les slicers ci-dessous s'appliquent à l'historique, aux graphiques et aux analyses."
     )
+
+    # ── Acteurs & studios préférés (all-time, données TMDB) ──────────────────
+    people_stats = _collect_people_stats(dataset)
+    studio_stats = _collect_studio_stats(dataset)
+    if people_stats or studio_stats:
+        st.divider()
+        st.markdown("#### 🎭 Tes acteurs & studios préférés")
+        st.caption(
+            "Détectés automatiquement à partir de ton historique de visionnage. "
+            "Clique sur une carte pour ouvrir la fiche TMDB."
+        )
+        if people_stats:
+            st.markdown("**🎭 Acteurs récurrents**")
+            st.markdown(_render_people_cards(people_stats, limit=10), unsafe_allow_html=True)
+        if studio_stats:
+            st.markdown("**🏢 Studios récurrents**")
+            st.markdown(_render_studio_chips(studio_stats, limit=12), unsafe_allow_html=True)
 
     rows = normalize_history(dataset, timezone_name="Europe/Paris")
     if not rows:
