@@ -1997,19 +1997,39 @@ def _tmdb_api_key() -> str:
         return ""
 
 
+@st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours : mémoire TMDB par contenu
 def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
-    """Un appel TMDB (genres + studios + casting) — utilisé en parallèle."""
+    """Un appel TMDB (genres + studios + casting) — mis en cache PAR CONTENU.
+
+    Chaque fiche (film/série) est mémorisée 30 jours : un rechargement ne
+    refait JAMAIS les appels TMDB déjà effectués. Seuls les contenus NOUVEAUX
+    (ajoutés à une liste, vus depuis le dernier enrichissement) déclenchent de
+    nouveaux appels → enrichissement réellement incrémental, sans repartir de
+    zéro.
+
+    · 200 + JSON valide → réponse mise en cache (succès).
+    · 404 (inexistant)  → dict vide mis en cache (rien à récupérer : on ne
+      réessaie pas, le bon identifiant n'existe pas côté TMDB).
+    · 5xx / réseau / JSON cassé → on lève une exception (NON mise en cache) :
+      l'item sera réessayé au prochain enrichissement, une fois le réseau
+      rétabli. Ainsi une micro-coupure ne « fige » jamais un contenu.
+    """
     try:
         response = requests.get(
             f"https://api.themoviedb.org/3/{kind}/{tmdb}",
             params={"api_key": key, "language": "en-US", "append_to_response": "credits"},
-            timeout=6,
+            timeout=8,
         )
-        if response.status_code != 200:
-            return None
+    except requests.RequestException:
+        raise  # réseau indisponible : non mis en cache (réessayé plus tard)
+    if response.status_code == 404:
+        return {}  # contenu inexistant : mis en cache (rien à récupérer)
+    if response.status_code != 200:
+        raise RuntimeError(f"TMDB {kind}/{tmdb} a répondu HTTP {response.status_code}")
+    try:
         return response.json()
-    except Exception:
-        return None
+    except ValueError:
+        raise  # JSON illisible : non mis en cache
 
 
 def _apply_tmdb_payload(media: dict, payload: dict) -> None:
@@ -2061,25 +2081,35 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
 def _enrich_tmdb_metadata(data: dict) -> None:
     """Complète genres, studios et acteurs via l'API TMDB (0 appel MDBList).
 
-    Couverture complète :
-      • genres : uniquement les contenus qui en manquent (la Watchlist) ;
-      • studios/acteurs : TOUS les médias (historique = détection des favoris,
-        candidats des listes/watchlist = bonus de score + recherche).
-    Appels parallélisés (20 workers) ; plafond de sécurité haut (rarement
-    atteint sur une bibliothèque de quelques semaines). Résultat en cache avec
-    le dataset : 0 appel après un F5.
+    Couverture COMPLÈTE de l'historique :
+      • tout média manquant de genres, studios OU acteurs est enrichi ;
+      • les gros consommateurs (bibliothèques étendues, milliers d'épisodes)
+        sont couverts : budget porté à 6000 contenus.
+    Résultat : tous tes acteurs et studios de tout ton historique sont
+    détectés (page Statistiques + Que regarder ?).
+
+    MÉMOIRE INCRÉMENTALE : chaque fiche TMDB est mise en cache 30 jours
+    (`_fetch_tmdb_item`). Un rechargement ne refait donc QUE les contenus
+    NOUVEAUX (ajoutés à une liste, vus depuis le dernier passage) → fini les
+    40 s à chaque fois : seuls les changements récents sont interrogés.
     """
     key = _tmdb_api_key()
     if not key:
         return
     all_media = _all_media(data)
-    need_genres = [(m, k) for m, k in all_media if not m.get("genres")]
-    need_credits = [(m, k) for m, k in all_media if m.get("genres") and (not m.get("studios") or not m.get("actors"))]
+    # Couverture complète : enrichir tout média incomplet (genres, studios OU
+    # acteurs). `_fetch_tmdb_item` étant mis en cache par contenu, les médias
+    # déjà enrichis ne déclenchent AUCUN appel réseau : la boucle est quasi
+    # gratuite sur les rechargements, et n'interroge que les nouveautés.
+    need_enrich = [
+        (m, k) for m, k in all_media
+        if (not m.get("genres")) or (not m.get("studios")) or (not m.get("actors"))
+    ]
 
-    budget = 2000  # sécurité : ne coupe qu'en cas de bibliothèque énorme
+    budget = 6000  # sécurité pour les très grosses bibliothèques
     targets: list[tuple[dict, str]] = []
     seen: set = set()
-    for m, k in need_genres + need_credits:
+    for m, k in need_enrich:
         uid = _media_tmdb_id(m) or id(m)
         if uid in seen:
             continue
@@ -2093,7 +2123,12 @@ def _enrich_tmdb_metadata(data: dict) -> None:
         tmdb = _media_tmdb_id(m)
         if not tmdb:
             return
-        payload = _fetch_tmdb_item(k, tmdb, key)
+        try:
+            payload = _fetch_tmdb_item(k, tmdb, key)
+        except Exception:
+            # Échec transitoire (réseau, 5xx) : NON mis en cache → l'item sera
+            # réessayé au prochain enrichissement, sans rien « figer ».
+            return
         if payload:
             _apply_tmdb_payload(m, payload)
 
