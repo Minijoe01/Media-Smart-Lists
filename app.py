@@ -21,6 +21,7 @@ import json
 
 import pandas as pd
 import requests
+from concurrent.futures import ThreadPoolExecutor
 
 import mdblist_oauth as mdb_oauth
 import achievements_engine as achievements_mod
@@ -1850,11 +1851,18 @@ def _all_media(dataset: dict) -> list[tuple[dict, str]]:
     return out
 
 
-def _collect_people_stats(dataset: dict) -> list[dict]:
-    """Acteurs triés par nombre d'apparitions (photo + id TMDB)."""
+def _collect_people_stats(dataset: dict, tmdb_whitelist: set | None = None) -> list[dict]:
+    """Acteurs triés par nombre d'apparitions (photo + id TMDB).
+
+    `tmdb_whitelist` (facultatif) restreint le calcul aux médias présents
+    dans une sélection filtrée (pour suivre les slicers des statistiques)."""
     counts: dict[str, int] = {}
     meta: dict[str, dict] = {}
     for media, _kind in _history_media(dataset):
+        if tmdb_whitelist is not None:
+            tmdb = _media_tmdb_id(media)
+            if tmdb is None or str(tmdb) not in tmdb_whitelist:
+                continue
         for actor in media.get("actors") or []:
             if not isinstance(actor, dict):
                 continue
@@ -1877,11 +1885,15 @@ def _collect_people_stats(dataset: dict) -> list[dict]:
     return stats
 
 
-def _collect_studio_stats(dataset: dict) -> list[dict]:
+def _collect_studio_stats(dataset: dict, tmdb_whitelist: set | None = None) -> list[dict]:
     """Studios triés par nombre d'apparitions dans l'historique."""
     counts: dict[str, int] = {}
     meta: dict[str, dict] = {}
     for media, _kind in _history_media(dataset):
+        if tmdb_whitelist is not None:
+            tmdb = _media_tmdb_id(media)
+            if tmdb is None or str(tmdb) not in tmdb_whitelist:
+                continue
         for studio in media.get("studios") or []:
             if not isinstance(studio, dict):
                 continue
@@ -1969,89 +1981,107 @@ def _tmdb_api_key() -> str:
         return ""
 
 
-def _enrich_tmdb_metadata(data: dict) -> None:
-    """Complète genres, studios et acteurs via l'API TMDB (source de MDBList).
+def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
+    """Un appel TMDB (genres + studios + casting) — utilisé en parallèle."""
+    try:
+        response = requests.get(
+            f"https://api.themoviedb.org/3/{kind}/{tmdb}",
+            params={"api_key": key, "language": "en-US", "append_to_response": "credits"},
+            timeout=10,
+        )
+        if response.status_code != 200:
+            return None
+        return response.json()
+    except Exception:
+        return None
 
-    MDBList ne renvoie ni studios ni casting (et pas de genres pour la
-    Watchlist) : TMDB fournit tout en UN appel par contenu
-    (append_to_response=credits). Ne consomme AUCUN appel MDBList.
-    Le résultat est mis en cache avec le dataset : 0 appel après un F5.
-    Plafonné pour ne jamais devenir trop lourd.
+
+def _apply_tmdb_payload(media: dict, payload: dict) -> None:
+    """Remplit genres, studios et acteurs d'un média depuis une réponse TMDB."""
+    # Genres (uniquement si absents).
+    if not media.get("genres"):
+        genres = payload.get("genres") or []
+        names = sorted(
+            {str(g.get("name") or "").strip().title() for g in genres if isinstance(g, dict) and g.get("name")},
+            key=str.casefold,
+        )
+        if names:
+            media["genres"] = names
+    # Studios (production_companies + networks).
+    studios: list[dict] = []
+    seen_studios: set[str] = set()
+    for company in (payload.get("production_companies") or []) + (payload.get("networks") or []):
+        if not isinstance(company, dict):
+            continue
+        name = str(company.get("name") or "").strip()
+        if not name or name in seen_studios:
+            continue
+        seen_studios.add(name)
+        studios.append({"name": name, "id": company.get("id")})
+    if studios:
+        media["studios"] = studios
+    # Acteurs principaux (top 10).
+    credits = payload.get("credits") if isinstance(payload.get("credits"), dict) else {}
+    actors: list[dict] = []
+    for person in credits.get("cast") or []:
+        if not isinstance(person, dict):
+            continue
+        raw_order = person.get("order")
+        try:
+            order = int(raw_order) if raw_order is not None else 99
+        except (TypeError, ValueError):
+            order = 99
+        if order >= 10:
+            continue
+        name = str(person.get("name") or "").strip()
+        if not name:
+            continue
+        actors.append({"name": name, "id": person.get("id"),
+                       "profile_path": person.get("profile_path") or "", "order": order})
+    if actors:
+        media["actors"] = actors
+
+
+def _enrich_tmdb_metadata(data: dict) -> None:
+    """Complète genres, studios et acteurs via l'API TMDB (0 appel MDBList).
+
+    Ordre prioritaire : d'abord les contenus SANS genres (surtout la
+    Watchlist, que MDBList n'enrichit pas), puis les contenus qui n'ont pas
+    encore de studios/acteurs (pour le scoring « Studio fétiche » et
+    « Visage familier »). Les appels sont parallélisés (6 workers) pour un
+    chargement rapide, et plafonnés pour rester léger. Le résultat est en
+    cache avec le dataset : 0 appel après un F5.
     """
     key = _tmdb_api_key()
     if not key:
         return
-    processed = 0
-    for media, kind in _all_media(data):
-        if media.get("studios") or media.get("actors"):
-            continue  # déjà enrichi (ou fourni par une autre source)
-        tmdb = _media_tmdb_id(media)
-        if not tmdb:
+    all_media = _all_media(data)
+    need_genres = [(m, k) for m, k in all_media if not m.get("genres")]
+    need_credits = [(m, k) for m, k in all_media if m.get("genres") and (not m.get("studios") or not m.get("actors"))]
+
+    budget = 240
+    targets: list[tuple[dict, str]] = []
+    seen: set = set()
+    for m, k in need_genres + need_credits:
+        uid = _media_tmdb_id(m) or id(m)
+        if uid in seen:
             continue
-        try:
-            response = requests.get(
-                f"https://api.themoviedb.org/3/{kind}/{tmdb}",
-                params={"api_key": key, "language": "en-US", "append_to_response": "credits"},
-                timeout=10,
-            )
-            if response.status_code != 200:
-                continue
-            payload = response.json()
-        except Exception:
-            continue
-
-        # Genres (uniquement si absents, pour ne pas écraser l'existant).
-        if not media.get("genres"):
-            genres = payload.get("genres") or []
-            names = sorted(
-                {str(g.get("name") or "").strip().title() for g in genres if isinstance(g, dict) and g.get("name")},
-                key=str.casefold,
-            )
-            if names:
-                media["genres"] = names
-
-        # Studios (production_companies + networks, dédupliqués par nom).
-        studios: list[dict] = []
-        seen_studios: set[str] = set()
-        for company in (payload.get("production_companies") or []) + (payload.get("networks") or []):
-            if not isinstance(company, dict):
-                continue
-            name = str(company.get("name") or "").strip()
-            if not name or name in seen_studios:
-                continue
-            seen_studios.add(name)
-            studios.append({"name": name, "id": company.get("id")})
-        if studios:
-            media["studios"] = studios
-
-        # Acteurs principaux (top 10 du générique, avec photo + id).
-        credits = payload.get("credits") if isinstance(payload.get("credits"), dict) else {}
-        actors: list[dict] = []
-        for person in credits.get("cast") or []:
-            if not isinstance(person, dict):
-                continue
-            raw_order = person.get("order")
-            try:
-                order = int(raw_order) if raw_order is not None else 99
-            except (TypeError, ValueError):
-                order = 99
-            if order >= 10:
-                continue
-            name = str(person.get("name") or "").strip()
-            if not name:
-                continue
-            actors.append({
-                "name": name,
-                "id": person.get("id"),
-                "profile_path": person.get("profile_path") or "",
-                "order": order,
-            })
-        if actors:
-            media["actors"] = actors
-
-        processed += 1
-        if processed >= 300:
+        seen.add(uid)
+        targets.append((m, k))
+        if len(targets) >= budget:
             break
+
+    def work(item: tuple[dict, str]) -> None:
+        m, k = item
+        tmdb = _media_tmdb_id(m)
+        if not tmdb:
+            return
+        payload = _fetch_tmdb_item(k, tmdb, key)
+        if payload:
+            _apply_tmdb_payload(m, payload)
+
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        list(executor.map(work, targets))
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -2225,6 +2255,9 @@ def _reset_recommendation_filters() -> None:
         "qr_genres": [],
         "qr_genre_mode": "Au moins un (OU)",
         "qr_duration_min": "Aucune",
+        "qr_actors": [],
+        "qr_studios": [],
+        "qr_cast_mode": "Au moins un (OU)",
     }
     for key, value in defaults.items():
         st.session_state[key] = value
@@ -2327,7 +2360,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     )
     score_val = int(round(row.get("score", 0)))
     friction_val = int(row.get("friction", 0))
-    friction_tip = "Friction : l'effort nécessaire pour lancer ce contenu (durée, exigence, accessibilité). Plus elle est basse, plus c'est facile à commencer."
+    friction_tip = "Facilité de lancement (durée courte, peu d'épisodes). Plus le score est élevé, plus c'est facile à commencer."
     score_tip = "Score personnel : adéquation estimée avec tes goûts, calculée sur ton appareil. Plus il est haut, mieux le contenu te correspond."
     score_col = (
         f'<div class="media-list-pct" data-tooltip="{escape(score_tip, quote=True)}">{score_val}'
@@ -2603,6 +2636,34 @@ def render_watchlist_page() -> None:
         for item in items
     ]
 
+    # Filtres acteurs / studios (0 appel API : données déjà en cache TMDB).
+    all_actors = sorted({p for row in scored for p in (row.get("people") or [])}, key=str.casefold)
+    all_studios = sorted({st_ for row in scored for st_ in (row.get("studios") or [])}, key=str.casefold)
+    actor_col, studio_col, castmode_col = st.columns(3)
+    selected_actors = actor_col.multiselect(
+        "Acteurs",
+        all_actors,
+        key="qr_actors",
+        placeholder="Acteur…",
+    )
+    selected_studios = studio_col.multiselect(
+        "Studios",
+        all_studios,
+        key="qr_studios",
+        placeholder="Studio…",
+    )
+    cast_mode = castmode_col.radio(
+        "Correspondance acteurs/studios",
+        ["Au moins un (OU)", "Tous (ET)"],
+        key="qr_cast_mode",
+        horizontal=True,
+    )
+    if selected_actors or selected_studios:
+        st.caption(
+            "🎭🏢 Acteurs/studios : « Au moins un (OU) » = le contenu correspond à l'un "
+            "des choix · « Tous (ET) » = il doit tous les inclure."
+        )
+
     def time_ok(row: dict) -> bool:
         if time_filter == "Aucune limite":
             return True
@@ -2647,6 +2708,22 @@ def render_watchlist_page() -> None:
                 continue
         if not preset_matches(preset, row, profile):
             continue
+        if selected_actors or selected_studios:
+            row_actors = {str(a).casefold() for a in (row.get("people") or [])}
+            row_studios = {str(st_).casefold() for st_ in (row.get("studios") or [])}
+            wanted_actors = {str(a).casefold() for a in selected_actors}
+            wanted_studios = {str(st_).casefold() for st_ in selected_studios}
+            hits = []
+            if wanted_actors:
+                hits.append(bool(row_actors & wanted_actors))
+            if wanted_studios:
+                hits.append(bool(row_studios & wanted_studios))
+            if cast_mode == "Tous (ET)":
+                if not all(hits):
+                    continue
+            else:
+                if not any(hits):
+                    continue
         filtered.append(row)
 
     def needed_minutes(row: dict) -> int:
@@ -4523,23 +4600,6 @@ def render_basic_stats_page() -> None:
         "Les slicers ci-dessous s'appliquent à l'historique, aux graphiques et aux analyses."
     )
 
-    # ── Acteurs & studios préférés (all-time, données TMDB) ──────────────────
-    people_stats = _collect_people_stats(dataset)
-    studio_stats = _collect_studio_stats(dataset)
-    if people_stats or studio_stats:
-        st.divider()
-        st.markdown("#### 🎭 Tes acteurs & studios préférés")
-        st.caption(
-            "Détectés automatiquement à partir de ton historique de visionnage. "
-            "Clique sur une carte pour ouvrir la fiche TMDB."
-        )
-        if people_stats:
-            st.markdown("**🎭 Acteurs récurrents**")
-            st.markdown(_render_people_cards(people_stats, limit=10), unsafe_allow_html=True)
-        if studio_stats:
-            st.markdown("**🏢 Studios récurrents**")
-            st.markdown(_render_studio_chips(studio_stats, limit=12), unsafe_allow_html=True)
-
     rows = normalize_history(dataset, timezone_name="Europe/Paris")
     if not rows:
         st.caption("Aucun visionnage n’est disponible dans le dataset actuel.")
@@ -4692,6 +4752,29 @@ def render_basic_stats_page() -> None:
 
     # ── Analyses détaillées (mêmes slicers) ──────────────────────────────────
     render_detailed_stats_page(filtered, period_label)
+
+    # ── Acteurs & studios préférés — suit les slicers (période, type, genre) ──
+    filtered_tmdb: set[str] = set()
+    for ids in filtered.get("ids", []):
+        if isinstance(ids, dict):
+            value = ids.get("tmdb")
+            if value not in (None, "", 0, "0"):
+                filtered_tmdb.add(str(value))
+    people_stats = _collect_people_stats(dataset, tmdb_whitelist=filtered_tmdb)
+    studio_stats = _collect_studio_stats(dataset, tmdb_whitelist=filtered_tmdb)
+    if people_stats or studio_stats:
+        st.divider()
+        st.markdown("#### 🎭 Tes acteurs & studios préférés")
+        st.caption(
+            "Détectés automatiquement sur la sélection filtrée ci-dessus "
+            f"({period_label}). Clique sur une carte pour ouvrir la fiche TMDB."
+        )
+        if people_stats:
+            st.markdown("**🎭 Acteurs récurrents**")
+            st.markdown(_render_people_cards(people_stats, limit=10), unsafe_allow_html=True)
+        if studio_stats:
+            st.markdown("**🏢 Studios récurrents**")
+            st.markdown(_render_studio_chips(studio_stats, limit=12), unsafe_allow_html=True)
 
 
 def _ruban(emoji: str, titre: str, meta: str, body: str, delay: int = 0) -> str:
@@ -5288,7 +5371,9 @@ def page_dashboard() -> None:
             st.session_state["_auto_load_done"] = True
             try:
                 # Sert le cache st.cache_data : 0 appel API après un F5 à chaud.
-                load_mdblist_dataset()
+                # Spinner visible uniquement lors du premier chargement (lourd).
+                with st.spinner("Chargement et enrichissement de vos données (acteurs, studios)…"):
+                    load_mdblist_dataset()
             except Exception:
                 pass
             st.rerun()
