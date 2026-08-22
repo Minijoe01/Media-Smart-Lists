@@ -1708,12 +1708,13 @@ def _format_date(value: object) -> str:
 
 
 def _sane_episode_runtime(runtime: object, total_episodes: int = 0) -> int:
-    """Durée réaliste d'un épisode (1 à 300 min).
+    """Durée réaliste d'un épisode (10 à 100 min) ou 0 (inconnue).
 
-    MDBList/TMDB renvoient parfois la durée CUMULÉE de toute la série (ex.
-    1980 min → affichage aberrant « 1j9h/ép. »). On normalise : si la valeur
-    dépasse 300 min, on la divise par le nombre d'épisodes connu (ou par 60
-    si c'est en secondes), sinon on retombe sur 0 (inconnu).
+    Un épisode de série dépasse quasiment JAMAIS 100 min. Les valeurs
+    énormes (ex. 232, 246, 208 min) renvoyées par MDBList sont des durées
+    cumulées/erronées : on les divise par le nombre d'épisodes. Les valeurs
+    < 10 min sont aussi fausses → inconnue. Ce filet de sécurité agit au
+    rendu, MÊME si l'enrichissement TMDB ne s'est pas appliqué à la série.
     """
     try:
         raw = int(round(float(runtime or 0)))
@@ -1721,15 +1722,12 @@ def _sane_episode_runtime(runtime: object, total_episodes: int = 0) -> int:
         return 0
     if raw <= 0:
         return 0
-    if 1 <= raw <= 300:
+    if 10 <= raw <= 100:
         return raw
-    if total_episodes and total_episodes > 0:
+    if total_episodes and total_episodes >= 2:
         average = int(round(raw / total_episodes))
-        if 1 <= average <= 300:
+        if 10 <= average <= 100:
             return average
-    seconds = int(round(raw / 60))
-    if 1 <= seconds <= 300:
-        return seconds
     return 0
 
 

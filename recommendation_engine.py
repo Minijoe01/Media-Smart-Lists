@@ -588,13 +588,18 @@ def score_item(
     if studio_matches:
         studio = studio_matches[0]
         count = profile.get("studio_title_counts", {}).get(studio.casefold(), 0)
-        adjust(4, "🏢 Studio fétiche", f"Tu as déjà regardé au moins {count} titre(s) lié(s) à {studio}")
+        # Bonus gradué : plus tu as vu de titres de ce studio, plus ça pèse.
+        bonus = 9 if count >= 10 else 7 if count >= 5 else 5 if count >= 3 else 3
+        adjust(bonus, "🏢 Studio fétiche", f"Tu as déjà regardé {count} titre(s) lié(s) à {studio}")
 
     people_matches = [person for person in people if person.casefold() in profile.get("favorite_people", set())]
     if people_matches:
         person = people_matches[0]
         count = profile.get("people_title_counts", {}).get(person.casefold(), 0)
-        adjust(4, "🎭 Visage familier", f"{person} apparaît dans au moins {count} contenu(s) déjà regardé(s)")
+        # Bonus gradué : un acteur vu dans 5 films pèse plus qu'un vu dans 2.
+        bonus = 9 if count >= 10 else 7 if count >= 5 else 5 if count >= 3 else 3
+        label = "⭐ Acteur incontournable" if count >= 5 else "🎭 Visage familier"
+        adjust(bonus, label, f"{person} apparaît dans {count} contenu(s) déjà regardé(s)")
 
     recent = profile.get("recent_genres", {})
     if genres and recent:
