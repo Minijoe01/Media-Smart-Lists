@@ -963,6 +963,15 @@ st.markdown(
     .links-spacer { margin-left: auto; display: inline-flex; align-items: center; }
     .gsm-only { display: none; }
     .only-gsm { display: none; }
+    details.pills-details { margin-top: .35rem; }
+    details.pills-details summary {
+        cursor: pointer;
+        color: var(--am-yellow);
+        font-size: .72rem;
+        font-weight: 700;
+    }
+    details.pills-details .reason-pill,
+    details.pills-details .warning-pill { margin-top: .2rem; }
 
     @media (max-width: 768px) {
         .msl-grid2 { grid-template-columns: 1fr; }
@@ -986,6 +995,7 @@ st.markdown(
         .mc-inline-pct { display: inline-block !important; }
         .gsm-only { display: inline-block !important; margin-left: auto; }
         .only-gsm { display: inline-block !important; }
+        details.only-gsm { display: block !important; }
         .only-pc { display: none !important; }
     }
     </style>
@@ -2051,12 +2061,13 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
 def _enrich_tmdb_metadata(data: dict) -> None:
     """Complète genres, studios et acteurs via l'API TMDB (0 appel MDBList).
 
-    Stratégie légère et équilibrée :
-      • priorité aux contenus SANS genres (Watchlist → points de genre) ;
-      • puis studios/acteurs, répartis entre l'HISTORIQUE (détection des
-        favoris) et les CANDIDATS (watchlist/listes → bonus de score), pour
-        que les deux soient servis même avec un gros historique.
-    Appels parallélisés (12 workers), plafonnés, en cache avec le dataset.
+    Couverture complète :
+      • genres : uniquement les contenus qui en manquent (la Watchlist) ;
+      • studios/acteurs : TOUS les médias (historique = détection des favoris,
+        candidats des listes/watchlist = bonus de score + recherche).
+    Appels parallélisés (20 workers) ; plafond de sécurité haut (rarement
+    atteint sur une bibliothèque de quelques semaines). Résultat en cache avec
+    le dataset : 0 appel après un F5.
     """
     key = _tmdb_api_key()
     if not key:
@@ -2065,28 +2076,17 @@ def _enrich_tmdb_metadata(data: dict) -> None:
     need_genres = [(m, k) for m, k in all_media if not m.get("genres")]
     need_credits = [(m, k) for m, k in all_media if m.get("genres") and (not m.get("studios") or not m.get("actors"))]
 
-    # Séparer l'historique des candidats pour équilibrer l'enrichissement.
-    history_tmdb = {_media_tmdb_id(m) for m, _k in _history_media(data)}
-    credits_hist: list[tuple[dict, str]] = []
-    credits_cand: list[tuple[dict, str]] = []
-    for m, k in need_credits:
-        tmdb = _media_tmdb_id(m)
-        if tmdb in history_tmdb:
-            credits_hist.append((m, k))
-        else:
-            credits_cand.append((m, k))
-
-    budget_genres = 60
-    budget_hist = 50
-    budget_cand = 50
+    budget = 600  # sécurité, élevé : ne coupe qu'en cas de bibliothèque énorme
     targets: list[tuple[dict, str]] = []
     seen: set = set()
-    for m, k in (need_genres[:budget_genres] + credits_hist[:budget_hist] + credits_cand[:budget_cand]):
+    for m, k in need_genres + need_credits:
         uid = _media_tmdb_id(m) or id(m)
         if uid in seen:
             continue
         seen.add(uid)
         targets.append((m, k))
+        if len(targets) >= budget:
+            break
 
     def work(item: tuple[dict, str]) -> None:
         m, k = item
@@ -2097,7 +2097,7 @@ def _enrich_tmdb_metadata(data: dict) -> None:
         if payload:
             _apply_tmdb_payload(m, payload)
 
-    with ThreadPoolExecutor(max_workers=12) as executor:
+    with ThreadPoolExecutor(max_workers=20) as executor:
         list(executor.map(work, targets))
 
 
@@ -2337,7 +2337,12 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     image_html = _poster_html(poster, row.get("type") or "")
     metadata = []
     if row.get("genres"):
-        metadata.append(escape(" · ".join(row["genres"])))
+        names = row["genres"]
+        tip = "Genres : " + " · ".join(names)
+        metadata.append(
+            '<span class="only-pc">' + escape(" · ".join(names)) + '</span>'
+            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🎭 Genres</span>'
+        )
     if row.get("runtime"):
         suffix = "/ép." if row.get("type") == "Série" else ""
         metadata.append(f"⏱️ {_format_minutes(row['runtime'])}{suffix}")
@@ -2347,15 +2352,15 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         names = row["studios"]
         tip = "Studios : " + " · ".join(names)
         metadata.append(
-            '🏢 <span class="only-pc">' + escape(" · ".join(names[:2])) + '</span>'
+            '<span class="only-pc">🏢 ' + escape(" · ".join(names[:2])) + '</span>'
             + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🏢 Studios</span>'
         )
     if row.get("people"):
         names = row["people"]
         tip = "Acteurs : " + " · ".join(names)
         metadata.append(
-            '🎭 <span class="only-pc">' + escape(" · ".join(names[:2])) + '</span>'
-            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🎭 Acteurs</span>'
+            '<span class="only-pc">🎭 ' + escape(" · ".join(names[:2])) + '</span>'
+            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">👥 Acteurs</span>'
         )
     metadata.append(escape(str(row.get("source") or "MDBList")))
 
@@ -2404,7 +2409,9 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         f'</div>'
         f'<div class="progress-bar-container"><div class="progress-bar-fill" '
         f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
-        f'<div>{pills}</div></div>{score_col}</div>',
+        f'<div class="only-pc">{pills}</div>'
+        + (f'<details class="only-gsm pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
+        + f'</div>{score_col}</div>',
         unsafe_allow_html=True,
     )
 
@@ -2664,8 +2671,18 @@ def render_watchlist_page() -> None:
     ]
 
     # Filtres acteurs / studios (0 appel API : données déjà en cache TMDB).
-    all_actors = sorted({p for row in scored for p in (row.get("people") or [])}, key=str.casefold)
-    all_studios = sorted({st_ for row in scored for st_ in (row.get("studios") or [])}, key=str.casefold)
+    # La liste couvre TOUS les contenus (historique + watchlist + listes),
+    # pas seulement la source affichée.
+    all_actors = sorted({
+        str(a["name"]).strip()
+        for m, _k in _all_media(_dataset())
+        for a in (m.get("actors") or []) if isinstance(a, dict) and a.get("name")
+    }, key=str.casefold)
+    all_studios = sorted({
+        str(st_["name"]).strip()
+        for m, _k in _all_media(_dataset())
+        for st_ in (m.get("studios") or []) if isinstance(st_, dict) and st_.get("name")
+    }, key=str.casefold)
     actor_col, studio_col, castmode_col = st.columns(3)
     selected_actors = actor_col.multiselect(
         "Acteurs",
