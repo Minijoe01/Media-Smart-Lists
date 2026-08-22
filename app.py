@@ -2254,6 +2254,26 @@ def render_data_loader() -> None:
         st.rerun()
 
 
+def _distinct_series_count(watched: dict) -> int:
+    """Nombre de séries distinctes vues (depuis les épisodes ET les shows)."""
+    seen: set = set()
+    for row in (watched.get("episodes") or []):
+        show = (row.get("episode") or {}).get("show") if isinstance(row.get("episode"), dict) else row.get("show")
+        if isinstance(show, dict):
+            ids = show.get("ids") if isinstance(show.get("ids"), dict) else {}
+            key = ids.get("tmdb") or show.get("title")
+            if key:
+                seen.add(key)
+    for row in (watched.get("shows") or []):
+        show = row.get("show") if isinstance(row.get("show"), dict) else row
+        if isinstance(show, dict):
+            ids = show.get("ids") if isinstance(show.get("ids"), dict) else {}
+            key = ids.get("tmdb") or show.get("title")
+            if key:
+                seen.add(key)
+    return len(seen)
+
+
 def render_dataset_overview() -> None:
     sections = _sections()
     if not sections:
@@ -2265,14 +2285,22 @@ def render_dataset_overview() -> None:
     playback = sections.get("playback") or []
     dropped = sections.get("dropped") or {}
 
+    watchlist_total = len(watchlist.get("movies") or []) + len(watchlist.get("shows") or [])
+    # Contenus au total dans les listes personnelles (somme de chaque liste).
+    list_contents = sum(
+        len(item.get("movies") or []) + len(item.get("shows") or [])
+        for item in lists if isinstance(item, dict)
+    )
+
     # Bandeau de métriques moderne (skin V53) : cartes k/v/d avec icône,
     # fondu en cascade et surbrillance au survol (0 appel API).
     cards: list[dict[str, Any]] = [
         {"emoji": "🎬", "k": "Films vus", "v": len(watched.get("movies") or []), "d": "au compteur"},
-        {"emoji": "📺", "k": "Épisodes vus", "v": len(watched.get("episodes") or []), "d": "au compteur"},
-        {"emoji": "⭐", "k": "Watchlist", "v": len(watchlist.get("movies") or []) + len(watchlist.get("shows") or []),
-         "d": "films + séries"},
+        {"emoji": "📺", "k": "Séries vues", "v": _distinct_series_count(watched), "d": "séries distinctes"},
+        {"emoji": "🎞️", "k": "Épisodes vus", "v": len(watched.get("episodes") or []), "d": "au compteur"},
+        {"emoji": "⭐", "k": "Watchlist", "v": watchlist_total, "d": "contenus dans ma watchlist"},
         {"emoji": "🗂️", "k": "Listes personnelles", "v": len(lists), "d": "créées sur MDBList"},
+        {"emoji": "📦", "k": "Contenus en listes", "v": list_contents, "d": "au total des listes"},
         {"emoji": "💬", "k": "Notes", "v": sum(len(ratings.get(key) or []) for key in ("movies", "shows", "seasons", "episodes")),
          "d": "films, séries, épisodes"},
         {"emoji": "⏸️", "k": "Reprises", "v": len(playback), "d": "en cours de reprise"},
@@ -2281,14 +2309,13 @@ def render_dataset_overview() -> None:
     ]
 
     # Temps de visionnage (à vie) — calcul local depuis l'historique.
+    # « Temps séries » et « Temps films » sont déjà détaillés dans le ruban
+    # « Ton rythme de visionnage » (compteurs à vie) : on ne les répète pas.
     try:
         dash = dashboard_mod.compute_dashboard(_dataset(), timezone_name="Europe/Paris")
         if not dash.get("empty"):
-            c = dash["compteurs"]
             cards += [
                 {"emoji": "⏱️", "k": "Temps total", "v": dashboard_mod._minutes_to_duree(dash["total_minutes"]), "d": "à vie"},
-                {"emoji": "📺", "k": "Temps séries", "v": dashboard_mod._minutes_to_duree(int(c["h_series"] * 60)), "d": "à vie"},
-                {"emoji": "🎬", "k": "Temps films", "v": dashboard_mod._minutes_to_duree(int(c["h_films"] * 60)), "d": "à vie"},
                 {"emoji": "🏃", "k": "Épisodes/semaine", "v": f"{dash['eps_sem']:.1f}".replace(".", ",") if dash["eps_sem"] else "—",
                  "d": "rythme moyen"},
             ]
@@ -2296,6 +2323,33 @@ def render_dataset_overview() -> None:
         pass
 
     st.markdown(_metric_cards(cards), unsafe_allow_html=True)
+
+    # Détail par liste (nombre de contenus) — complète le total ci-dessus.
+    list_detail = [
+        f"{item.get('name') or 'Liste'} ({len(item.get('movies') or []) + len(item.get('shows') or [])})"
+        for item in lists if isinstance(item, dict)
+    ]
+    if list_detail:
+        st.caption("Détail par liste : " + " · ".join(escape(x) for x in list_detail[:12]))
+
+    # ── Couverture TMDB : certitude visible que les acteurs/studios sont
+    # bien présents pour TOUT l'historique + les listes. X/Y = couverture
+    # complète si X == Y (sinon, TMDB n'avait pas la fiche, ou pas d'id TMDb).
+    try:
+        all_media = _all_media(_dataset())
+        total_titles = len(all_media)
+        with_actors = sum(1 for m, _ in all_media if m.get("actors"))
+        with_studios = sum(1 for m, _ in all_media if m.get("studios"))
+        if total_titles:
+            full = with_actors == total_titles and with_studios == total_titles
+            st.caption(
+                f"🎭 Acteurs TMDB : {with_actors}/{total_titles} titre(s) · "
+                f"🏢 Studios : {with_studios}/{total_titles} titre(s)"
+                + (" ✅ couverture complète de ton historique et de tes listes" if full else
+                   " — les titres manquants n'ont pas de fiche TMDB ou d'identifiant TMDb")
+            )
+    except Exception:
+        pass
 
 
 def _reset_recommendation_filters() -> None:
