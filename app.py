@@ -2235,9 +2235,20 @@ def render_data_loader() -> None:
         request_count = data.get("request_count", 0)
         loaded_at = str(data.get("loaded_at") or "").replace("T", " ").replace("Z", " UTC")
         source_txt = " (extrait du cache)" if cached else ""
-        st.caption(f"Données chargées{source_txt} : {loaded_at} · {request_count} requête(s) API")
+        age_txt = ""
+        try:
+            loaded_dt = datetime.fromisoformat(str(data.get("loaded_at") or "").replace("Z", "+00:00"))
+            age_days = max((datetime.now(loaded_dt.tzinfo) - loaded_dt).days, 0)
+            age_txt = " · aujourd'hui" if age_days == 0 else f" · il y a {age_days} j"
+        except Exception:
+            pass
+        st.caption(f"Données MDBList{source_txt} : {loaded_at}{age_txt} · {request_count} requête(s) API")
         if cached:
-            st.caption("♻️ Cache serveur partagé (7 jours) : le rechargement ne consomme aucun appel API, même depuis un autre appareil.")
+            st.caption(
+                "♻️ Servies depuis le cache (valide 7 jours) : un F5 ou un changement de page "
+                "ne consomme AUCUN appel MDBList — l'app sait que tes données sont encore fraîches. "
+                "Utilise « Actualiser » en bas de page pour forcer la recharge."
+            )
         if errors:
             st.markdown(
                 f'<div class="accent-callout"><strong>CHARGEMENT PARTIEL</strong> · '
@@ -2675,27 +2686,30 @@ def render_watchlist_page() -> None:
     # (tri recommandé), puis ouvre ce menu pour affiner. Les valeurs par
     # défaut s'appliquent même replié (aucun filtre actif au départ).
     with st.expander("🔍 Filtres", expanded=False):
-        f1, f2, f3, f4 = st.columns(4)
-        search = f1.text_input("Recherche", key="qr_search", placeholder="Titre…")
-        note_min = f2.select_slider(
-            "Note minimum",
-            options=[0.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0],
-            key="qr_note_min",
-        )
-        time_filter = f3.selectbox(
+        # Temps max + Durée minimum : paire complémentaire (un « entre » de
+        # durée), réunie en premier comme demandé. Les autres filtres suivent.
+        f1, f2 = st.columns(2)
+        time_filter = f1.selectbox(
             "Temps max",
             ["Aucune limite", "Moins d'1h30", "Moins de 2h", "Moins de 3h", "Soirée (< 10h)", "Week-end (< 24h)"],
             key="qr_time",
         )
-        status_filter = f4.selectbox(
-            "Statut",
-            ["Tous les statuts", "Séries terminées", "Séries en cours", "Séries annulées"],
-            key="qr_status",
-        )
-        duration_min = st.selectbox(
+        duration_min = f2.selectbox(
             "Durée minimum",
             ["Aucune", "≥ 1h", "≥ 1h30", "≥ 2h", "≥ 2h30", "≥ 3h"],
             key="qr_duration_min",
+        )
+        f3, f4, f5 = st.columns(3)
+        search = f3.text_input("Recherche", key="qr_search", placeholder="Titre…")
+        note_min = f4.select_slider(
+            "Note minimum",
+            options=[0.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0],
+            key="qr_note_min",
+        )
+        status_filter = f5.selectbox(
+            "Statut",
+            ["Tous les statuts", "Séries terminées", "Séries en cours", "Séries annulées"],
+            key="qr_status",
         )
 
     # ── 🔃 Tri & affichage ────────────────────────────────────────────────

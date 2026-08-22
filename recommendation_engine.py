@@ -734,33 +734,39 @@ def score_item(
 
 PRESET_NAMES = [
     "Aucun preset",
+    # ── Durée & effort ──
     "⚡ Rapide — film < 1h30",
-    "🍿 Soirée cinéma — grand film bien noté",
+    "🎬 Film marathon — 2h30 et plus",
+    "🚪 Zéro effort ce soir",
+    # ── Séries ──
     "📺 Binge express — mini-série terminée (≤ 8 ép.)",
-    "💎 Pépites confidentielles",
-    "🧠 Exigeant — note ≥ 8.5",
-    "🔥 Indémodables — 100k+ votes",
-    "⏳ Ça traîne — ajouté il y a 3 ans ou +",
+    "♾️ Séries interminables (100+ épisodes)",
+    "🌙 Séries à épisodes courts (≤ 30 min)",
     "▶️ Continuer ce que tu as commencé",
-    "👨‍👩‍👧 Soirée en famille",
+    "🎯 Presque finies — séries ≥ 80%",
+    # ── Humeurs & genres ──
     "😄 Envie de rire",
     "😱 Envie de frissons",
     "💥 Adrénaline",
-    "🎯 Presque finies — séries ≥ 80%",
-    "🆕 Fraîchement ajoutés (15 jours)",
-    "🏆 Classiques cultes (25 ans et +)",
-    "🧭 Hors de ta zone de confort",
-    "✨ Récent & acclamé",
-    "🗳️ Plébiscite critique + public",
-    "🚪 Zéro effort ce soir",
-    "🌍 Cinéma du monde",
-    "🎬 Film marathon — 2h30 et plus",
-    "🌙 Séries à épisodes courts (≤ 30 min)",
-    "♾️ Séries interminables (100+ épisodes)",
     "🕵️ Polars & thrillers",
     "🚀 Science-fiction",
     "❤️ Romance",
     "🎞️ Documentaires",
+    # ── Qualité & acclamations ──
+    "🍿 Soirée cinéma — grand film bien noté",
+    "🧠 Exigeant — note ≥ 8.5",
+    "💎 Pépites confidentielles",
+    "🔥 Indémodables — 100k+ votes",
+    "🗳️ Plébiscite critique + public",
+    "✨ Récent & acclamé",
+    # ── Ancienneté ──
+    "🆕 Fraîchement ajoutés (15 jours)",
+    "⏳ Ça traîne — ajouté il y a 3 ans ou +",
+    "🏆 Classiques cultes (25 ans et +)",
+    # ── Découverte & autres ──
+    "👨‍👩‍👧 Soirée en famille",
+    "🌍 Cinéma du monde",
+    "🧭 Hors de ta zone de confort",
 ]
 
 
@@ -788,13 +794,13 @@ def preset_matches(name: str, row: dict[str, Any], profile: dict[str, Any]) -> b
     if name.startswith("▶️"):
         return row.get("watched_episodes", 0) > 0
     if name.startswith("👨‍👩‍👧"):
-        return row.get("certification") in {"G", "PG", "TV-Y", "TV-Y7", "TV-G"} or bool(genres & {"family", "animation"})
+        return row.get("certification") in {"G", "PG", "TV-Y", "TV-Y7", "TV-G"} or bool(genres & {"family", "animation", "familial"})
     if name.startswith("😄"):
-        return bool(genres & {"comedy", "animation"})
+        return bool(genres & {"comedy", "animation", "comédie"})
     if name.startswith("😱"):
-        return bool(genres & {"horror", "thriller", "mystery"})
+        return bool(genres & {"horror", "thriller", "mystery", "horreur", "mystère"})
     if name.startswith("💥"):
-        return bool(genres & {"action", "adventure"})
+        return bool(genres & {"action", "adventure", "aventure"})
     if name.startswith("🎯"):
         total = row.get("total_episodes") or 0
         watched = row.get("watched_episodes") or 0
@@ -821,9 +827,9 @@ def preset_matches(name: str, row: dict[str, Any], profile: dict[str, Any]) -> b
     if name.startswith("♾️"):
         return row["type"] == "Série" and (row.get("total_episodes") or 0) >= 100
     if name.startswith("🕵️"):
-        return bool(genres & {"crime", "thriller", "mystery", "detective"})
+        return bool(genres & {"crime", "thriller", "mystery", "detective", "mystère"})
     if name.startswith("🚀"):
-        return bool(genres & {"science fiction", "sci-fi", "scifi"})
+        return bool(genres & {"science fiction", "sci-fi", "scifi", "science-fiction"})
     if name.startswith("❤️"):
         return bool(genres & {"romance"})
     if name.startswith("🎞️"):

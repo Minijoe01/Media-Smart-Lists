@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from genre_translations import translate_genre, translate_genres
+
 
 NORMALIZED_SCHEMA_VERSION = 4
 
@@ -423,9 +425,71 @@ def _find_genre(lookup: dict[str, list[str]], item: dict[str, Any]) -> list[str]
     return None
 
 
+def _translate_genres_in_place(sections: dict[str, Any]) -> None:
+    """Traduit en français TOUS les genres, sur toutes les sections.
+
+    Appelé au point d'entrée unique de la normalisation : couvre donc MDBList,
+    l'enrichissement TMDB et l'import ZIP Trakt d'un seul endroit. Les genres
+    sont ensuite en français partout (dashboard, stats, Que regarder ?, cartes).
+    """
+    def visit(media: Any) -> None:
+        if not isinstance(media, dict):
+            return
+        # Descend dans les médias imbriqués (ex. episode.show, playback.episode.show).
+        for key in ("movie", "show", "episode", "season"):
+            child = media.get(key)
+            if isinstance(child, dict):
+                visit(child)
+        values = media.get("genres")
+        if values is None:
+            return
+        if not isinstance(values, list):
+            values = [values]
+        translated = translate_genres(values)
+        if translated:
+            media["genres"] = translated
+
+    watched = sections.get("watched") or {}
+    for section in ("movies", "shows", "seasons", "episodes"):
+        for row in watched.get(section) or []:
+            visit(row)
+    ratings = sections.get("ratings") or {}
+    for section in ("movies", "shows", "seasons", "episodes"):
+        for row in ratings.get(section) or []:
+            visit(row)
+    watchlist = sections.get("watchlist") or {}
+    for media in watchlist.get("movies") or []:
+        visit(media)
+    for media in watchlist.get("shows") or []:
+        visit(media)
+    for item in sections.get("user_lists") or []:
+        if not isinstance(item, dict):
+            continue
+        for media in item.get("movies") or []:
+            visit(media)
+        for media in item.get("shows") or []:
+            visit(media)
+    for row in sections.get("upnext") or []:
+        visit(row)
+    for row in sections.get("playback") or []:
+        visit(row)
+    dropped = sections.get("dropped") or {}
+    for media in dropped.get("shows") or []:
+        visit(media)
+    # Le menu déroulant des genres (section /genres de MDBList) : on traduit
+    # uniquement le libellé affiché (« title »), JAMAIS le slug (envoyé tel
+    # quel à l'API MDBList pour filtrer).
+    genre_section = sections.get("genres")
+    if isinstance(genre_section, list):
+        for item in genre_section:
+            if isinstance(item, dict) and item.get("title"):
+                item["title"] = translate_genre(str(item["title"]))
+
+
 def normalize_provider_dataset(raw: dict[str, Any]) -> dict[str, Any]:
     sections = raw.get("sections") if isinstance(raw.get("sections"), dict) else {}
     source_name = str(raw.get("source") or "mdblist")
+    _translate_genres_in_place(sections)
     _fill_watchlist_genres(sections)
     return {
         **raw,
