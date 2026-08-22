@@ -1707,6 +1707,54 @@ def _format_date(value: object) -> str:
         return str(value)[:10]
 
 
+def _sane_episode_runtime(runtime: object, total_episodes: int = 0) -> int:
+    """Durée réaliste d'un épisode (1 à 300 min).
+
+    MDBList/TMDB renvoient parfois la durée CUMULÉE de toute la série (ex.
+    1980 min → affichage aberrant « 1j9h/ép. »). On normalise : si la valeur
+    dépasse 300 min, on la divise par le nombre d'épisodes connu (ou par 60
+    si c'est en secondes), sinon on retombe sur 0 (inconnu).
+    """
+    try:
+        raw = int(round(float(runtime or 0)))
+    except (TypeError, ValueError):
+        return 0
+    if raw <= 0:
+        return 0
+    if 1 <= raw <= 300:
+        return raw
+    if total_episodes and total_episodes > 0:
+        average = int(round(raw / total_episodes))
+        if 1 <= average <= 300:
+            return average
+    seconds = int(round(raw / 60))
+    if 1 <= seconds <= 300:
+        return seconds
+    return 0
+
+
+def _media_seasons(item: dict) -> int:
+    """Nombre de saisons d'une série (depuis number_of_seasons / seasons)."""
+    if not isinstance(item, dict):
+        return 0
+    media = item
+    for key in ("movie", "show"):
+        nested = item.get(key)
+        if isinstance(nested, dict):
+            media = nested
+    for key in ("number_of_seasons", "season_count", "seasons_count", "total_seasons"):
+        try:
+            value = int(media.get(key) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value > 0:
+            return value
+    seasons = media.get("seasons")
+    if isinstance(seasons, list):
+        return len(seasons)
+    return 0
+
+
 def _format_datetime(value: object) -> str:
     if value in (None, ""):
         return ""
@@ -2076,6 +2124,18 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
                        "profile_path": person.get("profile_path") or "", "order": order})
     if actors:
         media["actors"] = actors
+    # Compteurs de série (saisons / épisodes) — alimentent la carte
+    # « Que regarder ? » (infos succinctes série).
+    if not media.get("number_of_seasons") and payload.get("number_of_seasons"):
+        try:
+            media["number_of_seasons"] = int(payload["number_of_seasons"])
+        except (TypeError, ValueError):
+            pass
+    if not media.get("number_of_episodes") and payload.get("number_of_episodes"):
+        try:
+            media["number_of_episodes"] = int(payload["number_of_episodes"])
+        except (TypeError, ValueError):
+            pass
 
 
 def _enrich_tmdb_metadata(data: dict) -> None:
@@ -2234,7 +2294,7 @@ def render_data_loader() -> None:
         errors = data.get("errors") or []
         request_count = data.get("request_count", 0)
         loaded_at = str(data.get("loaded_at") or "").replace("T", " ").replace("Z", " UTC")
-        source_txt = " (extrait du cache)" if cached else ""
+        source_txt = " (cache)" if cached else ""
         age_txt = ""
         try:
             loaded_dt = datetime.fromisoformat(str(data.get("loaded_at") or "").replace("Z", "+00:00"))
@@ -2242,7 +2302,10 @@ def render_data_loader() -> None:
             age_txt = " · aujourd'hui" if age_days == 0 else f" · il y a {age_days} j"
         except Exception:
             pass
-        st.caption(f"Données MDBList{source_txt} : {loaded_at}{age_txt} · {request_count} requête(s) API")
+        # Date affichée sans l'heure UTC (problème de fuseau : l'app peut être
+        # utilisée depuis n'importe quel pays). L'indicateur relatif « il y a X j »
+        # est, lui, toujours juste (calculé en temps absolu).
+        st.caption(f"Données MDBList{source_txt} : {_format_date(data.get('loaded_at'))}{age_txt} · {request_count} requête(s) API")
         if cached:
             st.caption(
                 "♻️ Servies depuis le cache (valide 7 jours) : un F5 ou un changement de page "
@@ -2445,9 +2508,32 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
             '<span class="only-pc">' + escape(" · ".join(names)) + '</span>'
             + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🎭 Genres</span>'
         )
-    if row.get("runtime"):
-        suffix = "/ép." if row.get("type") == "Série" else ""
-        metadata.append(f"⏱️ {_format_minutes(row['runtime'])}{suffix}")
+    if row.get("type") == "Série":
+        total_ep = int(row.get("total_episodes") or 0)
+        seasons = _media_seasons(item)
+        ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
+        total_time = ep_runtime * total_ep if (ep_runtime and total_ep) else 0
+        if ep_runtime:
+            metadata.append(f"⏱️ {_format_minutes(ep_runtime)}/ép.")
+        # Infos série succinctes (saisons · épisodes · durée totale pour tout
+        # voir). Sur GSM : une petite boîte compacte avec info-bulle.
+        serie_bits = []
+        if seasons:
+            serie_bits.append(f"{seasons} saison{'s' if seasons > 1 else ''}")
+        if total_ep:
+            serie_bits.append(f"{total_ep} ép.")
+        if total_time:
+            serie_bits.append(f"tout voir : {_format_minutes(total_time)}")
+        if serie_bits:
+            tip = " · ".join(serie_bits)
+            chip_txt = f"{seasons or '?'}S · {total_ep or '?'}ép"
+            metadata.append(
+                '<span class="only-pc">📺 ' + escape(" · ".join(serie_bits)) + '</span>'
+                + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">📺 '
+                + escape(chip_txt) + '</span>'
+            )
+    elif row.get("runtime"):
+        metadata.append(f"⏱️ {_format_minutes(row['runtime'])}")
     if row.get("note") is not None:
         metadata.append(f"⭐ {row['note']:.1f}/10")
     if row.get("studios"):
@@ -2604,7 +2690,7 @@ def render_watchlist_page() -> None:
     source_by_key = {source["key"]: source for source in sources}
     # ── 🗂️ Sélection : source, genres, type, acteurs, studios ──────────────
     with st.expander("🗂️ Sélection de contenu", expanded=True):
-        source_col, genre_col, type_col = st.columns(3)
+        source_col, type_col = st.columns(2)
         selected_label = source_col.selectbox("Source", list(source_by_label), key="qr_source")
         source = source_by_label[selected_label]
 
@@ -2628,13 +2714,20 @@ def render_watchlist_page() -> None:
                             seen.add(name)
                             genre_by_title[str(name)] = str(name)
             genre_titles = sorted(seen, key=str.casefold)
-        selected_genres = genre_col.multiselect(
+        selected_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
+        # Genres : le multiselect est juste au-dessus de son mode ET/OU (regroupé).
+        selected_genres = st.multiselect(
             "Genres (recherche intégrée)",
             genre_titles,
             key="qr_genres",
             placeholder="Choisis 1+ genres…",
         )
-        selected_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
+        genre_mode = st.radio(
+            "Genres : correspondance",
+            ["Au moins un (OU)", "Tous (ET)"],
+            key="qr_genre_mode",
+            horizontal=True,
+        )
 
         # Acteurs / studios (0 appel API : liste GLOBALE sur tous les contenus).
         all_actors = sorted({
@@ -2660,17 +2753,8 @@ def render_watchlist_page() -> None:
             key="qr_studios",
             placeholder="Studio…",
         )
-        # Modes ET/OU réunis sur une même ligne : genres et acteurs traités de
-        # façon identique (OU en premier = comportement par défaut). Les studios
-        # restent toujours en « au moins un » (aucun sélecteur dédié nécessaire).
-        gmode_col, amode_col = st.columns(2)
-        genre_mode = gmode_col.radio(
-            "Genres : correspondance",
-            ["Au moins un (OU)", "Tous (ET)"],
-            key="qr_genre_mode",
-            horizontal=True,
-        )
-        cast_mode = amode_col.radio(
+        # Acteurs : le mode ET/OU est regroupé juste en dessous du multiselect.
+        cast_mode = st.radio(
             "Acteurs : correspondance",
             ["Au moins un (OU)", "Tous (ET)"],
             key="qr_cast_mode",
@@ -2689,15 +2773,15 @@ def render_watchlist_page() -> None:
         # Temps max + Durée minimum : paire complémentaire (un « entre » de
         # durée), réunie en premier comme demandé. Les autres filtres suivent.
         f1, f2 = st.columns(2)
-        time_filter = f1.selectbox(
-            "Temps max",
-            ["Aucune limite", "Moins d'1h30", "Moins de 2h", "Moins de 3h", "Soirée (< 10h)", "Week-end (< 24h)"],
-            key="qr_time",
-        )
-        duration_min = f2.selectbox(
+        duration_min = f1.selectbox(
             "Durée minimum",
             ["Aucune", "≥ 1h", "≥ 1h30", "≥ 2h", "≥ 2h30", "≥ 3h"],
             key="qr_duration_min",
+        )
+        time_filter = f2.selectbox(
+            "Temps max",
+            ["Aucune limite", "Moins d'1h30", "Moins de 2h", "Moins de 3h", "Soirée (< 10h)", "Week-end (< 24h)"],
+            key="qr_time",
         )
         f3, f4, f5 = st.columns(3)
         search = f3.text_input("Recherche", key="qr_search", placeholder="Titre…")
