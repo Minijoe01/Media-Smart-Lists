@@ -2136,6 +2136,22 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
             media["number_of_episodes"] = int(payload["number_of_episodes"])
         except (TypeError, ValueError):
             pass
+    # Runtime AUTORITAIRE depuis TMDB. Le champ `runtime` de MDBList est peu
+    # fiable pour les séries (durée cumulée, durée d'un film, 9 min…). TMDB
+    # expose `episode_run_time` (durée moyenne d'un épisode) pour les séries
+    # et `runtime` pour les films : on s'y fie (cf. doc TMDB).
+    episode_rt = payload.get("episode_run_time")
+    if isinstance(episode_rt, list) and episode_rt:
+        value = next((int(x) for x in episode_rt if isinstance(x, (int, float)) and 0 < x <= 300), 0)
+        if value:
+            media["runtime"] = value
+    else:
+        try:
+            value = int(payload.get("runtime") or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if 0 < value <= 600:
+            media["runtime"] = value
 
 
 def _enrich_tmdb_metadata(data: dict) -> None:
@@ -2550,7 +2566,12 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
             '<span class="only-pc">🎭 ' + escape(" · ".join(names[:2])) + '</span>'
             + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">👥 Acteurs</span>'
         )
-    metadata.append(escape(str(row.get("source") or "MDBList")))
+    # La provenance (liste/source) est distinguée du type par l'icône 📂 et
+    # précisée par une info-bulle : « 📺 » = type, « 📂 » = liste d'origine.
+    source_name = str(row.get("source") or "MDBList")
+    metadata.append(
+        f'<span title="Provenance : la liste ou la source où se trouve ce contenu">📂 {escape(source_name)}</span>'
+    )
 
     signals = row.get("signals") or []
     if signals:
