@@ -343,7 +343,8 @@ st.markdown(
         padding: .28rem .5rem;
     }
     .score-badge[data-tooltip], .mc-note[data-tooltip], .mc-type[data-tooltip],
-    .mc-year[data-tooltip], .media-list-pct[data-tooltip], .mc-inline-pct[data-tooltip] {
+    .mc-year[data-tooltip], .media-list-pct[data-tooltip], .mc-inline-pct[data-tooltip],
+    .mc-chip[data-tooltip] {
         position: relative; cursor: help;
     }
     .score-badge[data-tooltip]::after,
@@ -351,7 +352,8 @@ st.markdown(
     .mc-type[data-tooltip]::after,
     .mc-year[data-tooltip]::after,
     .media-list-pct[data-tooltip]::after,
-    .mc-inline-pct[data-tooltip]::after {
+    .mc-inline-pct[data-tooltip]::after,
+    .mc-chip[data-tooltip]::after {
         content: attr(data-tooltip);
         position: absolute;
         bottom: calc(100% + 8px);
@@ -381,7 +383,8 @@ st.markdown(
     .mc-type[data-tooltip]:hover::after,
     .mc-year[data-tooltip]:hover::after,
     .media-list-pct[data-tooltip]:hover::after,
-    .mc-inline-pct[data-tooltip]:hover::after {
+    .mc-inline-pct[data-tooltip]:hover::after,
+    .mc-chip[data-tooltip]:hover::after {
         opacity: 1;
         visibility: visible;
         transform: translateX(-50%) translateY(0);
@@ -959,6 +962,7 @@ st.markdown(
     }
     .links-spacer { margin-left: auto; display: inline-flex; align-items: center; }
     .gsm-only { display: none; }
+    .only-gsm { display: none; }
 
     @media (max-width: 768px) {
         .msl-grid2 { grid-template-columns: 1fr; }
@@ -981,6 +985,8 @@ st.markdown(
         .media-list-pct { display: none !important; }
         .mc-inline-pct { display: inline-block !important; }
         .gsm-only { display: inline-block !important; margin-left: auto; }
+        .only-gsm { display: inline-block !important; }
+        .only-pc { display: none !important; }
     }
     </style>
     """,
@@ -1987,7 +1993,7 @@ def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
         response = requests.get(
             f"https://api.themoviedb.org/3/{kind}/{tmdb}",
             params={"api_key": key, "language": "en-US", "append_to_response": "credits"},
-            timeout=10,
+            timeout=6,
         )
         if response.status_code != 200:
             return None
@@ -2045,12 +2051,12 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
 def _enrich_tmdb_metadata(data: dict) -> None:
     """Complète genres, studios et acteurs via l'API TMDB (0 appel MDBList).
 
-    Ordre prioritaire : d'abord les contenus SANS genres (surtout la
-    Watchlist, que MDBList n'enrichit pas), puis les contenus qui n'ont pas
-    encore de studios/acteurs (pour le scoring « Studio fétiche » et
-    « Visage familier »). Les appels sont parallélisés (6 workers) pour un
-    chargement rapide, et plafonnés pour rester léger. Le résultat est en
-    cache avec le dataset : 0 appel après un F5.
+    Stratégie légère et équilibrée :
+      • priorité aux contenus SANS genres (Watchlist → points de genre) ;
+      • puis studios/acteurs, répartis entre l'HISTORIQUE (détection des
+        favoris) et les CANDIDATS (watchlist/listes → bonus de score), pour
+        que les deux soient servis même avec un gros historique.
+    Appels parallélisés (12 workers), plafonnés, en cache avec le dataset.
     """
     key = _tmdb_api_key()
     if not key:
@@ -2059,17 +2065,28 @@ def _enrich_tmdb_metadata(data: dict) -> None:
     need_genres = [(m, k) for m, k in all_media if not m.get("genres")]
     need_credits = [(m, k) for m, k in all_media if m.get("genres") and (not m.get("studios") or not m.get("actors"))]
 
-    budget = 240
+    # Séparer l'historique des candidats pour équilibrer l'enrichissement.
+    history_tmdb = {_media_tmdb_id(m) for m, _k in _history_media(data)}
+    credits_hist: list[tuple[dict, str]] = []
+    credits_cand: list[tuple[dict, str]] = []
+    for m, k in need_credits:
+        tmdb = _media_tmdb_id(m)
+        if tmdb in history_tmdb:
+            credits_hist.append((m, k))
+        else:
+            credits_cand.append((m, k))
+
+    budget_genres = 60
+    budget_hist = 50
+    budget_cand = 50
     targets: list[tuple[dict, str]] = []
     seen: set = set()
-    for m, k in need_genres + need_credits:
+    for m, k in (need_genres[:budget_genres] + credits_hist[:budget_hist] + credits_cand[:budget_cand]):
         uid = _media_tmdb_id(m) or id(m)
         if uid in seen:
             continue
         seen.add(uid)
         targets.append((m, k))
-        if len(targets) >= budget:
-            break
 
     def work(item: tuple[dict, str]) -> None:
         m, k = item
@@ -2080,7 +2097,7 @@ def _enrich_tmdb_metadata(data: dict) -> None:
         if payload:
             _apply_tmdb_payload(m, payload)
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=12) as executor:
         list(executor.map(work, targets))
 
 
@@ -2320,17 +2337,27 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     image_html = _poster_html(poster, row.get("type") or "")
     metadata = []
     if row.get("genres"):
-        metadata.append(" · ".join(row["genres"]))
+        metadata.append(escape(" · ".join(row["genres"])))
     if row.get("runtime"):
         suffix = "/ép." if row.get("type") == "Série" else ""
         metadata.append(f"⏱️ {_format_minutes(row['runtime'])}{suffix}")
     if row.get("note") is not None:
         metadata.append(f"⭐ {row['note']:.1f}/10")
     if row.get("studios"):
-        metadata.append("🏢 " + " · ".join(row["studios"][:2]))
+        names = row["studios"]
+        tip = "Studios : " + " · ".join(names)
+        metadata.append(
+            '🏢 <span class="only-pc">' + escape(" · ".join(names[:2])) + '</span>'
+            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🏢 Studios</span>'
+        )
     if row.get("people"):
-        metadata.append("🎭 " + " · ".join(row["people"][:2]))
-    metadata.append(str(row.get("source") or "MDBList"))
+        names = row["people"]
+        tip = "Acteurs : " + " · ".join(names)
+        metadata.append(
+            '🎭 <span class="only-pc">' + escape(" · ".join(names[:2])) + '</span>'
+            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🎭 Acteurs</span>'
+        )
+    metadata.append(escape(str(row.get("source") or "MDBList")))
 
     signals = row.get("signals") or []
     if signals:
@@ -2371,7 +2398,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     st.markdown(
         f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
-        f'<small>{escape(" · ".join(metadata))}</small>{links_html}'
+        f'<small>{" · ".join(metadata)}</small>{links_html}'
         f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">'
         f'<span class="score-badge" data-tooltip="{escape(friction_tip, quote=True)}">Friction {friction_val}/100</span>{score_inline}'
         f'</div>'
@@ -2653,15 +2680,15 @@ def render_watchlist_page() -> None:
         placeholder="Studio…",
     )
     cast_mode = castmode_col.radio(
-        "Correspondance acteurs/studios",
+        "Correspondance des acteurs",
         ["Au moins un (OU)", "Tous (ET)"],
         key="qr_cast_mode",
         horizontal=True,
     )
     if selected_actors or selected_studios:
         st.caption(
-            "🎭🏢 Acteurs/studios : « Au moins un (OU) » = le contenu correspond à l'un "
-            "des choix · « Tous (ET) » = il doit tous les inclure."
+            "🎭 Acteurs : « Tous (ET) » = le contenu doit inclure TOUS les acteurs choisis "
+            "· « Au moins un (OU) » = n'importe lequel. 🏢 Studios : toujours « au moins un »."
         )
 
     def time_ok(row: dict) -> bool:
@@ -2713,17 +2740,17 @@ def render_watchlist_page() -> None:
             row_studios = {str(st_).casefold() for st_ in (row.get("studios") or [])}
             wanted_actors = {str(a).casefold() for a in selected_actors}
             wanted_studios = {str(st_).casefold() for st_ in selected_studios}
-            hits = []
+            ok = True
             if wanted_actors:
-                hits.append(bool(row_actors & wanted_actors))
+                if cast_mode == "Tous (ET)":
+                    ok = ok and wanted_actors.issubset(row_actors)
+                else:
+                    ok = ok and bool(row_actors & wanted_actors)
             if wanted_studios:
-                hits.append(bool(row_studios & wanted_studios))
-            if cast_mode == "Tous (ET)":
-                if not all(hits):
-                    continue
-            else:
-                if not any(hits):
-                    continue
+                # Studios : toujours « au moins un » (OU).
+                ok = ok and bool(row_studios & wanted_studios)
+            if not ok:
+                continue
         filtered.append(row)
 
     def needed_minutes(row: dict) -> int:
@@ -4652,6 +4679,34 @@ def render_basic_stats_page() -> None:
     period_label = period if period != "Période personnalisée" else f"Période personnalisée {custom_start} → {custom_end}"
     st.caption(f"🎯 Filtres appliqués : **{media_filter}** · **{genre_choice}** · **{period_label}** — {len(filtered)} visionnage(s).")
 
+    # ── Acteurs & studios préférés — suit les slicers (période, type, genre) ──
+    filtered_tmdb: set[str] = set()
+    for ids in filtered.get("ids", []):
+        if isinstance(ids, dict):
+            value = ids.get("tmdb")
+            if value not in (None, "", 0, "0"):
+                filtered_tmdb.add(str(value))
+    people_stats = _collect_people_stats(dataset, tmdb_whitelist=filtered_tmdb)
+    studio_stats = _collect_studio_stats(dataset, tmdb_whitelist=filtered_tmdb)
+    st.divider()
+    st.markdown("#### 🎭 Tes acteurs & studios préférés")
+    if people_stats or studio_stats:
+        st.caption(
+            "Détectés automatiquement sur la sélection filtrée ci-dessus "
+            f"({period_label}). Clique sur une carte pour ouvrir la fiche TMDB."
+        )
+        if people_stats:
+            st.markdown("**🎭 Acteurs récurrents**")
+            st.markdown(_render_people_cards(people_stats, limit=10), unsafe_allow_html=True)
+        if studio_stats:
+            st.markdown("**🏢 Studios récurrents**")
+            st.markdown(_render_studio_chips(studio_stats, limit=12), unsafe_allow_html=True)
+    else:
+        st.caption(
+            "Aucun acteur ou studio détecté sur cette sélection. "
+            "Vérifie que la clé TMDB_API_KEY est renseignée dans les Secrets Streamlit."
+        )
+
     # ── Historique des vues (filtré, UNE seule fois) ─────────────────────────
     with st.expander("📜 Historique des vues", expanded=False):
         st.caption(
@@ -4752,29 +4807,6 @@ def render_basic_stats_page() -> None:
 
     # ── Analyses détaillées (mêmes slicers) ──────────────────────────────────
     render_detailed_stats_page(filtered, period_label)
-
-    # ── Acteurs & studios préférés — suit les slicers (période, type, genre) ──
-    filtered_tmdb: set[str] = set()
-    for ids in filtered.get("ids", []):
-        if isinstance(ids, dict):
-            value = ids.get("tmdb")
-            if value not in (None, "", 0, "0"):
-                filtered_tmdb.add(str(value))
-    people_stats = _collect_people_stats(dataset, tmdb_whitelist=filtered_tmdb)
-    studio_stats = _collect_studio_stats(dataset, tmdb_whitelist=filtered_tmdb)
-    if people_stats or studio_stats:
-        st.divider()
-        st.markdown("#### 🎭 Tes acteurs & studios préférés")
-        st.caption(
-            "Détectés automatiquement sur la sélection filtrée ci-dessus "
-            f"({period_label}). Clique sur une carte pour ouvrir la fiche TMDB."
-        )
-        if people_stats:
-            st.markdown("**🎭 Acteurs récurrents**")
-            st.markdown(_render_people_cards(people_stats, limit=10), unsafe_allow_html=True)
-        if studio_stats:
-            st.markdown("**🏢 Studios récurrents**")
-            st.markdown(_render_studio_chips(studio_stats, limit=12), unsafe_allow_html=True)
 
 
 def _ruban(emoji: str, titre: str, meta: str, body: str, delay: int = 0) -> str:
