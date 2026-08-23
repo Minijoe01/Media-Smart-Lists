@@ -3147,75 +3147,27 @@ def render_watchlist_page() -> None:
     items = list(source["movies"]) + list(source["shows"])
     api_calls_extra = 0
     if selected_genres:
-        cache = st.session_state.setdefault("_source_genre_cache", {})
-        member_keys = source.get("members") or [source["key"]]
-        combined_movies = []
-        combined_shows = []
-        valid, message = mdb_oauth.ensure_valid_session(cookies)
-        if not valid:
-            st.markdown(
-                f'<div class="accent-callout"><strong>SESSION INDISPONIBLE</strong> · '
-                f'{escape(message or "Reconnecte MDBList.")}</div>',
-                unsafe_allow_html=True,
-            )
-            return
-        try:
-            provider = MDBListProvider(mdb_oauth.access_token())
-            with st.spinner(f"Filtrage MDBList : {len(selected_genres)} genre(s)…"):
-                for genre_name in selected_genres:
-                    slug = genre_by_title.get(genre_name, str(genre_name).lower())
-                    for member_key in member_keys:
-                        member = source_by_key.get(member_key)
-                        if not member:
-                            continue
-                        cache_key = f"{member_key}:{slug}"
-                        response = cache.get(cache_key)
-                        if not isinstance(response, dict):
-                            if member["kind"] == "watchlist":
-                                response = provider.watchlist(slug)
-                            else:
-                                response = provider.list_items(int(member["id"]), slug)
-                            cache[cache_key] = response
-                            api_calls_extra += 1
-                        combined_movies.extend(response.get("movies") or [])
-                        combined_shows.extend(response.get("shows") or [])
-            st.session_state["_source_genre_cache"] = cache
-            account = mdb_oauth.account_summary()
-            if provider.rate_limit_remaining is not None and account:
-                account["rate_limit_remaining"] = provider.rate_limit_remaining
-                st.session_state[mdb_oauth.ACCOUNT_KEY] = account
-                mdb_oauth.persist_cookie(cookies)
-        except Exception:
-            st.markdown(
-                '<div class="accent-callout"><strong>FILTRE INDISPONIBLE</strong> · '
-                'MDBList n’a pas pu filtrer cette source.</div>',
-                unsafe_allow_html=True,
-            )
-            return
-        items = dedupe(combined_movies) + dedupe(combined_shows)
-        # Application locale du mode ET / OU sur les genres choisis
-        # (la réunion API correspond au OU ; le ET est filtré ici).
-        if genre_mode == "Tous (ET)":
-            wanted = {str(genre).casefold() for genre in selected_genres}
+        # Filtrage LOCAL : les items ont DÉJÀ tous leurs genres grâce à
+        # l'enrichissement TMDB. Plus d'appel API MDBList → économise le quota
+        # ET préserve les genres complets + les scores (plus de troncage, plus
+        # de pastilles qui disparaissent au filtrage).
+        wanted = {str(g).casefold() for g in selected_genres}
 
-            def _has_all_genres(media: dict) -> bool:
-                names = set()
-                for genre in media.get("genres") or []:
-                    if isinstance(genre, dict):
-                        genre = genre.get("name") or genre.get("slug")
-                    if genre:
-                        names.add(str(genre).casefold())
+        def _match_genre(media):
+            names = set()
+            for genre in (media.get("genres") or []):
+                if isinstance(genre, dict):
+                    genre = genre.get("name") or genre.get("slug")
+                if genre:
+                    names.add(str(genre).casefold())
+            if genre_mode == "Tous (ET)":
                 return wanted.issubset(names)
+            return bool(names & wanted)
 
-            items = [item for item in items if _has_all_genres(item)]
+        items = [item for item in items if _match_genre(item)]
 
     scored = [
-        score_item(
-            item,
-            profile,
-            source_name=source["name"],
-            known_genre=(selected_genres[0] if len(selected_genres) == 1 else None),
-        )
+        score_item(item, profile, source_name=source["name"])
         for item in items
     ]
 
