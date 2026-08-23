@@ -2630,9 +2630,11 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
             "🔗 Saga",
             f"Suite d'une saga entamée ({coll_name}) — tu as déjà vu {row['saga_seen']} film(s) de cette saga",
         ))
-    # Provenance (liste/source) : pastille + info-bulle, distincte du type 📺.
-    source_name = str(row.get("source") or "MDBList")
-    metadata.append(_raw_chip(f"📂 {source_name}", "Provenance : la liste ou la source où se trouve ce contenu"))
+    if row.get("_outside"):
+        metadata.append('<span class="mc-outside" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>')
+    else:
+        source_name = str(row.get("source") or "MDBList")
+        metadata.append(_raw_chip(f"📂 {source_name}", "Provenance : la liste ou la source où se trouve ce contenu"))
 
     signals = row.get("signals") or []
     if signals:
@@ -2786,12 +2788,41 @@ GENRE_FR_TO_TMDB = {
 GENRE_TMDB_TO_FR = {v: k for k, v in GENRE_FR_TO_TMDB.items()}
 
 
+def _build_item_from_tmdb(tmdb_id: int, kind: str, payload: dict) -> dict:
+    """Construit un item scoreable depuis une fiche TMDB complète."""
+    media: dict[str, Any] = {"ids": {"tmdb": tmdb_id}, "mediatype": kind}
+    media["title"] = payload.get("title") or payload.get("name") or "?"
+    _apply_tmdb_payload(media, payload)
+    va = payload.get("vote_average")
+    vc = payload.get("vote_count")
+    if va:
+        media["score_average"] = float(va)
+    if vc:
+        media["ratings"] = [{"source": "tmdb", "value": va, "votes": vc}]
+    date = payload.get("release_date") or payload.get("first_air_date")
+    if date and len(date) >= 4:
+        try:
+            media["year"] = int(date[:4])
+        except ValueError:
+            pass
+    if payload.get("poster_path"):
+        media["poster"] = payload["poster_path"]
+    if payload.get("status"):
+        media["status"] = str(payload["status"]).lower()
+    pcs = payload.get("production_countries") or []
+    if pcs and isinstance(pcs[0], dict):
+        media["country"] = pcs[0].get("iso_3166_1", "")
+    return media
+
+
 def _perfect_recommendation(
     profile: dict, dataset: dict, selected_type: str, selected_genres: list,
     note_min: float, api_key: str,
 ) -> list[dict]:
-    """Cherche des contenus HORS des listes via TMDB Discover, correspondant
-    aux goûts (top genres). Respecte les filtres actifs. Exclut déjà vus."""
+    """Cherche des contenus HORS des listes via TMDB Discover, les ENRICHIT
+    avec les détails TMDB (acteurs/réal/studios/genres), puis les SCORE avec
+    le profil de l'utilisateur → score /100 + explications, comme les listes."""
+    # Genres cibles
     if selected_genres:
         genre_names = selected_genres
     else:
@@ -2800,18 +2831,22 @@ def _perfect_recommendation(
     genre_ids = [str(GENRE_FR_TO_TMDB[g]) for g in genre_names if g in GENRE_FR_TO_TMDB]
     if not genre_ids:
         return []
+    # Types
     if selected_type == "Films":
         types = ["movie"]
     elif selected_type == "Séries":
         types = ["tv"]
     else:
         types = ["movie", "tv"]
+    # Exclure vu + en listes
     seen_tmdb: set[str] = set()
     for media, _kind in _all_media(dataset):
         tmdb = _media_tmdb_id(media)
         if tmdb:
             seen_tmdb.add(str(tmdb))
-    results: list[dict] = []
+
+    # 1. TMDB Discover → candidats
+    candidates: list[dict] = []
     for media_type in types:
         params = {
             "api_key": api_key, "language": "fr-FR",
@@ -2827,53 +2862,32 @@ def _perfect_recommendation(
                 tid = str(item.get("id"))
                 if tid in seen_tmdb:
                     continue
-                year_raw = item.get("release_date") or item.get("first_air_date") or ""
-                results.append({
-                    "title": item.get("title") or item.get("name") or "?",
-                    "tmdb": item.get("id"),
-                    "poster": item.get("poster_path") or "",
-                    "year": year_raw[:4] if year_raw else "",
-                    "vote": float(item.get("vote_average") or 0),
-                    "type": "Film" if media_type == "movie" else "Série",
-                    "genres": [GENRE_TMDB_TO_FR.get(g, "?") for g in (item.get("genre_ids") or [])],
-                })
+                candidates.append({"tmdb": item.get("id"), "kind": media_type})
         except Exception:
             continue
-    results.sort(key=lambda r: r["vote"], reverse=True)
-    return results[:20]
 
+    # 2. Enrichir chaque candidat (TMDB details via cache _fetch_tmdb_item)
+    def enrich(cand: dict) -> dict | None:
+        try:
+            payload = _fetch_tmdb_item(cand["kind"], cand["tmdb"], api_key)
+        except Exception:
+            return None
+        if not payload:
+            return None
+        return _build_item_from_tmdb(cand["tmdb"], cand["kind"], payload)
 
-def _render_discovery_card(result: dict) -> None:
-    """Carte pour un contenu HORS listes (recommandation parfaite). Pastille
-    bleue pour distinguer des contenus en listes."""
-    poster_url = f"https://image.tmdb.org/t/p/w500{result['poster']}" if result.get("poster") else ""
-    image_html = _poster_html(escape(poster_url, quote=True), result.get("type") or "")
-    title = escape(result.get("title") or "?")
-    year = escape(str(result.get("year") or ""))
-    vote = result.get("vote") or 0
-    genres = result.get("genres") or []
-    year_pill = f'<span class="mc-year">{year}</span>' if year else ""
-    note_pill = f'<span class="mc-note">⭐ {vote:.1f}</span>' if vote else ""
-    genre_chip = _meta_chip("🎭", genres, "Genres", "Genres") if genres else ""
-    outside = ('<span class="mc-outside" data-tooltip="Découverte TMDB — pas dans tes listes">'
-               '🌐 Hors de tes listes</span>')
-    base = "movie" if result["type"] == "Film" else "tv"
-    links = (
-        f'<div style="margin-top:.35rem;display:flex;flex-wrap:wrap;gap:.2rem;">'
-        f'<a class="link-pill" href="{_justwatch_url(result.get("title") or "")}" target="_blank" rel="noopener noreferrer">🔎 Où regarder</a>'
-        f'<a class="link-pill" href="https://www.themoviedb.org/{base}/{result.get("tmdb")}" target="_blank" rel="noopener noreferrer">TMDB</a></div>'
-    )
-    st.markdown(
-        f'<div class="media-list-card poster-card">{image_html}'
-        f'<div class="media-list-content" style="width:100%;">'
-        f'<div class="mc-head">{_type_chip(result.get("type") or "")}'
-        f'<strong>{title}</strong>'
-        f'<span style="display:inline-flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
-        f'{note_pill}{year_pill}</span></div>'
-        f'<small>{genre_chip} {outside}</small>{links}'
-        f'</div></div>',
-        unsafe_allow_html=True,
-    )
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        items = [i for i in executor.map(enrich, candidates) if i]
+
+    # 3. Scorer avec le profil
+    scored: list[dict] = []
+    for item in items:
+        row = score_item(item, profile, source_name="🌐 Hors de tes listes")
+        row["_outside"] = True
+        scored.append(row)
+
+    scored.sort(key=lambda r: r["score"], reverse=True)
+    return scored[:20]
 
 
 def render_watchlist_page() -> None:
@@ -3275,7 +3289,7 @@ def render_watchlist_page() -> None:
                 st.session_state["_roulette_result"] = random.choice(discovery)
 
     with perfect_col:
-        if _tmdb_api_key() and st.button("🎯 Reco parfaite", type="primary", key="perfect_reco_btn"):
+        if _tmdb_api_key() and st.button("🎯 Hors de mes listes", type="primary", key="perfect_reco_btn"):
             with st.spinner("🔍 Recherche de perles hors de tes listes…"):
                 st.session_state["_perfect_reco_results"] = _perfect_recommendation(
                     profile, _dataset(), selected_type, selected_genres, note_min, _tmdb_api_key()
@@ -3289,10 +3303,10 @@ def render_watchlist_page() -> None:
     # ── Reco parfaite (hors listes) ──
     perfect_results = st.session_state.get("_perfect_reco_results")
     if perfect_results:
-        st.markdown(f"### 🎯 Recommandations parfaites ({len(perfect_results)})")
-        st.caption("Pépite(s) correspondant à tes goûts, hors de tes listes. 🌐 = découverte TMDB.")
+        st.markdown(f"### 🎯 Hors de mes listes ({len(perfect_results)})")
+        st.caption("Contenus correspondant à ton profil, que tu n'as pas encore dans tes listes. 🌐 = découverte TMDB.")
         for result in perfect_results:
-            _render_discovery_card(result)
+            _render_recommendation_card(result)
 
     if sort_mode.startswith("✨"):
         recommended = [row for row in display_rows if row["score"] >= 50 and not row.get("not_for_me")]
