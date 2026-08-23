@@ -69,6 +69,7 @@ from list_audit_engine import (
     source_display_label,
 )
 from mdblist_provider import MDBListProvider
+from genre_translations import translate_genre as _tr_genre
 from normalized_model import NORMALIZED_SCHEMA_VERSION, dedupe, normalize_provider_dataset
 from playback_engine import (
     DEFAULT_PLAYBACK_SORT,
@@ -2534,6 +2535,7 @@ def _reset_recommendation_filters() -> None:
         "qr_genres": [],
         "qr_genre_mode": "Au moins un (OU)",
         "qr_genres_exclude": [],
+        "qr_countries_exclude": [],
         "qr_duration_min": "Aucune",
         "qr_actors": [],
         "qr_directors": [],
@@ -2779,6 +2781,33 @@ def _render_taste_profile(profile: dict) -> None:
             )
 
 
+COUNTRY_FR = {
+    "us": "États-Unis", "fr": "France", "gb": "Royaume-Uni", "kr": "Corée du Sud",
+    "jp": "Japon", "de": "Allemagne", "es": "Espagne", "it": "Italie",
+    "ca": "Canada", "cn": "Chine", "in": "Inde", "au": "Australie",
+    "be": "Belgique", "mx": "Mexique", "br": "Brésil", "dk": "Danemark",
+    "se": "Suède", "no": "Norvège", "nl": "Pays-Bas", "ie": "Irlande",
+    "ar": "Argentine", "ru": "Russie", "tr": "Turquie", "pl": "Pologne",
+    "hk": "Hong Kong", "tw": "Taïwan", "pt": "Portugal", "ch": "Suisse",
+    "at": "Autriche", "fi": "Finlande", "is": "Islande", "nz": "Nouvelle-Zélande",
+    "ir": "Iran", "il": "Israël", "za": "Afrique du Sud", "th": "Thaïlande",
+    "co": "Colombie", "cl": "Chili", "cz": "Tchéquie", "hu": "Hongrie",
+    "gr": "Grèce", "ua": "Ukraine", "ma": "Maroc", "dz": "Algérie",
+    "tn": "Tunisie", "lb": "Liban",
+}
+
+def _flag_emoji(code):
+    c = str(code or "").upper()
+    if len(c) != 2:
+        return ""
+    return chr(0x1F1E6 + ord(c[0]) - 65) + chr(0x1F1E6 + ord(c[1]) - 65)
+
+def _country_display(code):
+    c = str(code or "").strip().lower()
+    name = COUNTRY_FR.get(c, c.upper())
+    flag = _flag_emoji(c)
+    return f"{flag} {name}" if flag else name
+
 GENRE_FR_TO_TMDB = {
     "Action": 28, "Aventure": 12, "Animation": 16, "Comédie": 35, "Crime": 80,
     "Documentaire": 99, "Drame": 18, "Familial": 10751, "Fantastique": 14,
@@ -2804,6 +2833,8 @@ def _build_item_from_tmdb(tmdb_id: int, kind: str, payload: dict) -> dict:
     if payload.get("imdb_id"):
         media["ids"]["imdb"] = payload["imdb_id"]
     _apply_tmdb_payload(media, payload)
+    if media.get("genres"):
+        media["genres"] = [_tr_genre(g) for g in media["genres"]]
     va = payload.get("vote_average")
     vc = payload.get("vote_count")
     if va:
@@ -2985,6 +3016,23 @@ def render_watchlist_page() -> None:
             key="qr_genres_exclude",
             placeholder="Aucun genre exclu",
         )
+        country_codes = sorted({
+            str(m.get("country") or "").strip().lower()
+            for m, _k in _all_media(_dataset())
+            if m.get("country") and str(m["country"]).strip()
+        })
+        country_opts = sorted({_country_display(c) for c in country_codes if c})
+        excluded_countries_disp = st.multiselect(
+            "🌍 Pays à exclure",
+            country_opts,
+            key="qr_countries_exclude",
+            placeholder="Aucun pays exclu",
+        )
+        excluded_countries = set()
+        for d in excluded_countries_disp:
+            for c in country_codes:
+                if _country_display(c) == d:
+                    excluded_countries.add(c)
 
         # Acteurs / réalisateurs / studios (0 appel API : liste GLOBALE).
         all_actors = sorted({
@@ -3195,6 +3243,9 @@ def render_watchlist_page() -> None:
         if excluded_genres:
             excluded_set = {str(g).casefold() for g in excluded_genres}
             if {str(g).casefold() for g in (row.get("genres") or [])} & excluded_set:
+                continue
+        if excluded_countries:
+            if str(row.get("country") or "").lower() in excluded_countries:
                 continue
         if search and search.casefold() not in _media_title(row["item"]).casefold():
             continue
