@@ -2645,7 +2645,8 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         if total_time:
             parts.append(f"tout voir : {_format_minutes(total_time)}")
         slabel = f"📺 {seasons or '?'}S · {total_ep or '?'}ép" if (seasons or total_ep) else "📺 Série"
-        lead_pill = _raw_chip(slabel, " · ".join(parts) if parts else "Durée inconnue")
+        stip = " · ".join(parts) if parts else "Durée inconnue"
+        lead_pill = f'<span class="mc-year" data-tooltip="{escape(stip, quote=True)}">{escape(slabel)}</span>'
     elif row.get("runtime"):
         try:
             lead_pill = f'<span class="mc-year" data-tooltip="Durée">{_format_minutes(int(row["runtime"]))}</span>'
