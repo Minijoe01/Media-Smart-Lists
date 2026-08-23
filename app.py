@@ -2533,6 +2533,7 @@ def _reset_recommendation_filters() -> None:
         "qr_preset": "Aucun preset",
         "qr_genres": [],
         "qr_genre_mode": "Au moins un (OU)",
+        "qr_genres_exclude": [],
         "qr_duration_min": "Aucune",
         "qr_actors": [],
         "qr_directors": [],
@@ -2827,18 +2828,22 @@ def _build_item_from_tmdb(tmdb_id: int, kind: str, payload: dict) -> dict:
 
 def _perfect_recommendation(
     profile: dict, dataset: dict, selected_type: str, selected_genres: list,
-    note_min: float, api_key: str,
+    note_min: float, api_key: str, excluded_genres: list | None = None,
 ) -> list[dict]:
     """Cherche des contenus HORS des listes via TMDB Discover, les ENRICHIT
     avec les détails TMDB (acteurs/réal/studios/genres), puis les SCORE avec
-    le profil de l'utilisateur → score /100 + explications, comme les listes."""
-    # Genres cibles
+    le profil de l'utilisateur. Utilise with_cast/with_crew pour cibler tes
+    acteurs/réalisateurs fétiches — vraiment personnalisé."""
     if selected_genres:
         genre_names = selected_genres
     else:
         affinities = profile.get("genre_affinity", {})
         genre_names = [g for g, _ in sorted(affinities.items(), key=lambda x: x[1], reverse=True)[:3]]
-    genre_ids = [str(GENRE_FR_TO_TMDB[g]) for g in genre_names if g in GENRE_FR_TO_TMDB]
+    # IDs d'acteurs/réalisateurs fétiches pour PERSONNALISER la recherche
+    people_stats = _collect_people_stats(dataset)
+    director_stats = _collect_director_stats(dataset)
+    top_actor_ids = [str(p["id"]) for p in people_stats[:5] if p.get("id")]
+    top_director_ids = [str(d["id"]) for d in director_stats[:3] if d.get("id")]
     # Types
     if selected_type == "Films":
         types = ["movie"]
@@ -2852,8 +2857,6 @@ def _perfect_recommendation(
         tmdb = _media_tmdb_id(media)
         if tmdb:
             seen_tmdb.add(str(tmdb))
-
-    # 1. TMDB Discover → candidats
     candidates: list[dict] = []
     for media_type in types:
         genre_map = GENRE_FR_TO_TMDB_TV if media_type == "tv" else GENRE_FR_TO_TMDB
@@ -2866,6 +2869,14 @@ def _perfect_recommendation(
             "vote_average.gte": max(note_min, 6.0),
             "with_genres": "|".join(gids), "page": 1,
         }
+        if top_actor_ids:
+            params["with_cast"] = "|".join(top_actor_ids)
+        if top_director_ids:
+            params["with_crew"] = "|".join(top_director_ids)
+        if excluded_genres:
+            without = [str(genre_map[g]) for g in excluded_genres if g in genre_map]
+            if without:
+                params["without_genres"] = ",".join(without)
         try:
             resp = requests.get(f"https://api.themoviedb.org/3/discover/{media_type}", params=params, timeout=12)
             if resp.status_code != 200:
@@ -2967,6 +2978,12 @@ def render_watchlist_page() -> None:
             ["Au moins un (OU)", "Tous (ET)"],
             key="qr_genre_mode",
             horizontal=True,
+        )
+        excluded_genres = st.multiselect(
+            "🚫 Genres à exclure",
+            genre_titles,
+            key="qr_genres_exclude",
+            placeholder="Aucun genre exclu",
         )
 
         # Acteurs / réalisateurs / studios (0 appel API : liste GLOBALE).
@@ -3175,6 +3192,10 @@ def render_watchlist_page() -> None:
             continue
         if selected_type == "Séries" and row["type"] != "Série":
             continue
+        if excluded_genres:
+            excluded_set = {str(g).casefold() for g in excluded_genres}
+            if {str(g).casefold() for g in (row.get("genres") or [])} & excluded_set:
+                continue
         if search and search.casefold() not in _media_title(row["item"]).casefold():
             continue
         if note_min and (row.get("note") or 0) < note_min:
@@ -3305,7 +3326,8 @@ def render_watchlist_page() -> None:
         if _tmdb_api_key() and st.button("🎯 Hors de mes listes", type="primary", key="perfect_reco_btn"):
             with st.spinner("🔍 Recherche de perles hors de tes listes…"):
                 _perfect_results = _perfect_recommendation(
-                    profile, _dataset(), selected_type, selected_genres, note_min, _tmdb_api_key()
+                    profile, _dataset(), selected_type, selected_genres, note_min, _tmdb_api_key(),
+                    excluded_genres=excluded_genres,
                 )
 
     roulette = st.session_state.get("_roulette_result")
