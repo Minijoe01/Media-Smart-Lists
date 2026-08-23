@@ -2567,19 +2567,15 @@ def _signal_pill(signal: dict) -> str:
     )
 
 
-def _meta_chip(emoji: str, values: list, gsm_label: str, tip_kind: str) -> str:
-    """Pastille ADAPTATIVE : PC affiche 1-2 noms (lisible, pas de saut de
-    ligne), GSM affiche un label court (économie de place). Info-bulle =
-    liste complète, sur les deux plateformes."""
+def _meta_chip(emoji: str, values: list, label: str, tip_kind: str) -> str:
+    """Pastille LABEL compact (uniforme PC/GSM) : seul le libellé est affiché,
+    la liste complète est dans l'info-bulle. Maximum de place économisé, fini
+    les renvois à la ligne."""
     if not values:
         return ""
     full = " · ".join(str(v) for v in values)
     tip = f"{tip_kind} : {full}"
-    pc_shown = " · ".join(str(v) for v in values[:2]) + (" …" if len(values) > 2 else "")
-    return (
-        f'<span class="only-pc mc-chip" data-tooltip="{escape(tip, quote=True)}">{escape(emoji + " " + pc_shown)}</span>'
-        f'<span class="only-gsm mc-chip" data-tooltip="{escape(tip, quote=True)}">{escape(emoji + " " + gsm_label)}</span>'
-    )
+    return f'<span class="mc-chip" data-tooltip="{escape(tip, quote=True)}">{escape(emoji + " " + label)}</span>'
 
 
 def _raw_chip(label: str, tooltip: str = "") -> str:
@@ -2617,10 +2613,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
             parts.append(f"tout voir : {_format_minutes(total_time)}")
         label = f"📺 {seasons or '?'}S · {total_ep or '?'}ép" if (seasons or total_ep) else "📺 Série"
         metadata.append(_raw_chip(label, " · ".join(parts) if parts else "Durée inconnue"))
-    elif row.get("runtime"):
-        metadata.append(f"⏱️ {_format_minutes(row['runtime'])}")
-    if row.get("note") is not None:
-        metadata.append(f"⭐ {row['note']:.1f}/10")
+    # (films : la durée + la note sont dans l'en-tête, à droite du titre)
     if row.get("studios"):
         metadata.append(_meta_chip("🏢", row["studios"], "Studio", "Studios"))
     if row.get("people"):
@@ -2655,12 +2648,21 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     # Liens uniformisés (mêmes badges que En cours / Fantôme / Calendrier).
     item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
     year_pill = f'<span class="mc-year" data-tooltip="Année de sortie">{year}</span>' if year else ''
+    note_pill = _public_note_html(item)
+    # Durée du FILM déplacée dans l'en-tête (style pastille année), à droite.
+    # Pour les séries, la durée reste dans la pastille série (métadonnées).
+    duration_pill = ""
+    if row.get("type") != "Série" and row.get("runtime"):
+        try:
+            duration_pill = f'<span class="mc-year" data-tooltip="Durée">{_format_minutes(int(row["runtime"]))}</span>'
+        except (TypeError, ValueError):
+            duration_pill = ""
     head = (
         f'<div class="mc-head">'
         f'{_type_chip(str(row.get("type") or ""))}'
         f'<strong>{title}</strong>'
-        f'{year_pill}'
-        f'{_public_note_html(item)}'
+        f'<span style="display:inline-flex;gap:6px;flex-shrink:0;white-space:nowrap;">'
+        f'{year_pill}{duration_pill}{note_pill}</span>'
         f'</div>'
     )
     score_val = int(round(row.get("score", 0)))
