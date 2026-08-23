@@ -1970,6 +1970,40 @@ def _collect_studio_stats(dataset: dict, tmdb_whitelist: set | None = None) -> l
     return stats
 
 
+def _collect_director_stats(dataset: dict, tmdb_whitelist: set | None = None) -> list[dict]:
+    """Réalisateurs/créateurs triés par nombre d'apparitions (photo + id TMDB).
+
+    Suit les slicers des statistiques via `tmdb_whitelist` (comme les acteurs).
+    """
+    counts: dict[str, int] = {}
+    meta: dict[str, dict] = {}
+    for media, _kind in _history_media(dataset):
+        if tmdb_whitelist is not None:
+            tmdb = _media_tmdb_id(media)
+            if tmdb is None or str(tmdb) not in tmdb_whitelist:
+                continue
+        for director in media.get("directors") or []:
+            if not isinstance(director, dict):
+                continue
+            name = str(director.get("name") or "").strip()
+            if not name:
+                continue
+            key = name.casefold()
+            counts[key] = counts.get(key, 0) + 1
+            meta.setdefault(key, {
+                "name": name,
+                "id": director.get("id"),
+                "profile_path": director.get("profile_path") or "",
+            })
+    stats = [
+        {"name": meta[key]["name"], "id": meta[key]["id"],
+         "profile_path": meta[key]["profile_path"], "count": counts[key]}
+        for key in counts
+    ]
+    stats.sort(key=lambda row: (-row["count"], row["name"].casefold()))
+    return stats
+
+
 def _tmdb_image_url(path: str, size: str = "w185") -> str:
     return f"https://image.tmdb.org/t/p/{size}{path}" if path else ""
 
@@ -1982,8 +2016,8 @@ def _tmdb_company_url(company_id: Any) -> str:
     return f"https://www.themoviedb.org/company/{company_id}" if company_id else ""
 
 
-def _render_people_cards(people: list[dict], limit: int = 8) -> str:
-    """Cartes acteurs (photo + lien TMDB), compactes et alignées sur le thème."""
+def _render_people_cards(people: list[dict], limit: int = 8, fallback_emoji: str = "🎭") -> str:
+    """Cartes acteurs/réalisateurs (photo + lien TMDB), compactes et alignées sur le thème."""
     if not people:
         return ""
     cards = []
@@ -1997,10 +2031,10 @@ def _render_people_cards(people: list[dict], limit: int = 8) -> str:
                    f'style="width:44px;height:44px;border-radius:10px;object-fit:cover;'
                    f'border:1px solid rgba(255,225,0,.45);">')
         else:
-            img = ('<div style="width:44px;height:44px;border-radius:10px;display:flex;'
+            img = (f'<div style="width:44px;height:44px;border-radius:10px;display:flex;'
                    'align-items:center;justify-content:center;font-size:20px;'
                    'background:linear-gradient(180deg,#0C2E28,#041710);'
-                   'border:1px solid rgba(0,163,146,.35);">🎭</div>')
+                   f'border:1px solid rgba(0,163,146,.35);">{fallback_emoji}</div>')
         link = (f'<a class="link-pill" href="{url}" target="_blank" rel="noopener noreferrer" '
                 f'title="Fiche TMDB">TMDB</a>') if url else ""
         cards.append(
@@ -2150,6 +2184,26 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
             value = 0
         if 0 < value <= 600:
             media["runtime"] = value
+    # Réalisateurs (films : credits.crew job==Director) / créateurs (séries :
+    # created_by). Top 5, avec photo TMDB pour les statistiques.
+    directors: list[dict] = []
+    seen_directors: set[str] = set()
+    for person in (credits.get("crew") or []):
+        if isinstance(person, dict) and str(person.get("job") or "") == "Director":
+            name = str(person.get("name") or "").strip()
+            if name and name.casefold() not in seen_directors:
+                seen_directors.add(name.casefold())
+                directors.append({"name": name, "id": person.get("id"),
+                                  "profile_path": person.get("profile_path") or ""})
+    for person in (payload.get("created_by") or []):
+        if isinstance(person, dict):
+            name = str(person.get("name") or "").strip()
+            if name and name.casefold() not in seen_directors:
+                seen_directors.add(name.casefold())
+                directors.append({"name": name, "id": person.get("id"),
+                                  "profile_path": person.get("profile_path") or ""})
+    if directors:
+        media["directors"] = directors[:5]
 
 
 def _enrich_tmdb_metadata(data: dict) -> None:
@@ -2452,6 +2506,7 @@ def _reset_recommendation_filters() -> None:
         "qr_genre_mode": "Au moins un (OU)",
         "qr_duration_min": "Aucune",
         "qr_actors": [],
+        "qr_directors": [],
         "qr_studios": [],
         "qr_cast_mode": "Au moins un (OU)",
     }
@@ -2564,6 +2619,13 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
             '<span class="only-pc">🎭 ' + escape(" · ".join(names[:2])) + '</span>'
             + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">👥 Acteurs</span>'
         )
+    if row.get("directors"):
+        names = row["directors"]
+        tip = "Réalisateur : " + " · ".join(names)
+        metadata.append(
+            '<span class="only-pc">🎬 ' + escape(" · ".join(names[:2])) + '</span>'
+            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🎬 Réal.</span>'
+        )
     # La provenance (liste/source) est distinguée du type par l'icône 📂 et
     # précisée par une info-bulle : « 📺 » = type, « 📂 » = liste d'origine.
     source_name = str(row.get("source") or "MDBList")
@@ -2668,6 +2730,10 @@ def _render_taste_profile(profile: dict) -> None:
         # ── Bloc « Tes studios / acteurs préférés » (données TMDB) ──
         people_stats = _collect_people_stats(_dataset())
         studio_stats = _collect_studio_stats(_dataset())
+        director_stats = _collect_director_stats(_dataset())
+        if director_stats:
+            st.markdown("**🎬 Tes réalisateurs récurrents**")
+            st.markdown(_render_people_cards(director_stats, fallback_emoji="🎬"), unsafe_allow_html=True)
         if people_stats:
             st.markdown("**🎭 Tes acteurs récurrents**")
             st.markdown(_render_people_cards(people_stats), unsafe_allow_html=True)
@@ -2748,23 +2814,34 @@ def render_watchlist_page() -> None:
             horizontal=True,
         )
 
-        # Acteurs / studios (0 appel API : liste GLOBALE sur tous les contenus).
+        # Acteurs / réalisateurs / studios (0 appel API : liste GLOBALE).
         all_actors = sorted({
             str(a["name"]).strip()
             for m, _k in _all_media(_dataset())
             for a in (m.get("actors") or []) if isinstance(a, dict) and a.get("name")
+        }, key=str.casefold)
+        all_directors = sorted({
+            str(d["name"]).strip()
+            for m, _k in _all_media(_dataset())
+            for d in (m.get("directors") or []) if isinstance(d, dict) and d.get("name")
         }, key=str.casefold)
         all_studios = sorted({
             str(st_["name"]).strip()
             for m, _k in _all_media(_dataset())
             for st_ in (m.get("studios") or []) if isinstance(st_, dict) and st_.get("name")
         }, key=str.casefold)
-        actor_col, studio_col = st.columns(2)
+        actor_col, director_col, studio_col = st.columns(3)
         selected_actors = actor_col.multiselect(
             "Acteurs",
             all_actors,
             key="qr_actors",
             placeholder="Acteur…",
+        )
+        selected_directors = director_col.multiselect(
+            "Réalisateur",
+            all_directors,
+            key="qr_directors",
+            placeholder="Réalisateur…",
         )
         selected_studios = studio_col.multiselect(
             "Studios",
@@ -2966,11 +3043,13 @@ def render_watchlist_page() -> None:
                 continue
         if not preset_matches(preset, row, profile):
             continue
-        if selected_actors or selected_studios:
+        if selected_actors or selected_studios or selected_directors:
             row_actors = {str(a).casefold() for a in (row.get("people") or [])}
             row_studios = {str(st_).casefold() for st_ in (row.get("studios") or [])}
+            row_directors = {str(d).casefold() for d in (row.get("directors") or [])}
             wanted_actors = {str(a).casefold() for a in selected_actors}
             wanted_studios = {str(st_).casefold() for st_ in selected_studios}
+            wanted_directors = {str(d).casefold() for d in selected_directors}
             ok = True
             if wanted_actors:
                 if cast_mode == "Tous (ET)":
@@ -2980,6 +3059,9 @@ def render_watchlist_page() -> None:
             if wanted_studios:
                 # Studios : toujours « au moins un » (OU).
                 ok = ok and bool(row_studios & wanted_studios)
+            if wanted_directors:
+                # Réalisateurs : toujours « au moins un » (OU).
+                ok = ok and bool(row_directors & wanted_directors)
             if not ok:
                 continue
         filtered.append(row)
@@ -4919,13 +5001,17 @@ def render_basic_stats_page() -> None:
                 filtered_tmdb.add(str(value))
     people_stats = _collect_people_stats(dataset, tmdb_whitelist=filtered_tmdb)
     studio_stats = _collect_studio_stats(dataset, tmdb_whitelist=filtered_tmdb)
+    director_stats = _collect_director_stats(dataset, tmdb_whitelist=filtered_tmdb)
     st.divider()
-    st.markdown("#### 🎭 Tes acteurs & studios préférés")
-    if people_stats or studio_stats:
+    st.markdown("#### 🎬🎭 Tes réalisateurs, acteurs & studios préférés")
+    if people_stats or studio_stats or director_stats:
         st.caption(
             "Détectés automatiquement sur la sélection filtrée ci-dessus "
             f"({period_label}). Clique sur une carte pour ouvrir la fiche TMDB."
         )
+        if director_stats:
+            st.markdown("**🎬 Réalisateurs récurrents**")
+            st.markdown(_render_people_cards(director_stats, limit=10, fallback_emoji="🎬"), unsafe_allow_html=True)
         if people_stats:
             st.markdown("**🎭 Acteurs récurrents**")
             st.markdown(_render_people_cards(people_stats, limit=10), unsafe_allow_html=True)

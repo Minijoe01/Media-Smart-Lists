@@ -190,6 +190,21 @@ def _people(item: dict[str, Any]) -> list[str]:
     return list(unique.values())[:10]
 
 
+def _directors(item: dict[str, Any]) -> list[str]:
+    """Réalisateurs (films) / créateurs (séries) déjà présents dans le dataset."""
+    media = _nested_media(item)
+    values = media.get("directors") or item.get("directors") or []
+    output: dict[str, str] = {}
+    for value in values:
+        if isinstance(value, dict):
+            name = value.get("name")
+        else:
+            name = value
+        if name:
+            output.setdefault(str(name).casefold(), str(name))
+    return list(output.values())
+
+
 def _episode_count(item: dict[str, Any]) -> int:
     media = _nested_media(item)
     for key in ("total_aired_episodes", "aired_episodes", "total_episodes", "episode_count", "number_of_episodes"):
@@ -364,6 +379,7 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
     genre_rating_values: defaultdict[str, list[float]] = defaultdict(list)
     studio_rating_values: defaultdict[str, list[float]] = defaultdict(list)
     people_rating_values: defaultdict[str, list[float]] = defaultdict(list)
+    director_rating_values: defaultdict[str, list[float]] = defaultdict(list)
     personal_ratings: list[float] = []
     disappointments: Counter[str] = Counter()
     for section in ("movies", "shows", "seasons", "episodes"):
@@ -386,20 +402,28 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
                 studio_rating_values[studio].append(rating)
             for person in _people(media):
                 people_rating_values[person].append(rating)
+            for director in _directors(media):
+                director_rating_values[director].append(rating)
 
     studio_titles: Counter[str] = Counter()
     people_titles: Counter[str] = Counter()
+    director_titles: Counter[str] = Counter()
     studio_display: dict[str, str] = {}
     people_display: dict[str, str] = {}
+    director_display: dict[str, str] = {}
     studio_metadata_count = 0
     people_metadata_count = 0
+    director_metadata_count = 0
     for _, media in unique_metadata:
         studios = _studios(media)
         people = _people(media)
+        directors = _directors(media)
         if studios:
             studio_metadata_count += 1
         if people:
             people_metadata_count += 1
+        if directors:
+            director_metadata_count += 1
         for studio in studios:
             key = studio.casefold()
             studio_titles[key] += 1
@@ -408,6 +432,10 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
             key = person.casefold()
             people_titles[key] += 1
             people_display.setdefault(key, person)
+        for director in directors:
+            key = director.casefold()
+            director_titles[key] += 1
+            director_display.setdefault(key, director)
 
     studio_ratings_by_key = {
         name.casefold(): (sum(values) / len(values), len(values))
@@ -424,6 +452,14 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
     favorite_people = {
         key for key, count in people_titles.items()
         if count >= 2 and (key not in people_ratings_by_key or people_ratings_by_key[key][0] >= 7.5)
+    }
+    director_ratings_by_key = {
+        name.casefold(): (sum(values) / len(values), len(values))
+        for name, values in director_rating_values.items() if values
+    }
+    favorite_directors = {
+        key for key, count in director_titles.items()
+        if count >= 2 and (key not in director_ratings_by_key or director_ratings_by_key[key][0] >= 7.5)
     }
 
     sorted_runtimes = sorted(movie_runtimes)
@@ -468,6 +504,10 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
         "people_display": people_display,
         "studio_metadata_count": studio_metadata_count,
         "people_metadata_count": people_metadata_count,
+        "favorite_directors": favorite_directors,
+        "director_title_counts": dict(director_titles),
+        "director_display": director_display,
+        "director_metadata_count": director_metadata_count,
     }
 
 
@@ -513,6 +553,7 @@ def score_item(
     certification = _certification(item)
     studios = _studios(item)
     people = _people(item)
+    directors = _directors(item)
     added_days = _added_days(item, now)
     ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
     tmdb_id = ids.get("tmdb") or item.get("id")
@@ -600,6 +641,14 @@ def score_item(
         bonus = 9 if count >= 10 else 7 if count >= 5 else 5 if count >= 3 else 3
         label = "⭐ Acteur incontournable" if count >= 5 else "🎭 Visage familier"
         adjust(bonus, label, f"{person} apparaît dans {count} contenu(s) déjà regardé(s)")
+
+    director_matches = [director for director in directors if director.casefold() in profile.get("favorite_directors", set())]
+    if director_matches:
+        director = director_matches[0]
+        count = profile.get("director_title_counts", {}).get(director.casefold(), 0)
+        bonus = 9 if count >= 10 else 7 if count >= 5 else 5 if count >= 3 else 3
+        label = "🎬 Réalisateur de confiance" if count >= 5 else "🎬 Réalisateur familier"
+        adjust(bonus, label, f"Tu as déjà vu {count} titre(s) réalisé(s) par {director}")
 
     recent = profile.get("recent_genres", {})
     if genres and recent:
@@ -722,6 +771,7 @@ def score_item(
         "certification": certification,
         "studios": studios,
         "people": people,
+        "directors": directors,
         "added_days": added_days,
         "total_episodes": total_episodes,
         "watched_episodes": watched_episodes,
