@@ -2787,18 +2787,28 @@ GENRE_FR_TO_TMDB = {
 }
 GENRE_TMDB_TO_FR = {v: k for k, v in GENRE_FR_TO_TMDB.items()}
 
+GENRE_FR_TO_TMDB_TV = {
+    "Action": 10759, "Aventure": 10759,
+    "Animation": 16, "Comédie": 35, "Crime": 80,
+    "Documentaire": 99, "Drame": 18, "Familial": 10751,
+    "Fantastique": 10765, "Science-Fiction": 10765,
+    "Mystère": 9648, "Guerre": 10768, "Western": 37,
+}
+
 
 def _build_item_from_tmdb(tmdb_id: int, kind: str, payload: dict) -> dict:
     """Construit un item scoreable depuis une fiche TMDB complète."""
     media: dict[str, Any] = {"ids": {"tmdb": tmdb_id}, "mediatype": kind}
     media["title"] = payload.get("title") or payload.get("name") or "?"
+    if payload.get("imdb_id"):
+        media["ids"]["imdb"] = payload["imdb_id"]
     _apply_tmdb_payload(media, payload)
     va = payload.get("vote_average")
     vc = payload.get("vote_count")
     if va:
-        media["score_average"] = float(va)
+        media["score_average"] = float(va) * 10
     if vc:
-        media["ratings"] = [{"source": "tmdb", "value": va, "votes": vc}]
+        media["ratings"] = [{"source": "tmdb", "value": float(va) if va else 0, "votes": vc}]
     date = payload.get("release_date") or payload.get("first_air_date")
     if date and len(date) >= 4:
         try:
@@ -2829,8 +2839,6 @@ def _perfect_recommendation(
         affinities = profile.get("genre_affinity", {})
         genre_names = [g for g, _ in sorted(affinities.items(), key=lambda x: x[1], reverse=True)[:3]]
     genre_ids = [str(GENRE_FR_TO_TMDB[g]) for g in genre_names if g in GENRE_FR_TO_TMDB]
-    if not genre_ids:
-        return []
     # Types
     if selected_type == "Films":
         types = ["movie"]
@@ -2848,11 +2856,15 @@ def _perfect_recommendation(
     # 1. TMDB Discover → candidats
     candidates: list[dict] = []
     for media_type in types:
+        genre_map = GENRE_FR_TO_TMDB_TV if media_type == "tv" else GENRE_FR_TO_TMDB
+        gids = [str(genre_map[g]) for g in genre_names if g in genre_map]
+        if not gids:
+            continue
         params = {
             "api_key": api_key, "language": "fr-FR",
             "sort_by": "vote_average.desc", "vote_count.gte": 200,
             "vote_average.gte": max(note_min, 6.0),
-            "with_genres": "|".join(genre_ids), "page": 1,
+            "with_genres": "|".join(gids), "page": 1,
         }
         try:
             resp = requests.get(f"https://api.themoviedb.org/3/discover/{media_type}", params=params, timeout=12)
@@ -3288,10 +3300,11 @@ def render_watchlist_page() -> None:
             if discovery:
                 st.session_state["_roulette_result"] = random.choice(discovery)
 
+    _perfect_results = None
     with perfect_col:
         if _tmdb_api_key() and st.button("🎯 Hors de mes listes", type="primary", key="perfect_reco_btn"):
             with st.spinner("🔍 Recherche de perles hors de tes listes…"):
-                st.session_state["_perfect_reco_results"] = _perfect_recommendation(
+                _perfect_results = _perfect_recommendation(
                     profile, _dataset(), selected_type, selected_genres, note_min, _tmdb_api_key()
                 )
 
@@ -3300,12 +3313,10 @@ def render_watchlist_page() -> None:
         st.markdown("### Le hasard a choisi")
         _render_recommendation_card(roulette, highlighted=True)
 
-    # ── Reco parfaite (hors listes) ──
-    perfect_results = st.session_state.get("_perfect_reco_results")
-    if perfect_results:
-        st.markdown(f"### 🎯 Hors de mes listes ({len(perfect_results)})")
+    if _perfect_results:
+        st.markdown(f"### 🎯 Hors de mes listes ({len(_perfect_results)})")
         st.caption("Contenus correspondant à ton profil, que tu n'as pas encore dans tes listes. 🌐 = découverte TMDB.")
-        for result in perfect_results:
+        for result in _perfect_results:
             _render_recommendation_card(result)
 
     if sort_mode.startswith("✨"):
