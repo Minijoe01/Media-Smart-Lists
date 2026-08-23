@@ -904,6 +904,30 @@ st.markdown(
         border-radius: 999px;
         padding: 2px 9px;
     }
+    .mc-outside {
+        display: inline-block;
+        font-size: .68rem; font-weight: 800; color: #fff;
+        background: linear-gradient(135deg, rgba(45, 156, 219, .30), rgba(0, 0, 0, .55));
+        border: 1px solid rgba(45, 156, 219, .65);
+        border-radius: 999px; padding: 2px 9px;
+    }
+    .mc-outside[data-tooltip] { position: relative; cursor: help; }
+    .mc-outside[data-tooltip]::after {
+        content: attr(data-tooltip); position: absolute;
+        bottom: calc(100% + 8px); left: 50%;
+        transform: translateX(-50%) translateY(4px);
+        background: rgba(0, 0, 0, .95);
+        border: 1px solid rgba(45, 156, 219, .50);
+        border-radius: 10px; color: var(--am-text);
+        font-size: .72rem; font-weight: 500; line-height: 1.4;
+        max-width: 240px; min-width: 180px; width: max-content;
+        padding: .45rem .55rem; opacity: 0; visibility: hidden;
+        pointer-events: none; transition: opacity .15s ease, transform .15s ease;
+        z-index: 9999; text-align: left; white-space: normal;
+    }
+    .mc-outside[data-tooltip]:hover::after {
+        opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0);
+    }
 
     /* Tuile fallback quand un poster est absent (fantômes, reprises) :
        emoji sur fond dégradé, mêmes dimensions qu'un poster — la carte
@@ -2752,6 +2776,106 @@ def _render_taste_profile(profile: dict) -> None:
             )
 
 
+GENRE_FR_TO_TMDB = {
+    "Action": 28, "Aventure": 12, "Animation": 16, "Comédie": 35, "Crime": 80,
+    "Documentaire": 99, "Drame": 18, "Familial": 10751, "Fantastique": 14,
+    "Histoire": 36, "Horreur": 27, "Musique": 10402, "Mystère": 9648,
+    "Romance": 10749, "Science-Fiction": 878, "Thriller": 53, "Guerre": 10752,
+    "Western": 37,
+}
+GENRE_TMDB_TO_FR = {v: k for k, v in GENRE_FR_TO_TMDB.items()}
+
+
+def _perfect_recommendation(
+    profile: dict, dataset: dict, selected_type: str, selected_genres: list,
+    note_min: float, api_key: str,
+) -> list[dict]:
+    """Cherche des contenus HORS des listes via TMDB Discover, correspondant
+    aux goûts (top genres). Respecte les filtres actifs. Exclut déjà vus."""
+    if selected_genres:
+        genre_names = selected_genres
+    else:
+        affinities = profile.get("genre_affinity", {})
+        genre_names = [g for g, _ in sorted(affinities.items(), key=lambda x: x[1], reverse=True)[:3]]
+    genre_ids = [str(GENRE_FR_TO_TMDB[g]) for g in genre_names if g in GENRE_FR_TO_TMDB]
+    if not genre_ids:
+        return []
+    if selected_type == "Films":
+        types = ["movie"]
+    elif selected_type == "Séries":
+        types = ["tv"]
+    else:
+        types = ["movie", "tv"]
+    seen_tmdb: set[str] = set()
+    for media, _kind in _all_media(dataset):
+        tmdb = _media_tmdb_id(media)
+        if tmdb:
+            seen_tmdb.add(str(tmdb))
+    results: list[dict] = []
+    for media_type in types:
+        params = {
+            "api_key": api_key, "language": "fr-FR",
+            "sort_by": "vote_average.desc", "vote_count.gte": 200,
+            "vote_average.gte": max(note_min, 6.0),
+            "with_genres": "|".join(genre_ids), "page": 1,
+        }
+        try:
+            resp = requests.get(f"https://api.themoviedb.org/3/discover/{media_type}", params=params, timeout=12)
+            if resp.status_code != 200:
+                continue
+            for item in (resp.json().get("results") or [])[:30]:
+                tid = str(item.get("id"))
+                if tid in seen_tmdb:
+                    continue
+                year_raw = item.get("release_date") or item.get("first_air_date") or ""
+                results.append({
+                    "title": item.get("title") or item.get("name") or "?",
+                    "tmdb": item.get("id"),
+                    "poster": item.get("poster_path") or "",
+                    "year": year_raw[:4] if year_raw else "",
+                    "vote": float(item.get("vote_average") or 0),
+                    "type": "Film" if media_type == "movie" else "Série",
+                    "genres": [GENRE_TMDB_TO_FR.get(g, "?") for g in (item.get("genre_ids") or [])],
+                })
+        except Exception:
+            continue
+    results.sort(key=lambda r: r["vote"], reverse=True)
+    return results[:20]
+
+
+def _render_discovery_card(result: dict) -> None:
+    """Carte pour un contenu HORS listes (recommandation parfaite). Pastille
+    bleue pour distinguer des contenus en listes."""
+    poster_url = f"https://image.tmdb.org/t/p/w500{result['poster']}" if result.get("poster") else ""
+    image_html = _poster_html(escape(poster_url, quote=True), result.get("type") or "")
+    title = escape(result.get("title") or "?")
+    year = escape(str(result.get("year") or ""))
+    vote = result.get("vote") or 0
+    genres = result.get("genres") or []
+    year_pill = f'<span class="mc-year">{year}</span>' if year else ""
+    note_pill = f'<span class="mc-note">⭐ {vote:.1f}</span>' if vote else ""
+    genre_chip = _meta_chip("🎭", genres, "Genres", "Genres") if genres else ""
+    outside = ('<span class="mc-outside" data-tooltip="Découverte TMDB — pas dans tes listes">'
+               '🌐 Hors de tes listes</span>')
+    base = "movie" if result["type"] == "Film" else "tv"
+    links = (
+        f'<div style="margin-top:.35rem;display:flex;flex-wrap:wrap;gap:.2rem;">'
+        f'<a class="link-pill" href="{_justwatch_url(result.get("title") or "")}" target="_blank" rel="noopener noreferrer">🔎 Où regarder</a>'
+        f'<a class="link-pill" href="https://www.themoviedb.org/{base}/{result.get("tmdb")}" target="_blank" rel="noopener noreferrer">TMDB</a></div>'
+    )
+    st.markdown(
+        f'<div class="media-list-card poster-card">{image_html}'
+        f'<div class="media-list-content" style="width:100%;">'
+        f'<div class="mc-head">{_type_chip(result.get("type") or "")}'
+        f'<strong>{title}</strong>'
+        f'<span style="display:inline-flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
+        f'{note_pill}{year_pill}</span></div>'
+        f'<small>{genre_chip} {outside}</small>{links}'
+        f'</div></div>',
+        unsafe_allow_html=True,
+    )
+
+
 def render_watchlist_page() -> None:
     st.markdown('<div class="page-title">🎯 Que regarder ?</div>', unsafe_allow_html=True)
     sections = _sections()
@@ -3125,7 +3249,7 @@ def render_watchlist_page() -> None:
         unsafe_allow_html=True,
     )
 
-    roulette_col, discovery_col = st.columns(2)
+    roulette_col, discovery_col, perfect_col = st.columns(3)
     with roulette_col:
         if st.button("🎲 Roulette — choisir pour moi", type="primary", key="roulette_classic"):
             pool = [row for row in filtered if row["score"] >= 70 and not row.get("not_for_me")]
@@ -3150,10 +3274,25 @@ def render_watchlist_page() -> None:
             if discovery:
                 st.session_state["_roulette_result"] = random.choice(discovery)
 
+    with perfect_col:
+        if _tmdb_api_key() and st.button("🎯 Reco parfaite", type="primary", key="perfect_reco_btn"):
+            with st.spinner("🔍 Recherche de perles hors de tes listes…"):
+                st.session_state["_perfect_reco_results"] = _perfect_recommendation(
+                    profile, _dataset(), selected_type, selected_genres, note_min, _tmdb_api_key()
+                )
+
     roulette = st.session_state.get("_roulette_result")
     if roulette and any(row["key"] == roulette.get("key") for row in filtered):
         st.markdown("### Le hasard a choisi")
         _render_recommendation_card(roulette, highlighted=True)
+
+    # ── Reco parfaite (hors listes) ──
+    perfect_results = st.session_state.get("_perfect_reco_results")
+    if perfect_results:
+        st.markdown(f"### 🎯 Recommandations parfaites ({len(perfect_results)})")
+        st.caption("Pépite(s) correspondant à tes goûts, hors de tes listes. 🌐 = découverte TMDB.")
+        for result in perfect_results:
+            _render_discovery_card(result)
 
     if sort_mode.startswith("✨"):
         recommended = [row for row in display_rows if row["score"] >= 50 and not row.get("not_for_me")]
