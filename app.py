@@ -2536,6 +2536,7 @@ def _reset_recommendation_filters() -> None:
         "qr_genre_mode": "Au moins un (OU)",
         "qr_genres_exclude": [],
         "qr_countries_exclude": [],
+        "qr_countries_include": [],
         "qr_duration_min": "Aucune",
         "qr_actors": [],
         "qr_directors": [],
@@ -2860,6 +2861,7 @@ def _build_item_from_tmdb(tmdb_id: int, kind: str, payload: dict) -> dict:
 def _perfect_recommendation(
     profile: dict, dataset: dict, selected_type: str, selected_genres: list,
     note_min: float, api_key: str, excluded_genres: list | None = None,
+    included_countries: set | None = None, excluded_countries: set | None = None,
 ) -> list[dict]:
     """Cherche des contenus HORS des listes via TMDB Discover, les ENRICHIT
     avec les détails TMDB (acteurs/réal/studios/genres), puis les SCORE avec
@@ -2896,8 +2898,8 @@ def _perfect_recommendation(
             continue
         params = {
             "api_key": api_key, "language": "fr-FR",
-            "sort_by": "vote_average.desc", "vote_count.gte": 200,
-            "vote_average.gte": max(note_min, 6.0),
+            "sort_by": "vote_average.desc", "vote_count.gte": 500,
+            "vote_average.gte": max(note_min, 7.0),
             "with_genres": "|".join(gids), "page": 1,
         }
         if top_actor_ids:
@@ -2908,6 +2910,8 @@ def _perfect_recommendation(
             without = [str(genre_map[g]) for g in excluded_genres if g in genre_map]
             if without:
                 params["without_genres"] = ",".join(without)
+        if included_countries:
+            params["with_origin_country"] = ",".join(c.upper() for c in included_countries)
         try:
             resp = requests.get(f"https://api.themoviedb.org/3/discover/{media_type}", params=params, timeout=12)
             if resp.status_code != 200:
@@ -2940,6 +2944,7 @@ def _perfect_recommendation(
         row["_outside"] = True
         scored.append(row)
 
+    scored = [r for r in scored if r["score"] >= 55]
     scored.sort(key=lambda r: r["score"], reverse=True)
     return scored[:20]
 
@@ -3022,17 +3027,29 @@ def render_watchlist_page() -> None:
             if m.get("country") and str(m["country"]).strip()
         })
         country_opts = sorted({_country_display(c) for c in country_codes if c})
-        excluded_countries_disp = st.multiselect(
-            "🌍 Pays à exclure",
-            country_opts,
-            key="qr_countries_exclude",
-            placeholder="Aucun pays exclu",
-        )
+        incl_country_col, excl_country_col = st.columns(2)
+        with incl_country_col:
+            included_countries_disp = st.multiselect(
+                "🌍 Pays d'origine à inclure",
+                country_opts,
+                key="qr_countries_include",
+                placeholder="Tous les pays",
+            )
+        with excl_country_col:
+            excluded_countries_disp = st.multiselect(
+                "🌍 Pays d'origine à exclure",
+                country_opts,
+                key="qr_countries_exclude",
+                placeholder="Aucun pays exclu",
+            )
+        included_countries = set()
         excluded_countries = set()
-        for d in excluded_countries_disp:
-            for c in country_codes:
-                if _country_display(c) == d:
-                    excluded_countries.add(c)
+        for c in country_codes:
+            disp = _country_display(c)
+            if disp in included_countries_disp:
+                included_countries.add(c)
+            if disp in excluded_countries_disp:
+                excluded_countries.add(c)
 
         # Acteurs / réalisateurs / studios (0 appel API : liste GLOBALE).
         all_actors = sorted({
@@ -3199,6 +3216,8 @@ def render_watchlist_page() -> None:
         if excluded_countries:
             if str(row.get("country") or "").lower() in excluded_countries:
                 continue
+        if included_countries and str(row.get("country") or "").lower() not in included_countries:
+            continue
         if search and search.casefold() not in _media_title(row["item"]).casefold():
             continue
         if note_min and (row.get("note") or 0) < note_min:
@@ -3331,6 +3350,8 @@ def render_watchlist_page() -> None:
                 _perfect_results = _perfect_recommendation(
                     profile, _dataset(), selected_type, selected_genres, note_min, _tmdb_api_key(),
                     excluded_genres=excluded_genres,
+                    included_countries=included_countries if included_countries else None,
+                    excluded_countries=excluded_countries if excluded_countries else None,
                 )
 
     roulette = st.session_state.get("_roulette_result")
