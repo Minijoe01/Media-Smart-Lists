@@ -479,6 +479,22 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
     # Sagas/franchises entamées : collection_id -> nb de films déjà vus dans
     # cette collection, ET notes personnelles de ces films (pour rendre le bonus
     # saga sensible aux notes : saga aimée = bonus, saga déçue = pénalité).
+    def _local_tmdb(media: dict[str, Any]) -> int | None:
+        if not isinstance(media, dict):
+            return None
+        ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+        value = ids.get("tmdb")
+        if value in (None, "", 0, "0"):
+            raw = media.get("id")
+            try:
+                value = int(raw) if raw not in (None, "", 0, "0") else None
+            except (TypeError, ValueError):
+                value = None
+        try:
+            return int(value) if value not in (None, "", 0, "0") else None
+        except (TypeError, ValueError):
+            return None
+
     movie_rating_by_tmdb: dict[int, float] = {}
     for row in ratings.get("movies") or []:
         if not isinstance(row, dict):
@@ -488,13 +504,9 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
         except (TypeError, ValueError):
             continue
         rm = row.get("movie") if isinstance(row.get("movie"), dict) else _nested_media(row)
-        rids = rm.get("ids") if isinstance(rm, dict) and isinstance(rm.get("ids"), dict) else {}
-        rt = rids.get("tmdb")
+        rt = _local_tmdb(rm)
         if rt is not None:
-            try:
-                movie_rating_by_tmdb[int(rt)] = r
-            except (TypeError, ValueError):
-                pass
+            movie_rating_by_tmdb[rt] = r
 
     watched_collections: dict[int, int] = {}
     collection_names: dict[int, str] = {}
@@ -512,12 +524,7 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
             watched_collections[cid] = watched_collections.get(cid, 0) + 1
             if coll.get("name"):
                 collection_names.setdefault(cid, str(coll["name"]))
-            wids = m.get("ids") if isinstance(m, dict) and isinstance(m.get("ids"), dict) else {}
-            wt = wids.get("tmdb")
-            try:
-                wt = int(wt) if wt is not None else None
-            except (TypeError, ValueError):
-                wt = None
+            wt = _local_tmdb(m)
             if wt is not None and wt in movie_rating_by_tmdb:
                 collection_ratings.setdefault(cid, []).append(movie_rating_by_tmdb[wt])
     collection_avg: dict[int, float] = {
@@ -734,15 +741,16 @@ def score_item(
                 saga_name = profile.get("collection_names", {}).get(cid) or str(coll.get("name") or "")
                 avg_r = profile.get("collection_avg", {}).get(cid)
                 nom = f" « {saga_name} »" if saga_name else " de cette saga"
-                if avg_r is not None and avg_r <= 4:
-                    # Saga déçue : on pénalise la suite (ex. jackass 1 détesté).
-                    adjust(-8, "👎 Saga qui t'a déçu", f"Tu as mal noté les films de la saga{nom} (moyenne {avg_r:.1f}/10)", warning=True)
+                # Bonus saga MODESTE (les acteurs/réal/studio sont déjà
+                # récompensés à part) ; malus FORT si la saga a été déçue.
+                if avg_r is not None and avg_r < 5:
+                    adjust(-12, "👎 Saga déçue", f"Tu as noté la saga{nom} {avg_r:.1f}/10 → ses suites sont pénalisées (−12)", warning=True)
                 elif avg_r is not None and avg_r >= 7:
-                    bonus = 8 if saga_seen == 1 else 10 if saga_seen == 2 else 12
-                    adjust(bonus, "🔗 Suite d'une saga adorée", f"Tu as adoré cette saga{nom} (moyenne {avg_r:.1f}/10)")
+                    bonus = 5 if saga_seen == 1 else 6
+                    adjust(bonus, "🔗 Saga adorée", f"Tu as aimé la saga{nom} ({avg_r:.1f}/10) → petit bonus (+{bonus}) ; les acteurs/réal/studio sont déjà récompensés à part")
                 else:
-                    bonus = 5 if saga_seen == 1 else 7
-                    adjust(bonus, "🔗 Suite d'une saga entamée", f"Tu as déjà vu {saga_seen} film(s){nom}")
+                    bonus = 3 if saga_seen == 1 else 4
+                    adjust(bonus, "🔗 Saga commencée", f"Tu as vu {saga_seen} film(s){nom} → petit bonus (+{bonus}) pour la finir")
 
     recent = profile.get("recent_genres", {})
     if genres and recent:
