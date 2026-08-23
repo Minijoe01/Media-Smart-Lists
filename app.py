@@ -2594,26 +2594,6 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     metadata = []
     if row.get("genres"):
         metadata.append(_meta_chip("🎭", row["genres"], "Genres", "Genres"))
-    if row.get("type") == "Série":
-        # Une SEULE pastille série : saisons + épisodes affichés, et tout le
-        # détail (durée/ép + durée totale) dans l'info-bulle. Économise la place
-        # sur GSM ET sur PC.
-        total_ep = int(row.get("total_episodes") or 0)
-        seasons = _media_seasons(item)
-        ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
-        total_time = ep_runtime * total_ep if (ep_runtime and total_ep) else 0
-        parts = []
-        if seasons:
-            parts.append(f"{seasons} saison{'s' if seasons > 1 else ''}")
-        if total_ep:
-            parts.append(f"{total_ep} épisode(s)")
-        if ep_runtime:
-            parts.append(f"environ {ep_runtime} min/ép.")
-        if total_time:
-            parts.append(f"tout voir : {_format_minutes(total_time)}")
-        label = f"📺 {seasons or '?'}S · {total_ep or '?'}ép" if (seasons or total_ep) else "📺 Série"
-        metadata.append(_raw_chip(label, " · ".join(parts) if parts else "Durée inconnue"))
-    # (films : la durée + la note sont dans l'en-tête, à droite du titre)
     if row.get("studios"):
         metadata.append(_meta_chip("🏢", row["studios"], "Studio", "Studios"))
     if row.get("people"):
@@ -2647,22 +2627,41 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     roulette_badge = '<span class="source-badge">CHOIX DE LA ROULETTE</span><br>' if highlighted else ""
     # Liens uniformisés (mêmes badges que En cours / Fantôme / Calendrier).
     item_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
-    year_pill = f'<span class="mc-year" data-tooltip="Année de sortie">{year}</span>' if year else ''
-    note_pill = _public_note_html(item)
-    # Durée du FILM déplacée dans l'en-tête (style pastille année), à droite.
-    # Pour les séries, la durée reste dans la pastille série (métadonnées).
-    duration_pill = ""
-    if row.get("type") != "Série" and row.get("runtime"):
+    # Pastille principale (à gauche du groupe droit) : durée du film, ou pastille
+    # série (saisons/épisodes) qui remplace la durée pour les séries.
+    lead_pill = ""
+    if row.get("type") == "Série":
+        total_ep = int(row.get("total_episodes") or 0)
+        seasons = _media_seasons(item)
+        ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
+        total_time = ep_runtime * total_ep if (ep_runtime and total_ep) else 0
+        parts = []
+        if seasons:
+            parts.append(f"{seasons} saison{'s' if seasons > 1 else ''}")
+        if total_ep:
+            parts.append(f"{total_ep} épisode(s)")
+        if ep_runtime:
+            parts.append(f"environ {ep_runtime} min/ép.")
+        if total_time:
+            parts.append(f"tout voir : {_format_minutes(total_time)}")
+        slabel = f"📺 {seasons or '?'}S · {total_ep or '?'}ép" if (seasons or total_ep) else "📺 Série"
+        lead_pill = _raw_chip(slabel, " · ".join(parts) if parts else "Durée inconnue")
+    elif row.get("runtime"):
         try:
-            duration_pill = f'<span class="mc-year" data-tooltip="Durée">{_format_minutes(int(row["runtime"]))}</span>'
+            lead_pill = f'<span class="mc-year" data-tooltip="Durée">{_format_minutes(int(row["runtime"]))}</span>'
         except (TypeError, ValueError):
-            duration_pill = ""
+            lead_pill = ""
+    note_pill = (
+        f'<span class="mc-note" data-tooltip="Note communauté (sur 10)">⭐ {row["note"]:.1f}</span>'
+        if row.get("note") is not None else ""
+    )
+    year_pill = f'<span class="mc-year" data-tooltip="Année de sortie">{year}</span>' if year else ""
     head = (
         f'<div class="mc-head">'
         f'{_type_chip(str(row.get("type") or ""))}'
         f'<strong>{title}</strong>'
-        f'<span style="display:inline-flex;gap:6px;flex-shrink:0;white-space:nowrap;">'
-        f'{year_pill}{duration_pill}{note_pill}</span>'
+        f'<span style="display:inline-flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
+        f'{lead_pill}{note_pill}{year_pill}</span>'
         f'</div>'
     )
     score_val = int(round(row.get("score", 0)))
