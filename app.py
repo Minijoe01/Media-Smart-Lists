@@ -2562,6 +2562,26 @@ def _signal_pill(signal: dict) -> str:
     )
 
 
+def _meta_chip(emoji: str, values: list, label: str) -> str:
+    """Pastille compacte : 2 noms affichés, liste complète en info-bulle.
+    Uniforme PC/GSM pour gagner de la place (plus de saut de ligne)."""
+    if not values:
+        return ""
+    short = " · ".join(str(v) for v in values[:2])
+    full = " · ".join(str(v) for v in values)
+    shown = short + (" …" if len(values) > 2 else "")
+    return (
+        f'<span class="mc-chip" data-tooltip="{escape(label + " : " + full, quote=True)}">'
+        f'{escape(emoji + " " + shown)}</span>'
+    )
+
+
+def _raw_chip(label: str, tooltip: str = "") -> str:
+    """Pastille compacte à partir d'un libellé déjà construit."""
+    tip = f' data-tooltip="{escape(tooltip, quote=True)}"' if tooltip else ""
+    return f'<span class="mc-chip"{tip}>{escape(label)}</span>'
+
+
 def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     item = row.get("item") or {}
     raw_title = _media_title(item)
@@ -2571,67 +2591,39 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     image_html = _poster_html(poster, row.get("type") or "")
     metadata = []
     if row.get("genres"):
-        names = row["genres"]
-        tip = "Genres : " + " · ".join(names)
-        metadata.append(
-            '<span class="only-pc">' + escape(" · ".join(names)) + '</span>'
-            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🎭 Genres</span>'
-        )
+        metadata.append(_meta_chip("🎭", row["genres"], "Genres"))
     if row.get("type") == "Série":
+        # Une SEULE pastille série : saisons + épisodes affichés, et tout le
+        # détail (durée/ép + durée totale) dans l'info-bulle. Économise la place
+        # sur GSM ET sur PC.
         total_ep = int(row.get("total_episodes") or 0)
         seasons = _media_seasons(item)
         ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
         total_time = ep_runtime * total_ep if (ep_runtime and total_ep) else 0
-        if ep_runtime:
-            metadata.append(f"⏱️ {_format_minutes(ep_runtime)}/ép.")
-        # Infos série succinctes (saisons · épisodes · durée totale pour tout
-        # voir). Sur GSM : une petite boîte compacte avec info-bulle.
-        serie_bits = []
+        parts = []
         if seasons:
-            serie_bits.append(f"{seasons} saison{'s' if seasons > 1 else ''}")
+            parts.append(f"{seasons} saison{'s' if seasons > 1 else ''}")
         if total_ep:
-            serie_bits.append(f"{total_ep} ép.")
+            parts.append(f"{total_ep} épisode(s)")
+        if ep_runtime:
+            parts.append(f"environ {ep_runtime} min/ép.")
         if total_time:
-            serie_bits.append(f"tout voir : {_format_minutes(total_time)}")
-        if serie_bits:
-            tip = " · ".join(serie_bits)
-            chip_txt = f"{seasons or '?'}S · {total_ep or '?'}ép"
-            metadata.append(
-                '<span class="only-pc">📺 ' + escape(" · ".join(serie_bits)) + '</span>'
-                + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">📺 '
-                + escape(chip_txt) + '</span>'
-            )
+            parts.append(f"tout voir : {_format_minutes(total_time)}")
+        label = f"📺 {seasons or '?'}S · {total_ep or '?'}ép" if (seasons or total_ep) else "📺 Série"
+        metadata.append(_raw_chip(label, " · ".join(parts) if parts else "Durée inconnue"))
     elif row.get("runtime"):
         metadata.append(f"⏱️ {_format_minutes(row['runtime'])}")
     if row.get("note") is not None:
         metadata.append(f"⭐ {row['note']:.1f}/10")
     if row.get("studios"):
-        names = row["studios"]
-        tip = "Studios : " + " · ".join(names)
-        metadata.append(
-            '<span class="only-pc">🏢 ' + escape(" · ".join(names[:2])) + '</span>'
-            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🏢 Studios</span>'
-        )
+        metadata.append(_meta_chip("🏢", row["studios"], "Studios"))
     if row.get("people"):
-        names = row["people"]
-        tip = "Acteurs : " + " · ".join(names)
-        metadata.append(
-            '<span class="only-pc">🎭 ' + escape(" · ".join(names[:2])) + '</span>'
-            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">👥 Acteurs</span>'
-        )
+        metadata.append(_meta_chip("👥", row["people"], "Acteurs"))
     if row.get("directors"):
-        names = row["directors"]
-        tip = "Réalisateur : " + " · ".join(names)
-        metadata.append(
-            '<span class="only-pc">🎬 ' + escape(" · ".join(names[:2])) + '</span>'
-            + '<span class="only-gsm mc-chip" data-tooltip="' + escape(tip, quote=True) + '">🎬 Réal.</span>'
-        )
-    # La provenance (liste/source) est distinguée du type par l'icône 📂 et
-    # précisée par une info-bulle : « 📺 » = type, « 📂 » = liste d'origine.
+        metadata.append(_meta_chip("🎬", row["directors"], "Réalisateur"))
+    # Provenance (liste/source) : pastille + info-bulle, distincte du type 📺.
     source_name = str(row.get("source") or "MDBList")
-    metadata.append(
-        f'<span title="Provenance : la liste ou la source où se trouve ce contenu">📂 {escape(source_name)}</span>'
-    )
+    metadata.append(_raw_chip(f"📂 {source_name}", "Provenance : la liste ou la source où se trouve ce contenu"))
 
     signals = row.get("signals") or []
     if signals:
@@ -2678,8 +2670,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         f'</div>'
         f'<div class="progress-bar-container"><div class="progress-bar-fill" '
         f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
-        f'<div class="only-pc">{pills}</div>'
-        + (f'<details class="only-gsm pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
+        + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
         + f'</div>{score_col}</div>',
         unsafe_allow_html=True,
     )

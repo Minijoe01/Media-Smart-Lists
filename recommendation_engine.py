@@ -807,6 +807,10 @@ PRESET_NAMES = [
     "🚀 Science-fiction",
     "❤️ Romance",
     "🎞️ Documentaires",
+    # ── Tes chouchous (favoris détectés) ──
+    "🌟 Acteur incontournable",
+    "🏢 Studio préféré",
+    "🎥 Réalisateur incontournable",
     # ── Qualité & acclamations ──
     "🍿 Soirée cinéma — grand film bien noté",
     "🧠 Exigeant — note ≥ 8.5",
@@ -889,4 +893,10 @@ def preset_matches(name: str, row: dict[str, Any], profile: dict[str, Any]) -> b
         return bool(genres & {"romance"})
     if name.startswith("🎞️"):
         return bool(genres & {"documentary", "documentaire"})
+    if name.startswith("🌟"):
+        return any(str(p).casefold() in profile.get("favorite_people", set()) for p in (row.get("people") or []))
+    if name.startswith("🏢"):
+        return any(str(s).casefold() in profile.get("favorite_studios", set()) for s in (row.get("studios") or []))
+    if name.startswith("🎥"):
+        return any(str(d).casefold() in profile.get("favorite_directors", set()) for d in (row.get("directors") or []))
     return True
