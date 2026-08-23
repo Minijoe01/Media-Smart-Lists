@@ -2875,8 +2875,10 @@ def _perfect_recommendation(
     # IDs d'acteurs/réalisateurs fétiches pour PERSONNALISER la recherche
     people_stats = _collect_people_stats(dataset)
     director_stats = _collect_director_stats(dataset)
-    top_actor_ids = [str(p["id"]) for p in people_stats[:5] if p.get("id")]
-    top_director_ids = [str(d["id"]) for d in director_stats[:3] if d.get("id")]
+    fav_set = profile.get("favorite_people", set())
+    fav_dir_set = profile.get("favorite_directors", set())
+    top_actor_ids = [str(s["id"]) for s in people_stats[:15] if s.get("id") and s["name"].casefold() in fav_set][:5]
+    top_director_ids = [str(s["id"]) for s in director_stats[:10] if s.get("id") and s["name"].casefold() in fav_dir_set][:3]
     # Types
     if selected_type == "Films":
         types = ["movie"]
@@ -2898,7 +2900,7 @@ def _perfect_recommendation(
             continue
         params = {
             "api_key": api_key, "language": "fr-FR",
-            "sort_by": "vote_average.desc", "vote_count.gte": 500,
+            "sort_by": "popularity.desc", "vote_count.gte": 200,
             "vote_average.gte": max(note_min, 7.0),
             "with_genres": "|".join(gids), "page": 1,
         }
@@ -2944,7 +2946,7 @@ def _perfect_recommendation(
         row["_outside"] = True
         scored.append(row)
 
-    scored = [r for r in scored if r["score"] >= 55]
+    scored = [r for r in scored if r["score"] >= 70]
     scored.sort(key=lambda r: r["score"], reverse=True)
     return scored[:20]
 
