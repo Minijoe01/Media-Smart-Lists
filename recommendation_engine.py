@@ -437,30 +437,32 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
             director_titles[key] += 1
             director_display.setdefault(key, director)
 
-    studio_ratings_by_key = {
-        name.casefold(): (sum(values) / len(values), len(values))
-        for name, values in studio_rating_values.items() if values
-    }
-    people_ratings_by_key = {
-        name.casefold(): (sum(values) / len(values), len(values))
-        for name, values in people_rating_values.items() if values
-    }
-    favorite_studios = {
-        key for key, count in studio_titles.items()
-        if count >= 2 and (key not in studio_ratings_by_key or studio_ratings_by_key[key][0] >= 7.5)
-    }
-    favorite_people = {
-        key for key, count in people_titles.items()
-        if count >= 2 and (key not in people_ratings_by_key or people_ratings_by_key[key][0] >= 7.5)
-    }
-    director_ratings_by_key = {
-        name.casefold(): (sum(values) / len(values), len(values))
-        for name, values in director_rating_values.items() if values
-    }
-    favorite_directors = {
-        key for key, count in director_titles.items()
-        if count >= 2 and (key not in director_ratings_by_key or director_ratings_by_key[key][0] >= 7.5)
-    }
+    def _favorites(title_counts: Counter, rating_values: dict[str, list[float]]) -> set:
+        """Favoris robustes : vu ≥ 2 ET (pas assez de notes pour juger, OU
+        moyenne TRONQUÉE ≥ 7 en excluant la note la plus basse). Un seul
+        mauvais film ne retire pas le statut de favori → pas d'effet domino
+        (on ne 'saque' pas un acteur/réal pour un navet). Le malus saga,
+        lui, gère séparément le cas « saga déçue »."""
+        ratings_cf: dict[str, list[float]] = {}
+        for name, vals in rating_values.items():
+            ratings_cf.setdefault(name.casefold(), []).extend(vals)
+        out: set = set()
+        for key, count in title_counts.items():
+            if count < 2:
+                continue
+            ratings = ratings_cf.get(key)
+            if not ratings:
+                out.add(key)  # vu ≥ 2, non noté → favori (clément)
+                continue
+            ordered = sorted(ratings)
+            trimmed = ordered[1:] if len(ordered) >= 2 else ordered
+            if (sum(trimmed) / len(trimmed)) >= 7.0:
+                out.add(key)
+        return out
+
+    favorite_studios = _favorites(studio_titles, studio_rating_values)
+    favorite_people = _favorites(people_titles, people_rating_values)
+    favorite_directors = _favorites(director_titles, director_rating_values)
 
     # « Incontournables » : les favoris les plus vus, à un seuil ADAPTATIF
     # (la moitié du max). Un gros historique => seuil strict (vu 8×, 10×…) ;
