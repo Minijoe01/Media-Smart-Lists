@@ -2862,23 +2862,29 @@ def _perfect_recommendation(
     profile: dict, dataset: dict, selected_type: str, selected_genres: list,
     note_min: float, api_key: str, excluded_genres: list | None = None,
     included_countries: set | None = None, excluded_countries: set | None = None,
+    selected_actors: list | None = None, selected_directors: list | None = None,
 ) -> list[dict]:
-    """Cherche des contenus HORS des listes via TMDB Discover, les ENRICHIT
-    avec les détails TMDB (acteurs/réal/studios/genres), puis les SCORE avec
-    le profil de l'utilisateur. Utilise with_cast/with_crew pour cibler tes
-    acteurs/réalisateurs fétiches — vraiment personnalisé."""
+    """Reco PROFILE-FIRST : si l'utilisateur a des filtres actifs (acteur,
+    réalisateur), on cherche AVEC ces critères. Sinon, on utilise ses favoris."""
     if selected_genres:
         genre_names = selected_genres
     else:
         affinities = profile.get("genre_affinity", {})
-        genre_names = [g for g, _ in sorted(affinities.items(), key=lambda x: x[1], reverse=True)[:3]]
-    # IDs d'acteurs/réalisateurs fétiches pour PERSONNALISER la recherche
+        genre_names = [g for g, _ in sorted(affinities.items(), key=lambda x: x[1], reverse=True)[:5]]
     people_stats = _collect_people_stats(dataset)
     director_stats = _collect_director_stats(dataset)
-    fav_set = profile.get("favorite_people", set())
-    fav_dir_set = profile.get("favorite_directors", set())
-    top_actor_ids = [str(s["id"]) for s in people_stats[:15] if s.get("id") and s["name"].casefold() in fav_set][:5]
-    top_director_ids = [str(s["id"]) for s in director_stats[:10] if s.get("id") and s["name"].casefold() in fav_dir_set][:3]
+    # Acteurs : filtre actif > favoris du profil
+    if selected_actors:
+        top_actor_ids = [str(s["id"]) for s in people_stats if s["name"] in selected_actors and s.get("id")][:5]
+    else:
+        fav_set = profile.get("favorite_people", set())
+        top_actor_ids = [str(s["id"]) for s in people_stats[:15] if s.get("id") and s["name"].casefold() in fav_set][:5]
+    # Réalisateurs : filtre actif > favoris du profil
+    if selected_directors:
+        top_director_ids = [str(s["id"]) for s in director_stats if s["name"] in selected_directors and s.get("id")][:3]
+    else:
+        fav_dir_set = profile.get("favorite_directors", set())
+        top_director_ids = [str(s["id"]) for s in director_stats[:10] if s.get("id") and s["name"].casefold() in fav_dir_set][:3]
     # Types
     if selected_type == "Films":
         types = ["movie"]
@@ -3160,8 +3166,9 @@ def render_watchlist_page() -> None:
             key="qr_sort",
         )
         display_limit = p3.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
-        st.button("Réinitialiser les filtres", on_click=_reset_recommendation_filters, key="reset_qr")
 
+
+    st.button("🔄 Réinitialiser tous les filtres", on_click=_reset_recommendation_filters, key="reset_qr", use_container_width=True)
 
     items = list(source["movies"]) + list(source["shows"])
     api_calls_extra = 0
@@ -3354,6 +3361,8 @@ def render_watchlist_page() -> None:
                     excluded_genres=excluded_genres,
                     included_countries=included_countries if included_countries else None,
                     excluded_countries=excluded_countries if excluded_countries else None,
+                    selected_actors=selected_actors if selected_actors else None,
+                    selected_directors=selected_directors if selected_directors else None,
                 )
 
     roulette = st.session_state.get("_roulette_result")
