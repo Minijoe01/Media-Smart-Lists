@@ -2204,6 +2204,11 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
                                   "profile_path": person.get("profile_path") or ""})
     if directors:
         media["directors"] = directors[:5]
+    # Saga/franchise (films) : belongs_to_collection. Permet de détecter les
+    # suites d'une saga entamée (« tu as vu le 1 → on boost le 2 »).
+    btc = payload.get("belongs_to_collection")
+    if isinstance(btc, dict) and btc.get("id") and not media.get("collection"):
+        media["collection"] = {"id": btc["id"], "name": str(btc.get("name") or "").strip()}
 
 
 def _enrich_tmdb_metadata(data: dict) -> None:
@@ -2562,17 +2567,18 @@ def _signal_pill(signal: dict) -> str:
     )
 
 
-def _meta_chip(emoji: str, values: list, label: str) -> str:
-    """Pastille compacte : 2 noms affichés, liste complète en info-bulle.
-    Uniforme PC/GSM pour gagner de la place (plus de saut de ligne)."""
+def _meta_chip(emoji: str, values: list, gsm_label: str, tip_kind: str) -> str:
+    """Pastille ADAPTATIVE : PC affiche 1-2 noms (lisible, pas de saut de
+    ligne), GSM affiche un label court (économie de place). Info-bulle =
+    liste complète, sur les deux plateformes."""
     if not values:
         return ""
-    short = " · ".join(str(v) for v in values[:2])
     full = " · ".join(str(v) for v in values)
-    shown = short + (" …" if len(values) > 2 else "")
+    tip = f"{tip_kind} : {full}"
+    pc_shown = " · ".join(str(v) for v in values[:2]) + (" …" if len(values) > 2 else "")
     return (
-        f'<span class="mc-chip" data-tooltip="{escape(label + " : " + full, quote=True)}">'
-        f'{escape(emoji + " " + shown)}</span>'
+        f'<span class="only-pc mc-chip" data-tooltip="{escape(tip, quote=True)}">{escape(emoji + " " + pc_shown)}</span>'
+        f'<span class="only-gsm mc-chip" data-tooltip="{escape(tip, quote=True)}">{escape(emoji + " " + gsm_label)}</span>'
     )
 
 
@@ -2591,7 +2597,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     image_html = _poster_html(poster, row.get("type") or "")
     metadata = []
     if row.get("genres"):
-        metadata.append(_meta_chip("🎭", row["genres"], "Genres"))
+        metadata.append(_meta_chip("🎭", row["genres"], "Genres", "Genres"))
     if row.get("type") == "Série":
         # Une SEULE pastille série : saisons + épisodes affichés, et tout le
         # détail (durée/ép + durée totale) dans l'info-bulle. Économise la place
@@ -2616,11 +2622,17 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     if row.get("note") is not None:
         metadata.append(f"⭐ {row['note']:.1f}/10")
     if row.get("studios"):
-        metadata.append(_meta_chip("🏢", row["studios"], "Studios"))
+        metadata.append(_meta_chip("🏢", row["studios"], "Studio", "Studios"))
     if row.get("people"):
-        metadata.append(_meta_chip("👥", row["people"], "Acteurs"))
+        metadata.append(_meta_chip("👥", row["people"], "Acteurs", "Acteurs"))
     if row.get("directors"):
-        metadata.append(_meta_chip("🎬", row["directors"], "Réalisateur"))
+        metadata.append(_meta_chip("🎬", row["directors"], "Réal.", "Réalisateur"))
+    if int(row.get("saga_seen") or 0):
+        coll_name = (row.get("collection") or {}).get("name") or "saga"
+        metadata.append(_raw_chip(
+            "🔗 Saga",
+            f"Suite d'une saga entamée ({coll_name}) — tu as déjà vu {row['saga_seen']} film(s) de cette saga",
+        ))
     # Provenance (liste/source) : pastille + info-bulle, distincte du type 📺.
     source_name = str(row.get("source") or "MDBList")
     metadata.append(_raw_chip(f"📂 {source_name}", "Provenance : la liste ou la source où se trouve ce contenu"))

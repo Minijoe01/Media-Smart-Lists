@@ -462,6 +462,38 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
         if count >= 2 and (key not in director_ratings_by_key or director_ratings_by_key[key][0] >= 7.5)
     }
 
+    # « Incontournables » : les favoris les plus vus, à un seuil ADAPTATIF
+    # (la moitié du max). Un gros historique => seuil strict (vu 8×, 10×…) ;
+    # un petit historique => seuil 2 (le preset reste utilisable tôt).
+    def _top_set(title_counts: Counter, favorites: set) -> set:
+        if not title_counts:
+            return set()
+        mx = max(title_counts.values())
+        bar = max(2, (mx + 1) // 2)  # = ceil(mx/2), au moins 2 (nouvel utilisateur)
+        return {key for key, count in title_counts.items() if count >= bar and key in favorites}
+
+    top_people = _top_set(people_titles, favorite_people)
+    top_studios = _top_set(studio_titles, favorite_studios)
+    top_directors = _top_set(director_titles, favorite_directors)
+
+    # Sagas/franchises entamées : collection_id -> nb de films déjà vus dans
+    # cette collection (depuis les films regardés qui ont un belongs_to_collection).
+    watched_collections: dict[int, int] = {}
+    collection_names: dict[int, str] = {}
+    for row in watched.get("movies") or []:
+        if not isinstance(row, dict):
+            continue
+        m = row.get("movie") if isinstance(row.get("movie"), dict) else _nested_media(row)
+        coll = m.get("collection") if isinstance(m, dict) else None
+        if isinstance(coll, dict) and coll.get("id"):
+            try:
+                cid = int(coll["id"])
+            except (TypeError, ValueError):
+                continue
+            watched_collections[cid] = watched_collections.get(cid, 0) + 1
+            if coll.get("name"):
+                collection_names.setdefault(cid, str(coll["name"]))
+
     sorted_runtimes = sorted(movie_runtimes)
     runtime_band = None
     if len(sorted_runtimes) >= 10:
@@ -508,6 +540,11 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
         "director_title_counts": dict(director_titles),
         "director_display": director_display,
         "director_metadata_count": director_metadata_count,
+        "top_people": top_people,
+        "top_studios": top_studios,
+        "top_directors": top_directors,
+        "watched_collections": watched_collections,
+        "collection_names": collection_names,
     }
 
 
@@ -650,6 +687,25 @@ def score_item(
         label = "🎬 Réalisateur de confiance" if count >= 5 else "🎬 Réalisateur familier"
         adjust(bonus, label, f"Tu as déjà vu {count} titre(s) réalisé(s) par {director}")
 
+    # Saga/franchise entamée : le candidat appartient à une collection dont on
+    # a déjà vu au moins 1 film → gros bonus (on a aimé le 1, on veut le 2).
+    coll_media = _nested_media(item)
+    coll = coll_media.get("collection") if isinstance(coll_media, dict) else None
+    saga_seen = 0
+    if isinstance(coll, dict) and coll.get("id"):
+        try:
+            cid = int(coll["id"])
+        except (TypeError, ValueError):
+            cid = None
+        if cid:
+            saga_seen = profile.get("watched_collections", {}).get(cid, 0)
+            if saga_seen:
+                saga_name = profile.get("collection_names", {}).get(cid) or str(coll.get("name") or "")
+                bonus = 7 if saga_seen == 1 else 9 if saga_seen == 2 else 11
+                detail = f"Tu as déjà vu {saga_seen} film(s) de la saga"
+                detail += f" « {saga_name} »" if saga_name else " de cette saga"
+                adjust(bonus, "🔗 Suite d'une saga entamée", detail)
+
     recent = profile.get("recent_genres", {})
     if genres and recent:
         overlap = sum(int(recent.get(genre, 0)) for genre in genres)
@@ -772,6 +828,8 @@ def score_item(
         "studios": studios,
         "people": people,
         "directors": directors,
+        "collection": coll,
+        "saga_seen": saga_seen,
         "added_days": added_days,
         "total_episodes": total_episodes,
         "watched_episodes": watched_episodes,
@@ -811,6 +869,7 @@ PRESET_NAMES = [
     "🌟 Acteur incontournable",
     "🏢 Studio préféré",
     "🎥 Réalisateur incontournable",
+    "📚 Suite d'une saga entamée",
     # ── Qualité & acclamations ──
     "🍿 Soirée cinéma — grand film bien noté",
     "🧠 Exigeant — note ≥ 8.5",
@@ -893,10 +952,19 @@ def preset_matches(name: str, row: dict[str, Any], profile: dict[str, Any]) -> b
         return bool(genres & {"romance"})
     if name.startswith("🎞️"):
         return bool(genres & {"documentary", "documentaire"})
+    if name.startswith("📚"):
+        coll = row.get("collection")
+        if isinstance(coll, dict) and coll.get("id"):
+            try:
+                cid = int(coll["id"])
+            except (TypeError, ValueError):
+                cid = None
+            return bool(cid and profile.get("watched_collections", {}).get(cid, 0) >= 1)
+        return False
     if name.startswith("🌟"):
-        return any(str(p).casefold() in profile.get("favorite_people", set()) for p in (row.get("people") or []))
+        return any(str(p).casefold() in profile.get("top_people", set()) for p in (row.get("people") or []))
     if name.startswith("🏢"):
-        return any(str(s).casefold() in profile.get("favorite_studios", set()) for s in (row.get("studios") or []))
+        return any(str(s).casefold() in profile.get("top_studios", set()) for s in (row.get("studios") or []))
     if name.startswith("🎥"):
-        return any(str(d).casefold() in profile.get("favorite_directors", set()) for d in (row.get("directors") or []))
+        return any(str(d).casefold() in profile.get("top_directors", set()) for d in (row.get("directors") or []))
     return True
