@@ -2538,6 +2538,7 @@ def _reset_recommendation_filters() -> None:
         "qr_countries_exclude": [],
         "qr_countries_include": [],
         "qr_duration_min": "Aucune",
+        "qr_year_era": "Toutes",
         "qr_actors": [],
         "qr_directors": [],
         "qr_studios": [],
@@ -2863,96 +2864,81 @@ def _perfect_recommendation(
     note_min: float, api_key: str, excluded_genres: list | None = None,
     included_countries: set | None = None, excluded_countries: set | None = None,
     selected_actors: list | None = None, selected_directors: list | None = None,
+    selected_studios: list | None = None,
 ) -> list[dict]:
-    """Reco : LARGE bassin TMDB (vote >= 7, tes genres) → enrichir → scorer
-    → trier par score. Si filtre actif (acteur/réal), on AFFINE le bassin.
-    Le scoring fait la personnalisation (détecte tes favoris → bonus auto)."""
+    """Reco : LARGE bassin TMDB (vote >= 7, tes genres, 2 pages) → enrichir
+    → scorer → FILTRER côté client par acteur/réal/studio/pays (fiable pour
+    films ET séries, contrairement aux params TMDB qui ignorent with_cast
+    sur /discover/tv)."""
     if selected_genres:
         genre_names = selected_genres
     else:
         affinities = profile.get("genre_affinity", {})
         genre_names = [g for g, _ in sorted(affinities.items(), key=lambda x: x[1], reverse=True)[:5]]
-    people_stats = _collect_people_stats(dataset)
-    director_stats = _collect_director_stats(dataset)
-    # Filtres utilisateur → AFFINENT le bassin (ne le créent pas)
-    filter_actor_ids = []
-    filter_director_ids = []
-    if selected_actors:
-        sel_cf = {a.casefold() for a in selected_actors}
-        filter_actor_ids = [str(s["id"]) for s in people_stats if s.get("id") and s["name"].casefold() in sel_cf][:5]
-    if selected_directors:
-        sel_cf = {d.casefold() for d in selected_directors}
-        filter_director_ids = [str(s["id"]) for s in director_stats if s.get("id") and s["name"].casefold() in sel_cf][:3]
-    # Types
-    if selected_type == "Films":
-        types = ["movie"]
-    elif selected_type == "Séries":
-        types = ["tv"]
-    else:
-        types = ["movie", "tv"]
-    # Exclure vu + en listes
+
+    if selected_type == "Films": types = ["movie"]
+    elif selected_type == "Séries": types = ["tv"]
+    else: types = ["movie", "tv"]
+
     seen_tmdb: set[str] = set()
     for media, _kind in _all_media(dataset):
         tmdb = _media_tmdb_id(media)
-        if tmdb:
-            seen_tmdb.add(str(tmdb))
+        if tmdb: seen_tmdb.add(str(tmdb))
+
+    # TMDB Discover : LARGE bassin (genres + qualité)
     candidates: list[dict] = []
     for media_type in types:
         genre_map = GENRE_FR_TO_TMDB_TV if media_type == "tv" else GENRE_FR_TO_TMDB
         gids = [str(genre_map[g]) for g in genre_names if g in genre_map]
-        if not gids:
-            continue
+        if not gids: continue
         params = {
             "api_key": api_key, "language": "fr-FR",
-            "sort_by": "popularity.desc", "vote_count.gte": 200,
+            "sort_by": "popularity.desc", "vote_count.gte": 500,
             "vote_average.gte": max(note_min, 7.0),
-            "with_genres": "|".join(gids), "page": 1,
+            "with_genres": "|".join(gids),
         }
-        if filter_actor_ids:
-            params["with_cast"] = "|".join(filter_actor_ids)
-        if filter_director_ids:
-            params["with_crew"] = "|".join(filter_director_ids)
-        if excluded_genres:
-            without = [str(genre_map[g]) for g in excluded_genres if g in genre_map]
-            if without:
-                params["without_genres"] = ",".join(without)
         if included_countries:
             params["with_origin_country"] = ",".join(c.upper() for c in included_countries)
+        if excluded_genres:
+            without = [str(genre_map[g]) for g in excluded_genres if g in genre_map]
+            if without: params["without_genres"] = ",".join(without)
         for _page in (1, 2):
             params["page"] = _page
             try:
                 resp = requests.get(f"https://api.themoviedb.org/3/discover/{media_type}", params=params, timeout=12)
-                if resp.status_code != 200:
-                    break
+                if resp.status_code != 200: break
                 for item in (resp.json().get("results") or []):
                     tid = str(item.get("id"))
                     if tid not in seen_tmdb:
                         candidates.append({"tmdb": item.get("id"), "kind": media_type})
                         seen_tmdb.add(tid)
-            except Exception:
-                pass
+            except Exception: pass
 
-            continue
-
-    # 2. Enrichir chaque candidat (TMDB details via cache _fetch_tmdb_item)
-    def enrich(cand: dict) -> dict | None:
-        try:
-            payload = _fetch_tmdb_item(cand["kind"], cand["tmdb"], api_key)
-        except Exception:
-            return None
-        if not payload:
-            return None
-        return _build_item_from_tmdb(cand["tmdb"], cand["kind"], payload)
-
+    # Enrichir + scorer
+    def enrich(cand):
+        try: payload = _fetch_tmdb_item(cand["kind"], cand["tmdb"], api_key)
+        except Exception: return None
+        return _build_item_from_tmdb(cand["tmdb"], cand["kind"], payload) if payload else None
     with ThreadPoolExecutor(max_workers=10) as executor:
         items = [i for i in executor.map(enrich, candidates) if i]
-
-    # 3. Scorer avec le profil
-    scored: list[dict] = []
+    scored = []
     for item in items:
         row = score_item(item, profile, source_name="🌐 Hors de tes listes")
         row["_outside"] = True
         scored.append(row)
+
+    # FILTRER côté client par les critères utilisateur (fiable pour TV aussi)
+    if selected_actors:
+        sel_cf = {a.casefold() for a in selected_actors}
+        scored = [r for r in scored if any(a.casefold() in sel_cf for a in r.get("people", []))]
+    if selected_directors:
+        sel_cf = {d.casefold() for d in selected_directors}
+        scored = [r for r in scored if any(d.casefold() in sel_cf for d in r.get("directors", []))]
+    if selected_studios:
+        sel_cf = {s.casefold() for s in selected_studios}
+        scored = [r for r in scored if any(s.casefold() in sel_cf for s in r.get("studios", []))]
+    if excluded_countries:
+        scored = [r for r in scored if str(r.get("country") or "").lower() not in excluded_countries]
 
     scored.sort(key=lambda r: r["score"], reverse=True)
     return scored[:20]
@@ -3114,7 +3100,7 @@ def render_watchlist_page() -> None:
     with st.expander("🔍 Filtres", expanded=False):
         # Temps max + Durée minimum : paire complémentaire (un « entre » de
         # durée), réunie en premier comme demandé. Les autres filtres suivent.
-        f1, f2 = st.columns(2)
+        f1, f2, f3 = st.columns(3)
         duration_min = f1.selectbox(
             "Durée minimum",
             ["Aucune", "≥ 1h", "≥ 1h30", "≥ 2h", "≥ 2h30", "≥ 3h"],
@@ -3125,7 +3111,12 @@ def render_watchlist_page() -> None:
             ["Aucune limite", "Moins d'1h30", "Moins de 2h", "Moins de 3h", "Soirée (< 10h)", "Week-end (< 24h)"],
             key="qr_time",
         )
-        f3, f4, f5 = st.columns(3)
+        year_era = f3.selectbox(
+            "Époque",
+            ["Toutes", "Années 60 et avant", "Années 70", "Années 80", "Années 90", "Années 2000", "Années 2010", "2020 et après"],
+            key="qr_year_era",
+        )
+        f4, f5, f6 = st.columns(3)
         search = f3.text_input("Recherche", key="qr_search", placeholder="Titre…")
         note_min = f4.select_slider(
             "Note minimum",
@@ -3238,6 +3229,11 @@ def render_watchlist_page() -> None:
             minutes = row.get("runtime") or 0
             minimums = {"≥ 1h": 60, "≥ 1h30": 90, "≥ 2h": 120, "≥ 2h30": 150, "≥ 3h": 180}
             if not minutes or minutes < minimums[duration_min]:
+                continue
+        if year_era != "Toutes":
+            era_ranges = {"Années 60 et avant": (0, 1969), "Années 70": (1970, 1979), "Années 80": (1980, 1989), "Années 90": (1990, 1999), "Années 2000": (2000, 2009), "Années 2010": (2010, 2019), "2020 et après": (2020, 9999)}
+            lo, hi = era_ranges.get(year_era, (0, 9999))
+            if not (lo <= (row.get("year") or 0) <= hi):
                 continue
         if status_filter != "Tous les statuts":
             if row["type"] != "Série":
@@ -3364,6 +3360,7 @@ def render_watchlist_page() -> None:
                     excluded_countries=excluded_countries if excluded_countries else None,
                     selected_actors=selected_actors if selected_actors else None,
                     selected_directors=selected_directors if selected_directors else None,
+                    selected_studios=selected_studios if selected_studios else None,
                 )
 
     roulette = st.session_state.get("_roulette_result")
