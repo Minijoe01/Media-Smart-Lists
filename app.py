@@ -2864,8 +2864,9 @@ def _perfect_recommendation(
     included_countries: set | None = None, excluded_countries: set | None = None,
     selected_actors: list | None = None, selected_directors: list | None = None,
 ) -> list[dict]:
-    """Reco PROFILE-FIRST : si l'utilisateur a des filtres actifs (acteur,
-    réalisateur), on cherche AVEC ces critères. Sinon, on utilise ses favoris."""
+    """Reco : LARGE bassin TMDB (vote >= 7, tes genres) → enrichir → scorer
+    → trier par score. Si filtre actif (acteur/réal), on AFFINE le bassin.
+    Le scoring fait la personnalisation (détecte tes favoris → bonus auto)."""
     if selected_genres:
         genre_names = selected_genres
     else:
@@ -2873,18 +2874,15 @@ def _perfect_recommendation(
         genre_names = [g for g, _ in sorted(affinities.items(), key=lambda x: x[1], reverse=True)[:5]]
     people_stats = _collect_people_stats(dataset)
     director_stats = _collect_director_stats(dataset)
-    # Acteurs : filtre actif > favoris du profil
+    # Filtres utilisateur → AFFINENT le bassin (ne le créent pas)
+    filter_actor_ids = []
+    filter_director_ids = []
     if selected_actors:
-        top_actor_ids = [str(s["id"]) for s in people_stats if s["name"] in selected_actors and s.get("id")][:5]
-    else:
-        fav_set = profile.get("favorite_people", set())
-        top_actor_ids = [str(s["id"]) for s in people_stats[:15] if s.get("id") and s["name"].casefold() in fav_set][:5]
-    # Réalisateurs : filtre actif > favoris du profil
+        sel_cf = {a.casefold() for a in selected_actors}
+        filter_actor_ids = [str(s["id"]) for s in people_stats if s.get("id") and s["name"].casefold() in sel_cf][:5]
     if selected_directors:
-        top_director_ids = [str(s["id"]) for s in director_stats if s["name"] in selected_directors and s.get("id")][:3]
-    else:
-        fav_dir_set = profile.get("favorite_directors", set())
-        top_director_ids = [str(s["id"]) for s in director_stats[:10] if s.get("id") and s["name"].casefold() in fav_dir_set][:3]
+        sel_cf = {d.casefold() for d in selected_directors}
+        filter_director_ids = [str(s["id"]) for s in director_stats if s.get("id") and s["name"].casefold() in sel_cf][:3]
     # Types
     if selected_type == "Films":
         types = ["movie"]
@@ -2910,26 +2908,30 @@ def _perfect_recommendation(
             "vote_average.gte": max(note_min, 7.0),
             "with_genres": "|".join(gids), "page": 1,
         }
-        if top_actor_ids:
-            params["with_cast"] = "|".join(top_actor_ids)
-        if top_director_ids:
-            params["with_crew"] = "|".join(top_director_ids)
+        if filter_actor_ids:
+            params["with_cast"] = "|".join(filter_actor_ids)
+        if filter_director_ids:
+            params["with_crew"] = "|".join(filter_director_ids)
         if excluded_genres:
             without = [str(genre_map[g]) for g in excluded_genres if g in genre_map]
             if without:
                 params["without_genres"] = ",".join(without)
         if included_countries:
             params["with_origin_country"] = ",".join(c.upper() for c in included_countries)
-        try:
-            resp = requests.get(f"https://api.themoviedb.org/3/discover/{media_type}", params=params, timeout=12)
-            if resp.status_code != 200:
-                continue
-            for item in (resp.json().get("results") or [])[:30]:
-                tid = str(item.get("id"))
-                if tid in seen_tmdb:
-                    continue
-                candidates.append({"tmdb": item.get("id"), "kind": media_type})
-        except Exception:
+        for _page in (1, 2):
+            params["page"] = _page
+            try:
+                resp = requests.get(f"https://api.themoviedb.org/3/discover/{media_type}", params=params, timeout=12)
+                if resp.status_code != 200:
+                    break
+                for item in (resp.json().get("results") or []):
+                    tid = str(item.get("id"))
+                    if tid not in seen_tmdb:
+                        candidates.append({"tmdb": item.get("id"), "kind": media_type})
+                        seen_tmdb.add(tid)
+            except Exception:
+                pass
+
             continue
 
     # 2. Enrichir chaque candidat (TMDB details via cache _fetch_tmdb_item)
@@ -2952,7 +2954,6 @@ def _perfect_recommendation(
         row["_outside"] = True
         scored.append(row)
 
-    scored = [r for r in scored if r["score"] >= 70]
     scored.sort(key=lambda r: r["score"], reverse=True)
     return scored[:20]
 
@@ -3168,7 +3169,7 @@ def render_watchlist_page() -> None:
         display_limit = p3.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
 
 
-    st.button("🔄 Réinitialiser tous les filtres", on_click=_reset_recommendation_filters, key="reset_qr", use_container_width=True)
+    st.button("🔄 Réinitialiser tous les filtres", on_click=_reset_recommendation_filters, key="reset_qr", type="primary", use_container_width=True)
 
     items = list(source["movies"]) + list(source["shows"])
     api_calls_extra = 0
