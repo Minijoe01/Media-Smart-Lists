@@ -93,6 +93,9 @@ from recommendation_engine import PRESET_NAMES, build_profile, preset_matches, s
 
 APP_NAME = "Media Smart Lists"
 APP_VERSION = "0.15.0-alpha"
+# Année courante (Paris) : borne haute ADAPTATIVE du slider d'époque — les
+# sorties de l'année en cours (2026…) ne sont plus masquées.
+_CURRENT_YEAR = datetime.now(ZoneInfo("Europe/Paris")).year
 
 PAGES = [
     "🏠 Tableau de bord",
@@ -2538,7 +2541,7 @@ def _reset_recommendation_filters() -> None:
         "qr_countries_exclude": [],
         "qr_countries_include": [],
         "qr_duration_min": "Aucune",
-        "qr_year_range": (1950, 2025),
+        "qr_year_range": (1950, _CURRENT_YEAR),
         "qr_actors": [],
         "qr_directors": [],
         "qr_studios": [],
@@ -2634,6 +2637,11 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         metadata.append(_raw_chip(
             "🔗 Saga",
             f"Suite d'une saga entamée ({coll_name}) — tu as déjà vu {row['saga_seen']} film(s) de cette saga",
+        ))
+    if row.get("near_reason"):
+        metadata.append(_raw_chip(
+            f"🧩 {row['near_reason']}",
+            "Pourquoi « presque » : ce contenu ne respecte pas CE critère — tous les autres critères choisis sont respectés.",
         ))
     if row.get("_outside"):
         metadata.append('<span class="mc-outside" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>')
@@ -2865,52 +2873,98 @@ def _perfect_recommendation(
     included_countries: set | None = None, excluded_countries: set | None = None,
     selected_actors: list | None = None, selected_directors: list | None = None,
     selected_studios: list | None = None, year_range: tuple | None = None,
-) -> list[dict]:
-    """Reco HYBRIDE :
-    - FILMS : TMDB Discover avec with_cast/with_crew (supportés).
-    - SÉRIES + acteur : /person/{id}/tv_credits (Discover ne supporte pas
-      with_cast pour TV).
-    - Filtrage client post-scoring pour studios, pays, époque (safety net)."""
-    # IDs des acteurs/réalisateurs depuis le filtre
-    people_stats = _collect_people_stats(dataset)
-    director_stats = _collect_director_stats(dataset)
-    filter_actor_ids = []
-    filter_director_ids = []
-    if selected_actors:
-        sel_cf = {a.casefold() for a in selected_actors}
-        filter_actor_ids = [str(s["id"]) for s in people_stats if s.get("id") and s["name"].casefold() in sel_cf][:5]
-    if selected_directors:
-        sel_cf = {d.casefold() for d in selected_directors}
-        filter_director_ids = [str(s["id"]) for s in director_stats if s.get("id") and s["name"].casefold() in sel_cf][:3]
+    genre_mode: str = "Au moins un (OU)", cast_mode: str = "Au moins un (OU)",
+) -> tuple[list[dict], list[dict]]:
+    """Reco « Hors de mes listes » — TOUS les critères remplis sont appliqués en ET.
 
-    # Genres : uniquement si l'utilisateur en a choisi, OU si pas de filtre acteur
-    if selected_genres:
-        genre_names = selected_genres
-    elif filter_actor_ids or filter_director_ids:
-        genre_names = []  # Acteur sans genre → TOUT son filmo
+    Retourne (parfaites, presque) :
+    · parfaites : respecte TOUS les critères — acteur présent dans le CAST
+      (pas seulement producteur), réalisateur à la réalisation, studio,
+      genres, pays inclus, époque, note.
+    · presque : respecte TOUS les critères SAUF UN SEUL (ex. Scorsese mais
+      pas DiCaprio → Taxi Driver, ou Jonah Hill présent mais comme
+      producteur). La recherche n'est JAMAIS réduite à « un seul critère
+      sur dix » : on retire un critère, les autres restent exigés.
+    Un critère vide est simplement ignoré (aucune contrainte).
+    Les genres/pays EXCLUS restent des vetos : jamais proposés, même en
+    « presque ».
+    """
+    sel_actors = [str(a).strip() for a in (selected_actors or []) if str(a).strip()]
+    sel_directors = [str(d).strip() for d in (selected_directors or []) if str(d).strip()]
+    sel_studios = [str(s).strip() for s in (selected_studios or []) if str(s).strip()]
+    sel_genres = [str(g).strip() for g in (selected_genres or []) if str(g).strip()]
+    sel_excl_genres = [str(g).strip() for g in (excluded_genres or []) if str(g).strip()]
+
+    # ── Identifiants TMDB des personnes/studios : depuis TOUT le dataset
+    # (historique + watchlist + listes). L'ancienne version ne cherchait que
+    # dans l'historique : un réalisateur présent uniquement en watchlist
+    # perdait son filtre (résultats « OU » mystérieux).
+    actor_ids: dict[str, str] = {}
+    director_ids: dict[str, str] = {}
+    studio_ids: dict[str, str] = {}
+    for media, _kind in _all_media(dataset):
+        for person in media.get("actors") or []:
+            if isinstance(person, dict) and person.get("id") and person.get("name"):
+                actor_ids.setdefault(str(person["name"]).casefold(), str(person["id"]))
+        for person in media.get("directors") or []:
+            if isinstance(person, dict) and person.get("id") and person.get("name"):
+                director_ids.setdefault(str(person["name"]).casefold(), str(person["id"]))
+        for company in media.get("studios") or []:
+            if isinstance(company, dict) and company.get("id") and company.get("name"):
+                studio_ids.setdefault(str(company["name"]).casefold(), str(company["id"]))
+
+    people_ids: list[str] = []
+    for name in sel_actors:
+        pid = actor_ids.get(name.casefold())
+        if pid and pid not in people_ids:
+            people_ids.append(pid)
+    for name in sel_directors:
+        pid = director_ids.get(name.casefold())
+        if pid and pid not in people_ids:
+            people_ids.append(pid)
+    company_ids = [studio_ids[s.casefold()] for s in sel_studios if studio_ids.get(s.casefold())]
+
+    # Genres de la REQUÊTE (bassin de candidats) : seulement si choisis.
+    # Avec des personnes choisies, leur filmographie forme le bassin et les
+    # genres — comme tous les autres critères — sont vérifiés côté client :
+    # c'est ce qui permet d'attraper les « presque » qui ne ratent QUE le
+    # genre (ex. bon acteur + bon réalisateur, mais pas le bon genre).
+    if sel_genres:
+        query_genres = sel_genres
+    elif people_ids:
+        query_genres = []
     else:
         affinities = profile.get("genre_affinity", {})
-        genre_names = [g for g, _ in sorted(affinities.items(), key=lambda x: x[1], reverse=True)[:5]]
+        query_genres = [g for g, _ in sorted(affinities.items(), key=lambda x: x[1], reverse=True)[:5]]
 
-    if selected_type == "Films": types = ["movie"]
-    elif selected_type == "Séries": types = ["tv"]
-    else: types = ["movie", "tv"]
+    if selected_type == "Films":
+        types = ["movie"]
+    elif selected_type == "Séries":
+        types = ["tv"]
+    else:
+        types = ["movie", "tv"]
 
     seen_tmdb: set[str] = set()
     for media, _kind in _all_media(dataset):
         tmdb = _media_tmdb_id(media)
-        if tmdb: seen_tmdb.add(str(tmdb))
+        if tmdb:
+            seen_tmdb.add(str(tmdb))
+
+    MAX_CANDIDATES = 120  # garde-fou : appels d'enrichissement limités
 
     candidates: list[dict] = []
     for media_type in types:
         genre_map = GENRE_FR_TO_TMDB_TV if media_type == "tv" else GENRE_FR_TO_TMDB
-        gids = [str(genre_map[g]) for g in genre_names if g in genre_map]
+        gids = [str(genre_map[g]) for g in query_genres if g in genre_map]
+        sep = "," if genre_mode == "Tous (ET)" else "|"
 
-        if media_type == "tv" and (filter_actor_ids or filter_director_ids):
-            # TV + acteur/réal : /person/{id}/tv_credits (Discover ne supporte
-            # pas with_cast pour TV).
-            person_ids = filter_actor_ids + filter_director_ids
-            for pid in person_ids:
+        if media_type == "tv" and people_ids:
+            # TV + personnes : /person/{id}/tv_credits (Discover ne supporte
+            # pas with_cast en TV). UNION des filmographies cast + crew —
+            # la classification client garde ensuite uniquement les contenus
+            # qui respectent TOUT (un acteur doit être dans le CAST, pas
+            # simplement producteur) et place le reste en « presque ».
+            for pid in people_ids[:8]:
                 try:
                     resp = requests.get(
                         f"https://api.themoviedb.org/3/person/{pid}/tv_credits",
@@ -2918,43 +2972,68 @@ def _perfect_recommendation(
                         timeout=10,
                     )
                     if resp.status_code == 200:
-                        for item in (resp.json().get("cast") or []) + (resp.json().get("crew") or []):
+                        data = resp.json()
+                        for item in (data.get("cast") or []) + (data.get("crew") or []):
                             tid = str(item.get("id"))
                             if tid not in seen_tmdb and item.get("poster_path"):
-                                candidates.append({"tmdb": item["id"], "kind": "tv"})
+                                candidates.append({"tmdb": item.get("id"), "kind": "tv"})
                                 seen_tmdb.add(tid)
                 except Exception:
                     pass
-        else:
-            # FILMS : Discover avec with_cast/with_crew (supportés)
-            # TV sans acteur : Discover par genres
-            params = {
-                "api_key": api_key, "language": "fr-FR",
-                "sort_by": "popularity.desc", "vote_count.gte": 500,
-                "vote_average.gte": max(note_min, 7.0),
-            }
+                if len(candidates) >= MAX_CANDIDATES:
+                    break
+            continue
+
+        # ── Discover : bassins en UNION. La requête ne contraint QUE le
+        # critère qui définit le bassin (+ l'époque) : tous les autres
+        # critères sont vérifiés côté client sur la fiche complète, ce qui
+        # permet de détecter les « presque » (un seul critère manquant).
+        pools: list[tuple[dict, int]] = []
+        base: dict = {
+            "api_key": api_key, "language": "fr-FR",
+            "sort_by": "popularity.desc", "vote_count.gte": 100,
+            "vote_average.gte": 5.5,
+        }
+        if year_range:
+            date_field = "primary_release_date" if media_type == "movie" else "first_air_date"
+            base[f"{date_field}.gte"] = f"{year_range[0]}-01-01"
+            base[f"{date_field}.lte"] = f"{year_range[1]}-12-31"
+        if media_type == "movie" and people_ids:
+            # Filmographie des personnes choisies : union « dans le casting »
+            # + « dans l'équipe ». La précision (acteur = CAST, réalisateur =
+            # réalisation) se fait côté client sur les crédits complets —
+            # c'est ce qui attrape Taxi Driver (Scorsese mais pas DiCaprio).
+            for people_param in ("with_cast", "with_crew"):
+                p = dict(base)
+                p[people_param] = "|".join(people_ids[:8])  # OU : au moins une personne
+                p["vote_count.gte"] = 30
+                pools.append((p, 2))
+        if company_ids:
+            p = dict(base)
+            p["with_companies"] = "|".join(company_ids[:5])  # OU : au moins un studio
+            pools.append((p, 2))
+        if gids and not people_ids:
+            # Bassin par genres (ET ou OU selon le mode choisi). Inutile
+            # quand des personnes sont choisies : leur filmo couvre déjà les
+            # « presque » (un contenu sans AUCUNE personne raterait au moins
+            # deux critères).
+            p = dict(base)
+            p["with_genres"] = sep.join(gids)
+            pools.append((p, 2))
+        if not pools:
+            # Aucun critère : bassin par genres d'affinité du profil.
+            p = dict(base)
             if gids:
-                params["with_genres"] = "|".join(gids)
-            # with_cast/with_crew uniquement pour les FILMS
-            if media_type == "movie":
-                if filter_actor_ids:
-                    params["with_cast"] = "|".join(filter_actor_ids)
-                if filter_director_ids:
-                    params["with_crew"] = "|".join(filter_director_ids)
-            if included_countries:
-                params["with_origin_country"] = ",".join(c.upper() for c in included_countries)
-            if excluded_genres:
-                without = [str(genre_map[g]) for g in excluded_genres if g in genre_map]
-                if without:
-                    params["without_genres"] = ",".join(without)
-            if year_range:
-                date_field = "primary_release_date" if media_type == "movie" else "first_air_date"
-                params[f"{date_field}.gte"] = f"{year_range[0]}-01-01"
-                params[f"{date_field}.lte"] = f"{year_range[1]}-12-31"
-            for _page in (1, 2):
-                params["page"] = _page
+                p["with_genres"] = sep.join(gids)
+            pools.append((p, 2))
+        for params, max_pages in pools:
+            for page in range(1, max_pages + 1):
+                params["page"] = page
                 try:
-                    resp = requests.get(f"https://api.themoviedb.org/3/discover/{media_type}", params=params, timeout=12)
+                    resp = requests.get(
+                        f"https://api.themoviedb.org/3/discover/{media_type}",
+                        params=params, timeout=12,
+                    )
                     if resp.status_code != 200:
                         break
                     for item in (resp.json().get("results") or []):
@@ -2964,34 +3043,141 @@ def _perfect_recommendation(
                             seen_tmdb.add(tid)
                 except Exception:
                     pass
+                if len(candidates) >= MAX_CANDIDATES:
+                    break
+            if len(candidates) >= MAX_CANDIDATES:
+                break
 
-    # Enrichir + scorer
+    # ── Classification : quels critères chaque candidat manque-t-il ? ──────
+    def classify_misses(payload: dict, kind: str) -> list[str] | None:
+        """None = veto (genre ou pays exclu) → jamais proposé.
+        [] = parfait. Un seul élément = « presque ». Plusieurs = écarté."""
+        # Carte des genres adaptée au type (les IDs TV ≠ IDs film).
+        genre_map_ids = GENRE_FR_TO_TMDB_TV if kind == "tv" else GENRE_FR_TO_TMDB
+        credits = payload.get("credits") if isinstance(payload.get("credits"), dict) else {}
+        cast_names = {
+            str(p.get("name") or "").casefold()
+            for p in credits.get("cast") or [] if isinstance(p, dict)
+        }
+        crew_rows = [p for p in credits.get("crew") or [] if isinstance(p, dict)]
+        crew_names = {str(p.get("name") or "").casefold() for p in crew_rows}
+        creators = {
+            str(p.get("name") or "").casefold()
+            for p in payload.get("created_by") or [] if isinstance(p, dict)
+        }
+        director_names = creators | {
+            str(p.get("name") or "").casefold()
+            for p in crew_rows if str(p.get("job") or "") == "Director"
+        }
+        studio_names = {
+            str(c.get("name") or "").casefold()
+            for c in (payload.get("production_companies") or []) + (payload.get("networks") or [])
+            if isinstance(c, dict)
+        }
+        payload_genre_ids = {
+            int(g.get("id")) for g in payload.get("genres") or []
+            if isinstance(g, dict) and g.get("id")
+        }
+        date = payload.get("release_date") or payload.get("first_air_date") or ""
+        year = int(date[:4]) if date and date[:4].isdigit() else 0
+        pcs = payload.get("production_countries") or []
+        country = str(pcs[0].get("iso_3166_1") or "").lower() if pcs and isinstance(pcs[0], dict) else ""
+        try:
+            note = float(payload.get("vote_average") or 0)
+        except (TypeError, ValueError):
+            note = 0.0
+
+        # Vetos : genres exclus / pays exclus → jamais proposé.
+        excl_ids = {genre_map_ids.get(g) for g in sel_excl_genres if genre_map_ids.get(g) is not None}
+        if payload_genre_ids & excl_ids:
+            return None
+        if excluded_countries and country in excluded_countries:
+            return None
+
+        missed: list[str] = []
+
+        if sel_actors:
+            present = {a.casefold() for a in sel_actors if a.casefold() in cast_names}
+            ok = (len(present) == len(sel_actors)) if cast_mode == "Tous (ET)" else bool(present)
+            if not ok:
+                missing = [a for a in sel_actors if a.casefold() not in cast_names]
+                as_crew = [a for a in missing if a.casefold() in crew_names]
+                if as_crew:
+                    reason = "présent mais pas comme acteur : " + ", ".join(as_crew)
+                    absent = [a for a in missing if a.casefold() not in crew_names]
+                    if absent:
+                        reason += " · absent : " + ", ".join(absent)
+                else:
+                    reason = "sans " + ", ".join(missing)
+                missed.append(reason + " (acteur)")
+
+        if sel_directors:
+            present = {d.casefold() for d in sel_directors if d.casefold() in director_names}
+            if len(present) != len(sel_directors):
+                missing = [d for d in sel_directors if d.casefold() not in director_names]
+                as_crew = [d for d in missing if d.casefold() in crew_names]
+                if as_crew:
+                    reason = "présent mais pas à la réalisation : " + ", ".join(as_crew)
+                else:
+                    reason = "sans " + ", ".join(missing)
+                missed.append(reason + " (réalisateur)")
+
+        if sel_studios and not ({s.casefold() for s in sel_studios} & studio_names):
+            missed.append("studio différent (attendu : " + ", ".join(sel_studios) + ")")
+
+        # Genres : comparaison par IDENTIFIANTS TMDB (robuste : les noms
+        # fusionnés en TV comme « Sci-Fi & Fantasy » ne posent pas problème).
+        wanted_ids = {genre_map_ids.get(g) for g in sel_genres if genre_map_ids.get(g) is not None}
+        if wanted_ids:
+            if genre_mode == "Tous (ET)":
+                ok = wanted_ids.issubset(payload_genre_ids)
+            else:
+                ok = bool(wanted_ids & payload_genre_ids)
+            if not ok:
+                missing = [g for g in sel_genres if genre_map_ids.get(g) and genre_map_ids[g] not in payload_genre_ids]
+                missed.append("pas " + " / ".join(missing) + " (genre)")
+
+        if included_countries and country not in included_countries:
+            missed.append(f"pays non inclus ({country.upper() or '?'})")
+        if year_range and not (year_range[0] <= year <= year_range[1]):
+            missed.append(f"{year or '?'} hors de la période")
+        if note_min and note < note_min:
+            missed.append(f"note communauté {note:.1f} < {note_min:.1f}")
+
+        return missed
+
+    # ── Enrichissement (cache TMDB 30 jours par contenu) + scoring. ────────
     def enrich(cand):
         try:
             payload = _fetch_tmdb_item(cand["kind"], cand["tmdb"], api_key)
         except Exception:
             return None
-        return _build_item_from_tmdb(cand["tmdb"], cand["kind"], payload) if payload else None
-
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        items = [i for i in executor.map(enrich, candidates) if i]
-    scored = []
-    for item in items:
+        if not payload:
+            return None
+        item = _build_item_from_tmdb(cand["tmdb"], cand["kind"], payload)
+        if not item:
+            return None
         row = score_item(item, profile, source_name="🌐 Hors de tes listes")
         row["_outside"] = True
-        scored.append(row)
+        return (row, classify_misses(payload, cand["kind"]))
 
-    # Filtrage CLIENT (safety net — fiable pour films ET séries)
-    if selected_studios:
-        sel_cf = {s.casefold() for s in selected_studios}
-        scored = [r for r in scored if any(s.casefold() in sel_cf for s in r.get("studios", []))]
-    if excluded_countries:
-        scored = [r for r in scored if str(r.get("country") or "").lower() not in excluded_countries]
-    if year_range:
-        scored = [r for r in scored if year_range[0] <= (r.get("year") or 0) <= year_range[1]]
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        enriched = [e for e in executor.map(enrich, candidates) if e]
 
-    scored.sort(key=lambda r: r["score"], reverse=True)
-    return scored[:20]
+    perfect_rows: list[dict] = []
+    near_rows: list[dict] = []
+    for row, missed in enriched:
+        if missed is None:
+            continue  # veto (genre/pays exclu) : jamais proposé
+        if not missed:
+            perfect_rows.append(row)
+        elif len(missed) == 1:
+            row["near_reason"] = missed[0]
+            near_rows.append(row)
+
+    perfect_rows.sort(key=lambda r: r["score"], reverse=True)
+    near_rows.sort(key=lambda r: r["score"], reverse=True)
+    return perfect_rows[:20], near_rows[:12]
 
 
 def render_watchlist_page() -> None:
@@ -3113,12 +3299,22 @@ def render_watchlist_page() -> None:
             for st_ in (m.get("studios") or []) if isinstance(st_, dict) and st_.get("name")
         }, key=str.casefold)
         actor_col, director_col, studio_col = st.columns(3)
-        selected_actors = actor_col.multiselect(
-            "Acteurs",
-            all_actors,
-            key="qr_actors",
-            placeholder="Acteur…",
-        )
+        with actor_col:
+            selected_actors = st.multiselect(
+                "Acteurs",
+                all_actors,
+                key="qr_actors",
+                placeholder="Acteur…",
+            )
+            # Mode ET/OU des acteurs : DANS la colonne acteur, juste sous le
+            # choix — sur GSM (colonnes empilées) comme sur PC, il reste
+            # collé à son multiselect au lieu de se retrouver 3 postes plus bas.
+            cast_mode = st.radio(
+                "Acteurs : correspondance",
+                ["Au moins un (OU)", "Tous (ET)"],
+                key="qr_cast_mode",
+                horizontal=True,
+            )
         selected_directors = director_col.multiselect(
             "Réalisateur",
             all_directors,
@@ -3131,16 +3327,11 @@ def render_watchlist_page() -> None:
             key="qr_studios",
             placeholder="Studio…",
         )
-        # Acteurs : le mode ET/OU est regroupé juste en dessous du multiselect.
-        cast_mode = st.radio(
-            "Acteurs : correspondance",
-            ["Au moins un (OU)", "Tous (ET)"],
-            key="qr_cast_mode",
-            horizontal=True,
-        )
         st.caption(
             "🎭 Genres : « Tous (ET) » = TOUS les genres choisis · « Au moins un (OU) » = n'importe lequel. "
-            "🎬 Acteurs : même logique ET/OU. 🏢 Studios : toujours « au moins un »."
+            "🎬 Acteurs : même logique ET/OU. 🏢 Studios : toujours « au moins un ». "
+            "🎯 « Hors de mes listes » applique TOUS les critères remplis en ET "
+            "(acteur ET réalisateur ET genre…) — un critère vide est ignoré."
         )
 
     # ── 🔍 Filtres ────────────────────────────────────────────────────────
@@ -3163,7 +3354,7 @@ def render_watchlist_page() -> None:
         )
         year_lo, year_hi = f3.slider(
             "Années de sortie",
-            min_value=1950, max_value=2025, value=(1950, 2025),
+            min_value=1950, max_value=_CURRENT_YEAR, value=(1950, _CURRENT_YEAR),
             key="qr_year_range",
         )
         f4, f5 = st.columns(2)
@@ -3280,7 +3471,7 @@ def render_watchlist_page() -> None:
             minimums = {"≥ 1h": 60, "≥ 1h30": 90, "≥ 2h": 120, "≥ 2h30": 150, "≥ 3h": 180}
             if not minutes or minutes < minimums[duration_min]:
                 continue
-        if year_lo > 1950 or year_hi < 2025:
+        if year_lo > 1950 or year_hi < _CURRENT_YEAR:
             if not (year_lo <= (row.get("year") or 0) <= year_hi):
                 continue
         if status_filter != "Tous les statuts":
@@ -3400,7 +3591,7 @@ def render_watchlist_page() -> None:
     _perfect_results = None
     with perfect_col:
         if _tmdb_api_key() and st.button("🎯 Hors de mes listes", type="primary", key="perfect_reco_btn"):
-            with st.spinner("🔍 Recherche de perles hors de tes listes…"):
+            with st.spinner("🔍 Recherche hors de tes listes — tous tes critères en ET…"):
                 _perfect_results = _perfect_recommendation(
                     profile, _dataset(), selected_type, selected_genres, note_min, _tmdb_api_key(),
                     excluded_genres=excluded_genres,
@@ -3409,7 +3600,9 @@ def render_watchlist_page() -> None:
                     selected_actors=selected_actors if selected_actors else None,
                     selected_directors=selected_directors if selected_directors else None,
                     selected_studios=selected_studios if selected_studios else None,
-                    year_range=(year_lo, year_hi) if (year_lo > 1950 or year_hi < 2025) else None,
+                    year_range=(year_lo, year_hi) if (year_lo > 1950 or year_hi < _CURRENT_YEAR) else None,
+                    genre_mode=genre_mode,
+                    cast_mode=cast_mode,
                 )
 
     roulette = st.session_state.get("_roulette_result")
@@ -3417,11 +3610,36 @@ def render_watchlist_page() -> None:
         st.markdown("### Le hasard a choisi")
         _render_recommendation_card(roulette, highlighted=True)
 
-    if _perfect_results:
-        st.markdown(f"### 🎯 Hors de mes listes ({len(_perfect_results)})")
-        st.caption("Contenus correspondant à ton profil, que tu n'as pas encore dans tes listes. 🌐 = découverte TMDB.")
-        for result in _perfect_results:
-            _render_recommendation_card(result)
+    if _perfect_results is not None:
+        perfect_rows, near_rows = _perfect_results
+        st.markdown(f"### 🎯 Vos propositions parfaites — hors de vos listes ({len(perfect_rows)})")
+        st.caption(
+            "Contenus qui respectent TOUS les critères remplis (acteur dans le casting, réalisateur, "
+            "studio, genre, pays, époque). 🌐 = découverte TMDB, pas encore dans tes listes."
+        )
+        if perfect_rows:
+            for result in perfect_rows:
+                _render_recommendation_card(result)
+        else:
+            if near_rows:
+                suffix = " Regarde les « presque » ci-dessous."
+            else:
+                suffix = " Aucune proposition proche non plus avec ces critères."
+            st.markdown(
+                '<div class="accent-callout"><strong>😩 PAS DE RÉSULTAT PARFAIT</strong> · '
+                'Fin des résultats avec ces critères : retire un critère ou élargis la période '
+                f'pour avoir plus de propositions.{suffix}</div>',
+                unsafe_allow_html=True,
+            )
+        if near_rows:
+            st.markdown(f"### ✨ Pas parfait, mais ça pourrait te plaire — hors de vos listes ({len(near_rows)})")
+            st.caption(
+                "Ces contenus respectent TOUS tes critères SAUF UN, indiqué par la pastille 🧩 "
+                "(ex. le bon réalisateur mais pas l'acteur choisi, ou un acteur présent mais comme "
+                "producteur). La recherche n'est jamais réduite à un seul critère sur dix."
+            )
+            for result in near_rows:
+                _render_recommendation_card(result)
 
     if sort_mode.startswith("✨"):
         recommended = [row for row in display_rows if row["score"] >= 50 and not row.get("not_for_me")]
