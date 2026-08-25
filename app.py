@@ -3166,8 +3166,7 @@ def render_watchlist_page() -> None:
             min_value=1950, max_value=2025, value=(1950, 2025),
             key="qr_year_range",
         )
-        f4, f5, f6 = st.columns(3)
-        search = f3.text_input("Recherche", key="qr_search", placeholder="Titre…")
+        f4, f5 = st.columns(2)
         note_min = f4.select_slider(
             "Note minimum",
             options=[0.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0],
