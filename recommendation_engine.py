@@ -708,12 +708,11 @@ def score_item(
         else:
             # Mal noté par la communauté → MALUS (et plus de bonus) : un
             # contenu de ton genre favori mais détesté ne doit plus finir à
-            # 100 % juste grâce à l'affinité.
+            # 100 % juste grâce à l'affinité. (Un seul signal : le malus
+            # couvre déjà l'information « note faible ».)
             adjust(-round((5.5 - note) * 5, 1), "⚠️ Mal noté par la communauté",
                    f"Note moyenne de la communauté : {note:.1f}/10 — la communauté ne l'a pas aimé",
                    warning=True)
-        if note < 5:
-            info("⚠️ Note faible", f"La note communauté est seulement de {note:.1f}/10", warning=True)
 
     if votes >= 100000:
         adjust(4, "🔥 Populaire", f"Très largement évalué par la communauté ({votes:,} votes)".replace(",", " "))
@@ -878,7 +877,11 @@ def score_item(
     raw_score = round(score, 1)
     final_score = max(0, min(raw_score, 100))
     negative_signals = sum(1 for signal in signals if signal.get("warning"))
-    not_for_me = raw_score < 35 or negative_signals >= 2
+    # « Pas pour moi » suit le SCORE : les malus sont déjà comptés dedans.
+    # Des signaux négatifs seuls n'excluent PLUS un contenu bien noté
+    # (un 88/100 avec deux pastilles d'avertissement restait une bonne
+    # recommandation, pas un « ne correspond pas »).
+    not_for_me = raw_score < 35 or (negative_signals >= 2 and raw_score < 50)
     return {
         "key": media_key(item),
         "item": item,

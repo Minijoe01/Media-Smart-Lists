@@ -120,6 +120,13 @@ st.set_page_config(
 
 st.markdown(
     """
+    <link rel="manifest" href="/app/static/manifest.webmanifest">
+    <meta name="theme-color" content="#00A392">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Media Smart">
+    <link rel="apple-touch-icon" href="/app/static/apple-touch-icon.png">
     <style>
     @font-face {
         font-family: 'ManropeMSL';
@@ -3579,7 +3586,6 @@ def render_watchlist_page() -> None:
     st.button("🔄 Réinitialiser tous les filtres", on_click=_reset_recommendation_filters, key="reset_qr", type="primary", use_container_width=True)
 
     items = list(source["movies"]) + list(source["shows"])
-    api_calls_extra = 0
     if selected_genres:
         # Filtrage LOCAL : les items ont DÉJÀ tous leurs genres grâce à
         # l'enrichissement TMDB. Plus d'appel API MDBList → économise le quota
@@ -3727,16 +3733,21 @@ def render_watchlist_page() -> None:
             key=lambda row: (row["score"], -len(row.get("warnings") or [])),
         )
 
-    source_note = (
-        f"filtre MDBList actualisé ({api_calls_extra} appel(s)), puis mémorisé pour cette session"
-        if api_calls_extra else
-        ("filtre déjà mémorisé pour cette session" if selected_genres else "analyse locale · quota MDBList préservé")
-    )
-    st.markdown(
-        f'<div class="accent-callout"><strong>{len(display_rows)} RÉSULTAT(S)</strong> · '
-        f'{escape(source_note)}.</div>',
-        unsafe_allow_html=True,
-    )
+    # Légende épurée : « dans vos listes » distingue bien des résultats
+    # « hors de vos listes » (bouton 🎯). Les mentions quota/analyse étaient
+    # déjà expliquées en tête de page — inutile de les répéter ici.
+    if display_rows:
+        st.markdown(
+            f'<div class="accent-callout"><strong>{len(display_rows)} RÉSULTAT(S) DANS VOS LISTES</strong></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="accent-callout"><strong>0 RÉSULTAT(S) DANS VOS LISTES</strong> · '
+            'Retire des critères pour élargir — ou lance 🎯 « Hors de mes listes » '
+            'pour chercher ailleurs.</div>',
+            unsafe_allow_html=True,
+        )
 
     roulette_col, discovery_col, perfect_col = st.columns(3)
     with roulette_col:
@@ -3858,21 +3869,28 @@ def render_watchlist_page() -> None:
             ("🙅 Ne correspond pas à mon profil", unsuitable),
         ]
     else:
-        section_title = "Résultats"
-        for prefix, title in (
-            ("⭐", "⭐ Par note décroissante"),
-            ("⏱", "⏱️ Du plus rapide au plus long"),
-            ("🔥", "🔥 Les plus populaires"),
-            ("📥", "📥 Derniers ajouts dans la liste"),
-            ("🆕", "🆕 Sorties les plus récentes"),
-            ("🚪", "🚪 Les plus faciles à lancer"),
-            ("🎬", "🎬 Films d’abord"),
-            ("📺", "📺 Séries d’abord"),
-            ("🙅", "🙅 Contenus qui correspondent le moins à mon profil"),
-        ):
-            if sort_mode.startswith(prefix):
-                section_title = title
-                break
+        # Titre EXACT pour chaque tri (l'ancien rapprochement par emoji
+        # inversait plusieurs libellés : « Plus long d'abord » s'affichait
+        # « Du plus rapide au plus long », « Moins populaires » → « Les plus
+        # populaires », « Plus anciens » → « récentes », etc.).
+        sort_section_titles = {
+            "⭐ Meilleures notes": "⭐ Les mieux notés d’abord",
+            "⭐ Notes les plus basses": "⭐ Notes les plus basses d’abord",
+            "⏱️ Plus rapide": "⏱️ Du plus rapide au plus long",
+            "⏱️ Plus long d'abord": "⏱️ Du plus long au plus rapide",
+            "🔥 Populaires": "🔥 Les plus populaires",
+            "🔥 Moins populaires": "🔥 Les moins populaires",
+            "📥 Ajouté récemment": "📥 Derniers ajouts dans la liste",
+            "📥 Ajouté le plus ancien": "📥 Ajouts les plus anciens d’abord",
+            "🆕 Nouveautés": "🆕 Sorties les plus récentes",
+            "🆒 Plus anciens d'abord": "🆕 Sorties les plus anciennes d’abord",
+            "🚪 Zéro effort": "🚪 Les plus faciles à lancer",
+            "🚪 Le plus exigeant": "🚪 Les plus exigeants à lancer",
+            "🎬 Films d'abord": "🎬 Films d’abord",
+            "📺 Séries d'abord": "📺 Séries d’abord",
+            "🙅 Pas pour moi": "🙅 Contenus qui correspondent le moins à mon profil",
+        }
+        section_title = sort_section_titles.get(sort_mode, "Résultats")
         result_sections = [(section_title, display_rows)]
 
     remaining_slots = int(display_limit)

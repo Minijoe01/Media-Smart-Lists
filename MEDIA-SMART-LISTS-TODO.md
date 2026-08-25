@@ -270,3 +270,34 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [ ] README et docs à jour.
 - [ ] Tests reproductibles dans GitHub Actions.
 - [ ] Aucun secret dans le dépôt ou les exports.
+
+---
+
+## À faire — décisions actées (V89, 25 août 2026)
+
+### Bouton « ➕ Watch » (ajout à la Watchlist MDBList) — spécification gelée
+- [ ] Pastille TRÈS discrète « ➕ Watch », **dans la carte**, à côté des liens
+      TMDB / MDBL (rangée des liens existante), libellé court « Watch ».
+- [ ] Affichée **uniquement** sur les contenus « hors de mes listes »
+      (sections parfaites + presque) et seulement si connecté à MDBList.
+- [ ] Ne doit PAS créer de saut de ligne disgracieux sur GSM (le bouton
+      précédent en colonne dédiée a été retiré pour ça en V88).
+- Piste technique retenue : lien HTML dans `_content_links_html` déclenchant
+  un paramètre d'URL (ex. `?watch=<tmdb_id>`), traité au chargement suivant
+  (ajout via `add_watchlist_items`, toast de confirmation, nettoyage du
+  paramètre + restauration de la page). Alternative : composant léger.
+- V88→V89 : le bouton colonne-droite a été retiré (lisibilité, GSM, stabilité).
+
+### Mobile / PWA — en place depuis la V89
+- [x] Manifest + icônes (192/512/maskable/apple-touch) + thème : « Ajouter à
+      l'écran d'accueil » ouvre l'app en plein écran SANS barre Chrome
+      (Android) / Safari (iOS, via l'icône d'accueil).
+- [ ] À tester sur le GSM de l'utilisateur après déploiement.
+- [ ] (Optionnel plus tard) service worker pour un lancement hors-ligne
+      plus rapide — pas indispensable à l'installation.
+
+### Idées UI en réserve
+- [ ] Raccourcis de filtres « mémorisables » (signets de recherche).
+- [ ] Mode sombre/clair ? (probablement inutile : thème sombre assumé).
+- [ ] Compression du grand bloc CSS dans un fichier statique si Streamlit
+      le permet proprement.
