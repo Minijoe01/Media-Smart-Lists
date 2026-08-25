@@ -667,7 +667,17 @@ def score_item(
     affinities = profile.get("genre_affinity", {})
     if genres and affinities:
         affinity = sum(affinities.get(genre, 0) for genre in genres) / len(genres)
-        bonus = min(affinity * 0.4, 40)
+        # L'affinité (ce que tu regardes beaucoup) est TEMPÉRÉE par ta note
+        # personnelle dans ces genres : regarder beaucoup de téléréalité ne
+        # doit pas valoriser une énième émission mal notée. Plafond abaissé
+        # (28 pts au lieu de 40) : « tes genres » ne domine plus le score.
+        personal_genres_pre = profile.get("personal_genre_ratings", {})
+        own_pre = [personal_genres_pre[g] for g in genres if g in personal_genres_pre]
+        like_factor = 1.0
+        if own_pre:
+            own_pre_avg = sum(own_pre) / len(own_pre)
+            like_factor = max(0.4, min(1.15, own_pre_avg / 8.0))
+        bonus = min(affinity * 0.32 * like_factor, 28)
         if bonus >= 4:
             label = "❤️ Tes genres" if any(affinities.get(genre, 0) >= 60 for genre in genres) else "🎭 Affinité genre"
             adjust(bonus, label, "Proche de tes genres préférés actuels")
@@ -691,9 +701,17 @@ def score_item(
         adjust(-5, "👎 Tes ratages ici", f"Tu as déjà donné 3/10 ou moins à {miss_count} contenu(s) de ce genre", warning=True)
 
     if note is not None:
-        note_bonus = min(note / 10 * 25, 25)
-        label = "💎 Pépite critique" if note >= 9 else "⭐ Très bien noté" if note >= 8 else "⭐ Note communauté"
-        adjust(note_bonus, label, f"Note moyenne de la communauté : {note:.1f}/10")
+        if note >= 5.5:
+            note_bonus = min(note / 10 * 25, 25)
+            label = "💎 Pépite critique" if note >= 9 else "⭐ Très bien noté" if note >= 8 else "⭐ Note communauté"
+            adjust(note_bonus, label, f"Note moyenne de la communauté : {note:.1f}/10")
+        else:
+            # Mal noté par la communauté → MALUS (et plus de bonus) : un
+            # contenu de ton genre favori mais détesté ne doit plus finir à
+            # 100 % juste grâce à l'affinité.
+            adjust(-round((5.5 - note) * 5, 1), "⚠️ Mal noté par la communauté",
+                   f"Note moyenne de la communauté : {note:.1f}/10 — la communauté ne l'a pas aimé",
+                   warning=True)
         if note < 5:
             info("⚠️ Note faible", f"La note communauté est seulement de {note:.1f}/10", warning=True)
 

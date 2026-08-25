@@ -2122,14 +2122,27 @@ def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
       l'item sera réessayé au prochain enrichissement, une fois le réseau
       rétabli. Ainsi une micro-coupure ne « fige » jamais un contenu.
     """
-    try:
-        response = requests.get(
+    def _get() -> "requests.Response":
+        return requests.get(
             f"https://api.themoviedb.org/3/{kind}/{tmdb}",
             params={"api_key": key, "language": "en-US", "append_to_response": "credits"},
             timeout=8,
         )
+
+    try:
+        response = _get()
     except requests.RequestException:
         raise  # réseau indisponible : non mis en cache (réessayé plus tard)
+    if response.status_code == 429:
+        # Limite de débit TMDB : une courte pause puis UN nouvel essai —
+        # sinon la fiche est ratée et re-téléchargée au prochain chargement
+        # (la 1re connexion paraissait durer « une minute » en partie à
+        # cause de ça).
+        time.sleep(1.2)
+        try:
+            response = _get()
+        except requests.RequestException:
+            raise
     if response.status_code == 404:
         return {}  # contenu inexistant : mis en cache (rien à récupérer)
     if response.status_code != 200:
@@ -2553,7 +2566,6 @@ def _reset_recommendation_filters() -> None:
     # Résultats « hors de mes listes » : on repart de zéro après un reset.
     st.session_state.pop("_outside_results", None)
     st.session_state.pop("_outside_sig", None)
-    st.session_state.pop("_outside_added", None)
 
 
 def _justwatch_url(title: str) -> str:
@@ -2731,61 +2743,6 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         + f'</div>{score_col}</div>',
         unsafe_allow_html=True,
     )
-
-
-def _add_outside_to_watchlist(row: dict) -> tuple[bool, str]:
-    """Ajoute un contenu découvert (hors listes) à la Watchlist MDBList."""
-    item = row.get("item") or {}
-    try:
-        provider = MDBListProvider(mdb_oauth.access_token())
-        if row.get("type") == "Série":
-            provider.add_watchlist_items(shows=[item])
-        else:
-            provider.add_watchlist_items(movies=[item])
-        return True, ""
-    except Exception as exc:
-        return False, f"Ajout impossible : {exc}"
-
-
-def _render_outside_card(row: dict) -> None:
-    """Carte « hors de tes listes » + petit bouton ➕ « ajouter à ma Watchlist
-    MDBList » (colonne étroite à droite ; sous la carte sur GSM). Le contenu
-    est déjà connu de l'app : l'ajout utilise son identifiant TMDB/IMDb, une
-    seule écriture, réversible depuis MDBList."""
-    if not (row.get("_outside") and mdb_oauth.is_connected()):
-        _render_recommendation_card(row)
-        return
-    ids = row.get("item", {}).get("ids") if isinstance(row.get("item"), dict) else {}
-    try:
-        tmdb_id = int(ids.get("tmdb") or 0) or None
-    except (TypeError, ValueError):
-        tmdb_id = None
-    if not tmdb_id:
-        # Pas d'identifiant TMDB exploitable : carte simple, pas de bouton.
-        _render_recommendation_card(row)
-        return
-    card_col, add_col = st.columns([0.94, 0.06])
-    with card_col:
-        _render_recommendation_card(row)
-    with add_col:
-        added = st.session_state.get("_outside_added") or set()
-        if tmdb_id and tmdb_id in added:
-            st.button("✓", key=f"outside_add_{tmdb_id}", disabled=True,
-                      help="Déjà ajouté à ta Watchlist MDBList")
-        elif st.button("➕", key=f"outside_add_{tmdb_id}",
-                       help="Ajouter à ma Watchlist MDBList (1 écriture, réversible)"):
-            ok, message = _add_outside_to_watchlist(row)
-            if ok:
-                added = set(st.session_state.get("_outside_added") or set())
-                if tmdb_id:
-                    added.add(tmdb_id)
-                st.session_state["_outside_added"] = added
-                try:
-                    st.toast("✓ Ajouté à ta Watchlist MDBList")
-                except Exception:
-                    pass
-            else:
-                st.error(message)
 
 
 def _render_taste_profile(profile: dict) -> None:
@@ -2983,6 +2940,7 @@ def _perfect_recommendation(
     genre_mode: str = "Au moins un (OU)", cast_mode: str = "Au moins un (OU)",
     search_text: str | None = None, duration_min: str = "Aucune",
     time_filter: str = "Aucune limite", status_filter: str = "Tous les statuts",
+    preset: str = "Aucun preset",
 ) -> tuple[list[dict], list[dict]]:
     """Reco « Hors de mes listes » — GRAND BASSIN TMDB + TOUS les critères en ET.
 
@@ -3002,6 +2960,8 @@ def _perfect_recommendation(
     durée, temps max, statut, note) ; « presque » respecte tout SAUF UN critère
     (pastille 🧩). Un critère vide est ignoré. Genres/pays exclus et filtre
     statut hors type = VETO (jamais proposés, même en « presque »).
+    Le PRESET choisi est aussi appliqué (filtre strict sur les deux sections) :
+    « 📚 Suite d'une saga entamée » ne renvoie QUE des suites de tes sagas.
     """
     sel_search = str(search_text or "").strip()
     sel_actors = [str(a).strip() for a in (selected_actors or []) if str(a).strip()]
@@ -3063,11 +3023,44 @@ def _perfect_recommendation(
     MAX_CANDIDATES = 250  # grand bassin : le classement final se fait sur le score perso
     candidates: list[dict] = []
 
+    # ── Suites de sagas entamées : les volets non vus/non listés. Un
+    # contenu que tu as commencé (et aimé) mérite de remonter même s'il
+    # n'est pas « populaire » côté TMDB. Jusqu'à 60 sagas, en PARALLÈLE
+    # (appels /collection mis en cache 7 jours). Avec une recherche par
+    # titre, seules les suites dont le titre contient la recherche sont
+    # gardées (ex. « jack » → Jackass 2) : la saga complète le bassin
+    # de recherche au lieu d'être ignorée.
+    if selected_type != "Séries":
+        collection_ids = list((profile.get("watched_collections") or {}).keys())[:60]
+
+        def _saga_parts(cid: int) -> list:
+            try:
+                coll = _fetch_collection(int(cid), api_key)
+            except Exception:
+                return []
+            parts = coll.get("parts") or []
+            if sel_search:
+                q = sel_search.casefold()
+                parts = [p for p in parts if q in str(p.get("title") or p.get("name") or "").casefold()]
+            return parts
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            for parts in executor.map(_saga_parts, collection_ids):
+                for part in parts:
+                    tid = str(part.get("id"))
+                    if tid and tid not in seen_tmdb:
+                        candidates.append({"tmdb": part.get("id"), "kind": "movie"})
+                        seen_tmdb.add(tid)
+                if len(candidates) >= MAX_CANDIDATES:
+                    break
+
     if sel_search:
         # ── Recherche par titre : c'est ELLE qui définit le bassin. Ex. taper
         # « jackass » → tous les Jackass hors de tes listes, scorés pour toi.
         # Les autres critères (genres, personnes…) classifient côté client.
-        for page in (1, 2):
+        # 3 pages : les correspondances partielles (« jack » → Jackass) sont
+        # parfois loin dans le classement de pertinence TMDB.
+        for page in (1, 2, 3):
             try:
                 resp = requests.get(
                     "https://api.themoviedb.org/3/search/multi",
@@ -3090,21 +3083,6 @@ def _perfect_recommendation(
             if len(candidates) >= MAX_CANDIDATES:
                 break
     else:
-        # ── Suites de sagas entamées : les volets non vus/non listés. Un
-        # contenu que tu as commencé (et aimé) mérite de remonter même s'il
-        # n'est pas « populaire » côté TMDB.
-        if selected_type != "Séries":
-            for cid in list((profile.get("watched_collections") or {}).keys())[:12]:
-                try:
-                    coll = _fetch_collection(int(cid), api_key)
-                except Exception:
-                    continue
-                for part in (coll.get("parts") or []):
-                    tid = str(part.get("id"))
-                    if tid and tid not in seen_tmdb:
-                        candidates.append({"tmdb": part.get("id"), "kind": "movie"})
-                        seen_tmdb.add(tid)
-
         for media_type in types:
             genre_map = GENRE_FR_TO_TMDB_TV if media_type == "tv" else GENRE_FR_TO_TMDB
             gids = [str(genre_map[g]) for g in query_genres if g in genre_map]
@@ -3130,6 +3108,11 @@ def _perfect_recommendation(
             # (popularité + note + récence). La requête ne contraint QUE le
             # critère du bassin (+ l'époque) : tout le reste est vérifié côté
             # client — c'est ce qui détecte les « presque ».
+            # Preset saga : les volets de sagas forment déjà le bassin
+            # pertinent — inutile d'aller chercher (et de scorer) des
+            # contenus hors saga qui seraient filtrés par le preset.
+            if preset.startswith("📚"):
+                continue
             discover_extras: list[dict] = []
             if company_ids:
                 discover_extras.append({"with_companies": "|".join(company_ids[:5])})
@@ -3355,6 +3338,10 @@ def _perfect_recommendation(
     for row, missed in enriched:
         if missed is None:
             continue  # veto : jamais proposé
+        # Preset : filtre STRICT sur les deux sections (un preset est une
+        # vue ciblée, pas un critère à relâcher en « presque »).
+        if preset and preset != "Aucun preset" and not preset_matches(preset, row, profile):
+            continue
         if not missed:
             perfect_rows.append(row)
         elif len(missed) == 1:
@@ -3788,7 +3775,7 @@ def render_watchlist_page() -> None:
         tuple(selected_studios or []),
         int(year_lo), int(year_hi), float(note_min),
         str(search or "").strip().casefold(),
-        duration_min, time_filter, status_filter, cast_mode,
+        duration_min, time_filter, status_filter, cast_mode, preset,
         str((_dataset() or {}).get("loaded_at") or ""),
     )
     if st.session_state.get("_outside_sig") == _outside_sig:
@@ -3815,6 +3802,7 @@ def render_watchlist_page() -> None:
                     duration_min=duration_min,
                     time_filter=time_filter,
                     status_filter=status_filter,
+                    preset=preset,
                 )
                 st.session_state["_outside_results"] = _perfect_results
                 st.session_state["_outside_sig"] = _outside_sig
@@ -3835,7 +3823,7 @@ def render_watchlist_page() -> None:
         )
         if perfect_rows:
             for result in perfect_rows:
-                _render_outside_card(result)
+                _render_recommendation_card(result)
         else:
             if near_rows:
                 suffix = " Regarde les « presque » ci-dessous."
@@ -3855,7 +3843,7 @@ def render_watchlist_page() -> None:
                 "producteur). La recherche n'est jamais réduite à un seul critère sur dix."
             )
             for result in near_rows:
-                _render_outside_card(result)
+                _render_recommendation_card(result)
 
     if sort_mode.startswith("✨"):
         recommended = [row for row in display_rows if row["score"] >= 50 and not row.get("not_for_me")]
