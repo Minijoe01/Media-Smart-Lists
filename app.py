@@ -118,15 +118,27 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# PWA (application mobile) : manifest + icônes. BALISES SÉPARÉES du bloc
+# <style> ci-dessous : quand d'autres balises précèdent <style> dans le MÊME
+# bloc Markdown, le parseur du navigateur casse le bloc — le CSS entier
+# s'affichait alors en texte brut en haut de la page (V89). Ce petit bloc
+# n'a aucune ligne vide et aucun <style> : il passe toujours tel quel.
 st.markdown(
     """
-    <link rel="manifest" href="/app/static/manifest.webmanifest">
+    <link rel="manifest" href="/app/static/manifest.json">
+    <link rel="icon" href="/app/static/icon-192.png">
     <meta name="theme-color" content="#00A392">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Media Smart">
     <link rel="apple-touch-icon" href="/app/static/apple-touch-icon.png">
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
     <style>
     @font-face {
         font-family: 'ManropeMSL';
@@ -2847,7 +2859,16 @@ GENRE_FR_TO_TMDB = {
     "Histoire": 36, "Horreur": 27, "Musique": 10402, "Mystère": 9648,
     "Romance": 10749, "Science-Fiction": 878, "Thriller": 53, "Guerre": 10752,
     "Western": 37,
+    # Genres sans identifiant TMDB propre : « Téléfilm » existe chez TMDB
+    # (TV Movie) ; « Biographie » et « Comédie musicale » sont assimilés au
+    # genre TMDB le plus proche pour la recherche « hors de mes listes »
+    # (le filtre des contenus de tes listes reste exact, lui).
+    "Téléfilm": 10770,
+    "Biographie": 36,           # → assimilé à Histoire
+    "Comédie musicale": 10402,  # → assimilé à Musique
 }
+# Genres affichés comme « assimilés » dans l'interface (information honnête).
+GENRE_TMDB_APPROX = {"Biographie": "Histoire", "Comédie musicale": "Musique"}
 GENRE_TMDB_TO_FR = {v: k for k, v in GENRE_FR_TO_TMDB.items()}
 
 GENRE_FR_TO_TMDB_TV = {
@@ -3427,6 +3448,17 @@ def render_watchlist_page() -> None:
             key="qr_genre_mode",
             horizontal=True,
         )
+        # Transparence : genres que TMDB ne connaît pas (ex. Biographie).
+        # Le filtre des contenus DE tes listes reste exact ; seule la
+        # recherche « hors de tes listes » est concernée.
+        _notes_genre = []
+        for _g in selected_genres:
+            if _g in GENRE_TMDB_APPROX:
+                _notes_genre.append(f"{_g} → assimilé à {GENRE_TMDB_APPROX[_g]} hors de tes listes")
+            elif _g not in GENRE_FR_TO_TMDB and _g not in GENRE_FR_TO_TMDB_TV:
+                _notes_genre.append(f"{_g} : inconnu de TMDB, cherchable uniquement dans tes listes")
+        if _notes_genre:
+            st.caption("ℹ️ " + " · ".join(_notes_genre) + ".")
         excluded_genres = st.multiselect(
             "🚫 Genres à exclure",
             genre_titles,
@@ -5694,7 +5726,19 @@ def render_basic_stats_page() -> None:
             custom_start = df["date_dt"].min().date()
             custom_end = df["date_dt"].max().date()
 
+    # Ma note personnelle : filtre par plage (ex. uniquement mes 10/10 —
+    # pratique quand tu dois recommander des contenus à quelqu'un).
+    rating_lo, rating_hi = st.select_slider(
+        "Ma note personnelle (plage)",
+        options=list(range(0, 11)),
+        value=(0, 10),
+        key="stats_rating_range",
+    )
+
     filtered = df.copy()
+    if rating_lo > 0 or rating_hi < 10:
+        _notes = filtered["note"].fillna(0)
+        filtered = filtered[(_notes >= rating_lo) & (_notes <= rating_hi)]
     if media_filter != "Tous":
         wanted = "Film" if media_filter == "Films" else "Épisode"
         filtered = filtered[filtered["type"] == wanted]
@@ -5703,7 +5747,8 @@ def render_basic_stats_page() -> None:
         filtered = filtered[filtered["genre"].str.contains(genre_choice, na=False)]
 
     period_label = period if period != "Période personnalisée" else f"Période personnalisée {custom_start} → {custom_end}"
-    st.caption(f"🎯 Filtres appliqués : **{media_filter}** · **{genre_choice}** · **{period_label}** — {len(filtered)} visionnage(s).")
+    rating_txt = f" · **ma note {rating_lo}–{rating_hi}/10**" if (rating_lo > 0 or rating_hi < 10) else ""
+    st.caption(f"🎯 Filtres appliqués : **{media_filter}** · **{genre_choice}** · **{period_label}**{rating_txt} — {len(filtered)} visionnage(s).")
 
     # ── Acteurs & studios préférés — suit les slicers (période, type, genre) ──
     filtered_tmdb: set[str] = set()
