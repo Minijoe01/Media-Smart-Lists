@@ -3755,7 +3755,20 @@ def render_watchlist_page() -> None:
         # l'enrichissement TMDB. Plus d'appel API MDBList → économise le quota
         # ET préserve les genres complets + les scores (plus de troncage, plus
         # de pastilles qui disparaissent au filtrage).
-        wanted = {str(g).casefold() for g in selected_genres}
+        # Groupes d'équivalence : un genre et son remplaçant TMDB se
+        # correspondent DANS les listes aussi (ex. filtrer « Biographie »
+        # trouve aussi les contenus taggés « Histoire », et réciproquement) —
+        # même logique que la recherche « hors de mes listes ».
+        genre_groups: list[set] = []
+        for g in selected_genres:
+            grp = {str(g).casefold()}
+            sub = GENRE_TMDB_APPROX.get(g)
+            if sub:
+                grp.add(str(sub).casefold())
+            for origin, target in GENRE_TMDB_APPROX.items():
+                if target == g:
+                    grp.add(str(origin).casefold())
+            genre_groups.append(grp)
 
         def _match_genre(media):
             names = set()
@@ -3765,8 +3778,8 @@ def render_watchlist_page() -> None:
                 if genre:
                     names.add(str(genre).casefold())
             if genre_mode == "Tous (ET)":
-                return wanted.issubset(names)
-            return bool(names & wanted)
+                return all(names & grp for grp in genre_groups)
+            return any(names & grp for grp in genre_groups)
 
         items = [item for item in items if _match_genre(item)]
 
@@ -5694,13 +5707,27 @@ def render_detailed_stats_page(filtered: "pd.DataFrame", period_label: str) -> N
     nb_jours = max((filtered["date_dt"].max() - filtered["date_dt"].min()).days + 1, 1)
     daily = filtered.groupby(filtered["date_dt"].dt.date)["lectures"].sum()
     record_jour = int(daily.max()) if not daily.empty else 0
+    # Compteurs « vue d'ensemble », mais CALCULÉS SUR LA SÉLECTION FILTRÉE
+    # (demande : autant de widgets que l'onglet non filtré, avec les filtres).
+    nb_films = int((filtered["type"] == "Film").sum())
+    nb_episodes = int((filtered["type"] == "Épisode").sum())
+    # Séries distinctes : la colonne « serie » vaut le titre du film pour les
+    # films — on ne compte que les lignes d'épisodes.
+    nb_series = int(filtered.loc[filtered["type"] == "Épisode", "serie"].dropna().nunique()) if "serie" in filtered.columns else 0
+    jours_actifs = int((daily > 0).sum())
+    eps_par_semaine = (nb_episodes * 7.0 / nb_jours) if nb_jours else 0.0
 
     st.markdown(
         _metric_cards([
+            {"emoji": "🎬", "k": "Films", "v": nb_films, "d": "dans la sélection"},
+            {"emoji": "📺", "k": "Séries distinctes", "v": nb_series, "d": "dans la sélection"},
+            {"emoji": "🎞️", "k": "Épisodes", "v": nb_episodes, "d": "dans la sélection"},
             {"emoji": "🎬", "k": "Visionnages", "v": total_lectures, "d": "films + épisodes"},
             {"emoji": "⏱️", "k": "Temps visionné", "v": _format_minutes(total_minutes) if total_minutes else "—", "d": "sur la sélection"},
             {"emoji": "🌡️", "k": "Note moyenne", "v": f"{note_moyenne:.1f}" if pd.notna(note_moyenne) else "—", "d": "sur 10"},
+            {"emoji": "🏃", "k": "Épisodes/semaine", "v": f"{eps_par_semaine:.1f}".replace(".", ",") if eps_par_semaine else "—", "d": "rythme de la sélection"},
             {"emoji": "📅", "k": "Moyenne / jour", "v": f"{total_lectures / nb_jours:.1f}", "d": "visionnages par jour"},
+            {"emoji": "🗓️", "k": "Jours actifs", "v": jours_actifs, "d": "avec au moins 1 visionnage"},
             {"emoji": "🏆", "k": "Record en 1 jour", "v": record_jour, "d": "pic d'activité"},
         ]),
         unsafe_allow_html=True,
