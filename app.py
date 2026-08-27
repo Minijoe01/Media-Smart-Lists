@@ -202,6 +202,7 @@ def _render_pwa_tags() -> None:
         '<meta name="apple-mobile-web-app-capable" content="yes">',
         '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
         '<meta name="apple-mobile-web-app-title" content="Media Smart">',
+        '<meta name="application-name" content="Media Smart Lists">',
     ]
     st.markdown("\n".join(tags), unsafe_allow_html=True)
     try:
@@ -3572,23 +3573,24 @@ def render_watchlist_page() -> None:
             key="qr_genres",
             placeholder="Choisis 1+ genres…",
         )
+        # Genres que TMDB ne connaît pas (ex. Biographie, Sport) : la
+        # recherche « hors de tes listes » se fait AUTOMATIQUEMENT sur le
+        # genre de remplacement — rien à faire de ton côté. Le filtre des
+        # contenus DE tes listes reste, lui, exact.
+        _notes_genre = []
+        for _g in selected_genres:
+            if _g in GENRE_TMDB_APPROX:
+                _notes_genre.append(f"🔎 {_g} : recherche automatique sur {GENRE_TMDB_APPROX[_g]}")
+            elif _g not in GENRE_FR_TO_TMDB and _g not in GENRE_FR_TO_TMDB_TV:
+                _notes_genre.append(f"🔎 {_g} : inconnu de TMDB, cherchable uniquement dans tes listes")
+        if _notes_genre:
+            st.caption(" · ".join(_notes_genre) + ".")
         genre_mode = st.radio(
             "Genres : correspondance",
             ["Au moins un (OU)", "Tous (ET)"],
             key="qr_genre_mode",
             horizontal=True,
         )
-        # Genres que TMDB ne connaît pas : la recherche « hors de tes
-        # listes » est LANCÉE sur le genre de remplacement indiqué (le
-        # filtre des contenus DE tes listes reste, lui, exact).
-        _notes_genre = []
-        for _g in selected_genres:
-            if _g in GENRE_TMDB_APPROX:
-                _notes_genre.append(f"🔎 {_g} → recherche {GENRE_TMDB_APPROX[_g]} sur TMDB")
-            elif _g not in GENRE_FR_TO_TMDB and _g not in GENRE_FR_TO_TMDB_TV:
-                _notes_genre.append(f"🔎 {_g} : inconnu de TMDB, cherchable uniquement dans tes listes")
-        if _notes_genre:
-            st.caption(" · ".join(_notes_genre) + ".")
         excluded_genres = st.multiselect(
             "🚫 Genres à exclure",
             genre_titles,
@@ -5812,6 +5814,19 @@ def _rated_contents_rows(dataset: dict) -> list[dict]:
     ratings = sections.get("ratings") or {}
     by_key: dict[str, dict] = {}
 
+    # Index des métadonnées riches (genres, année, note publique) par id
+    # TMDB : les lignes de notation (surtout en import Trakt) sont souvent
+    # dépouillées — leurs genres vivent dans l'historique/les listes.
+    media_by_tmdb: dict[str, dict] = {}
+    for media, _kind in _all_media(dataset):
+        tmdb = _media_tmdb_id(media)
+        if not tmdb:
+            continue
+        key = str(tmdb)
+        existing = media_by_tmdb.get(key)
+        if existing is None or (not existing.get("genres") and media.get("genres")):
+            media_by_tmdb[key] = media
+
     def rating_of(row: dict):
         try:
             value = float(row.get("rating") or 0)
@@ -5820,13 +5835,17 @@ def _rated_contents_rows(dataset: dict) -> list[dict]:
         return value if value > 0 else None
 
     def base_item(media: dict, kind: str, rating: float, rated_at) -> dict:
+        # Enrichit depuis l'index quand la ligne de notation est dépouillée.
+        tmdb = _media_tmdb_id(media)
+        rich = media_by_tmdb.get(str(tmdb)) if tmdb else None
+        source = rich if (rich and (not media.get("genres") or not media.get("year"))) else media
         return {
             "type": "Film" if kind == "movie" else "Série",
-            "title": _media_title(media),
-            "year": _media_year(media),
-            "genres": _genres(media),
+            "title": _media_title(source) or _media_title(media),
+            "year": _media_year(source) or _media_year(media),
+            "genres": _genres(source) or _genres(media),
             "rating": rating,
-            "note_publique": _public_note(media),
+            "note_publique": _public_note(source) or _public_note(media),
             "rated_at": rated_at,
         }
 
@@ -5956,12 +5975,32 @@ def render_basic_stats_page() -> None:
         rated_rows = [r for r in rated_rows if r.get("type") == wanted_type]
     if genre_choice != "Tous":
         rated_rows = [r for r in rated_rows if genre_choice in (r.get("genres") or [])]
+    # Période : sur la DATE DE NOTATION (même moteur que l'historique,
+    # qui exige des datetimes — on parse les chaînes ISO).
+    from history_engine import filter_history as _fh_rated
+
+    def _dt(value):
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+
+    rated_rows = _fh_rated(
+        [dict(r, watched_at=_dt(r.get("rated_at"))) for r in rated_rows],
+        period=period,
+        media_filter="Tous",
+        genre_filter="Tous les genres",
+        search="",
+        sort_mode="Plus récents d’abord",
+        start_date=custom_start,
+        end_date=custom_end,
+        now=datetime.now(PARIS_TZ),
+    )
     rating_active = rating_lo > 0 or rating_hi < 10
     with st.expander(f"⭐ Mes contenus notés ({len(rated_rows)})", expanded=bool(rated_rows) and rating_active):
         st.caption(
-            "Une ligne par contenu noté (pas de détail par épisode : « DBZ 10/10 » "
-            "suffit). Suit le filtre « Ma note personnelle » et les slicers "
-            "type/genre — pratique pour recommander tes coups de cœur."
+            "Tes films et séries notés, une ligne par contenu. "
+            "Suit tous les filtres : note, type, genre, période."
         )
         if rated_rows:
             rated_table = [
