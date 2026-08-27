@@ -205,10 +205,17 @@ def _render_pwa_tags() -> None:
         '<meta name="application-name" content="Media Smart Lists">',
     ]
     st.markdown("\n".join(tags), unsafe_allow_html=True)
+    # st.iframe intègre le HTML via srcdoc dans une iframe SAME-ORIGIN
+    # (documenté : « allows JavaScript execution and same-origin access »)
+    # → le script peut retirer le manifest injecté par Streamlit Cloud et
+    # placer le nôtre dans le <head>. st.components.v1.html ne le faisait pas.
     try:
-        st.components.v1.html(_PWA_HEAD_SCRIPT, height=0)
+        st.iframe(_PWA_HEAD_SCRIPT, height=0)
     except Exception:
-        pass  # contexte composant indisponible : le lien du corps suffit
+        try:
+            st.components.v1.html(_PWA_HEAD_SCRIPT, height=0)
+        except Exception:
+            pass  # le lien du corps suffit alors
 
 
 _render_pwa_tags()
@@ -2220,7 +2227,7 @@ def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
     def _get() -> "requests.Response":
         return requests.get(
             f"https://api.themoviedb.org/3/{kind}/{tmdb}",
-            params={"api_key": key, "language": "en-US", "append_to_response": "credits"},
+            params={"api_key": key, "language": "en-US", "append_to_response": "credits,keywords"},
             timeout=8,
         )
 
@@ -2400,26 +2407,69 @@ def _enrich_tmdb_metadata(data: dict) -> None:
             return
         if payload:
             _apply_tmdb_payload(m, payload)
+            # MOTS-CLÉS TMDB (sport, superhero, biography…) : stockés sur le
+            # média → le filtre des listes les utilise pour les genres sans
+            # équivalent TMDB (ex. « Sport » trouve The Last Dance dans tes
+            # listes, pas seulement hors de tes listes).
+            kw_block = payload.get("keywords") if isinstance(payload.get("keywords"), dict) else {}
+            if kw_block:
+                names = sorted({
+                    str(x.get("name") or "").casefold()
+                    for x in (kw_block.get("keywords") or kw_block.get("results") or [])
+                    if isinstance(x, dict) and x.get("name")
+                })
+                if names:
+                    m["keywords"] = names
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(executor.map(work, targets))
 
 
 @st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : cache serveur partagé (PC + GSM)
-def _load_mdblist_cached(cache_key: str, access_token: str) -> dict[str, Any]:
-    """Charge le dataset MDBList avec un cache persistant (1 h).
+def _load_mdblist_raw_cached(cache_key: str, access_token: str) -> dict[str, Any]:
+    """Charge le dataset MDBList SANS l'enrichissement TMDB (rapide).
 
     La clé de cache (`cache_key`) est un hash SHA-256 dérivé du token : chaque
-    utilisateur a sa propre entrée, le token n'est jamais utilisé comme clé ni
-    stocké en clair dans le cache. Un simple rechargement de page (F5) ne
-    rejoue donc pas les appels API. Le bouton « Actualiser » vide ce cache.
+    utilisateur a sa propre entrée. L'enrichissement TMDB (acteurs, studios,
+    mots-clés — la partie qui prenait ~1 min) est fait en ARRIÈRE-PLAN par
+    `_enrich_in_background` : l'app est utilisable immédiatement.
     """
     provider = MDBListProvider(access_token)
     raw_data = provider.load_dataset()
-    _enrich_tmdb_metadata(raw_data)
     data = normalize_provider_dataset(raw_data)
     data["_cached"] = True
     return data
+
+
+# Datasets déjà enrichis (en mémoire du processus) et enrichissements en cours.
+_ENRICHED_DATASETS: dict[str, dict] = {}
+_ENRICH_IN_FLIGHT: dict[str, bool] = {}
+
+
+def _enrich_in_background(cache_key: str, data: dict) -> None:
+    """Enrichit (TMDB) le dataset de la session EN ARRIÈRE-PLAN.
+
+    Les médias sont modifiés EN PLACE : ce sont les mêmes objets que ceux de
+    la session — l'app se complète au fil des reruns, sans attendre. Une fois
+    terminé, le dataset enrichi est mémorisé pour les rechargements (F5) tant
+    que le conteneur vit.
+    """
+    if _ENRICH_IN_FLIGHT.get(cache_key):
+        return
+    _ENRICH_IN_FLIGHT[cache_key] = True
+    try:
+        _enrich_tmdb_metadata(data)
+        _ENRICHED_DATASETS[cache_key] = data
+    except Exception:
+        pass
+    finally:
+        _ENRICH_IN_FLIGHT[cache_key] = False
+
+
+def _clear_mdblist_caches() -> None:
+    """Vide les caches de données (bouton « Actualiser »)."""
+    _load_mdblist_raw_cached.clear()
+    _ENRICHED_DATASETS.clear()
 
 
 def load_mdblist_dataset() -> None:
@@ -2434,7 +2484,17 @@ def load_mdblist_dataset() -> None:
     token = mdb_oauth.access_token()
     try:
         key = _mdblist_cache_key(token)
-        data = _load_mdblist_cached(key, token)
+        # 1) Données MDBList seules (rapide) — l'app est utilisable aussitôt.
+        #    Si un dataset enrichi est déjà en mémoire (F5 dans le même
+        #    conteneur), on le reprend tel quel.
+        data = _ENRICHED_DATASETS.get(key) or _load_mdblist_raw_cached(key, token)
+        # 2) Enrichissement TMDB (acteurs, studios, mots-clés) en ARRIÈRE-
+        #    PLAN : invisible, il complète la session au fil des reruns.
+        if key not in _ENRICHED_DATASETS:
+            import threading
+            threading.Thread(
+                target=_enrich_in_background, args=(key, data), daemon=True
+            ).start()
     except Exception:
         st.markdown(
             '<div class="accent-callout"><strong>LECTURE IMPOSSIBLE</strong> · '
@@ -2461,7 +2521,7 @@ def load_mdblist_dataset() -> None:
         # Expiration (pas un logout volontaire) : on efface la session et le
         # cookie SANS poser le marqueur ?msl_logged_out=1.
         mdb_oauth.expire_local_session(cookies)
-        _load_mdblist_cached.clear()
+        _clear_mdblist_caches()
         st.session_state.pop("_normalized_dataset", None)
         st.markdown(
             '<div class="accent-callout"><strong>SESSION EXPIRÉE</strong> · '
@@ -2532,7 +2592,7 @@ def render_data_loader() -> None:
     st.caption("Un chargement complet (historique, Watchlist, listes, notes, progression).")
     if st.button("📥 Charger mes données MDBList", type="primary", key="load_mdblist_dataset", use_container_width=True):
         with st.spinner("Chargement MDBList en lecture seule…"):
-            _load_mdblist_cached.clear()
+            _clear_mdblist_caches()
             load_mdblist_dataset()
         st.rerun()
 
@@ -2978,6 +3038,12 @@ GENRE_TMDB_KEYWORD = {
     "One-Man Show": "one man show",
     "One-man show": "one man show",
     "One man show": "one man show",
+    "One Woman Show": "one woman show",
+    "One-Woman Show": "one woman show",
+    "One-woman show": "one woman show",
+    "One woman show": "one woman show",
+    "Court-métrage": "short film",
+    "Événement sportif": "sporting event",
 }
 # Équivalences DANS les listes uniquement : labels désignant les mêmes
 # contenus selon la source (MDBList/IMDb vs TMDB). Sport et Super-héros en
@@ -3000,6 +3066,9 @@ GENRE_FR_TO_TMDB_TV = {
     "Documentaire": 99, "Drame": 18, "Familial": 10751,
     "Fantastique": 10765, "Science-Fiction": 10765,
     "Mystère": 9648, "Guerre": 10768, "Western": 37,
+    # Genres TV RÉELS chez TMDB (précis, pas d'approximation).
+    "Téléréalité": 10764, "Actualités": 10763, "Enfants": 10762,
+    "Divertissement": 10767, "Feuilleton": 10766,
 }
 
 
@@ -3548,14 +3617,21 @@ def _perfect_recommendation(
             return None
         item_kw: set = set()
         if keyword_resolved:
-            try:
-                kwdata = _fetch_tmdb_keywords(cand["kind"], cand["tmdb"], api_key)
-                item_kw = {
-                    int(k.get("id")) for k in (kwdata.get("keywords") or kwdata.get("results") or [])
-                    if isinstance(k, dict) and k.get("id")
-                }
-            except Exception:
-                item_kw = set()
+            # Les fiches incluent désormais les mots-clés (append_to_response
+            # « credits,keywords ») : zéro appel supplémentaire. Repli sur
+            # l'endpoint dédié pour les entrées mises en cache avant ce
+            # changement.
+            kw_block = payload.get("keywords") if isinstance(payload.get("keywords"), dict) else None
+            if kw_block is None:
+                try:
+                    kwdata = _fetch_tmdb_keywords(cand["kind"], cand["tmdb"], api_key)
+                    kw_block = kwdata
+                except Exception:
+                    kw_block = {}
+            item_kw = {
+                int(k.get("id")) for k in (kw_block.get("keywords") or kw_block.get("results") or [])
+                if isinstance(k, dict) and k.get("id")
+            }
         row = score_item(item, profile, source_name="🌐 Hors de tes listes")
         row["_outside"] = True
         return (row, classify_misses(payload, cand["kind"], item_kw))
@@ -3890,6 +3966,9 @@ def render_watchlist_page() -> None:
                     genre = genre.get("name") or genre.get("slug")
                 if genre:
                     names.add(str(genre).casefold())
+            # Les MOTS-CLÉS TMDB du média participent : « Sport » trouve
+            # aussi les contenus (de tes listes) marqués du mot-clé sport.
+            names |= {str(kw).casefold() for kw in (media.get("keywords") or [])}
             if genre_mode == "Tous (ET)":
                 return all(names & grp for grp in genre_groups)
             return any(names & grp for grp in genre_groups)
@@ -6936,7 +7015,7 @@ def page_dashboard() -> None:
             try:
                 # Sert le cache st.cache_data : 0 appel API après un F5 à chaud.
                 # Spinner visible uniquement lors du premier chargement (lourd).
-                with st.spinner("Chargement et enrichissement de vos données (acteurs, studios)…"):
+                with st.spinner("Chargement de vos données MDBList…"):
                     load_mdblist_dataset()
             except Exception:
                 pass
@@ -6989,6 +7068,12 @@ def page_dashboard() -> None:
     # ── Données MDBList affichées ────────────────────────────────────────────
     st.divider()
     st.markdown('<div class="page-title">📥 Vos données MDBList</div>', unsafe_allow_html=True)
+    if any(_ENRICH_IN_FLIGHT.values()):
+        st.caption(
+            "🎭 Enrichissement TMDB en arrière-plan (acteurs, studios, mots-clés)… "
+            "L'app est déjà utilisable ; les pages se complètent dans ~1 min "
+            "(ou au prochain clic)."
+        )
     render_data_loader()
     # Compte/quota replié (discret) : disponible sans encombrer l'écran.
     with st.expander("🎫 Compte MDBList & quota", expanded=False):
@@ -7011,7 +7096,7 @@ def page_dashboard() -> None:
     with _refresh_m:
         if st.button("🔄 Actualiser les données MDBList", type="primary", key="refresh_mdblist_bottom", use_container_width=True):
             with st.spinner("Actualisation MDBList…"):
-                _load_mdblist_cached.clear()
+                _clear_mdblist_caches()
                 load_mdblist_dataset()
             st.rerun()
     with _refresh_t:
@@ -7022,9 +7107,9 @@ def page_dashboard() -> None:
             "🎭 Actualiser acteurs & studios (TMDB)",
             type="primary", key="refresh_tmdb_bottom", use_container_width=True,
         ):
-            with st.spinner("Actualisation des données TMDB (acteurs, studios)… ≈30 s"):
+            with st.spinner("Actualisation des données TMDB (acteurs, studios)…"):
                 _fetch_tmdb_item.clear()
-                _load_mdblist_cached.clear()
+                _clear_mdblist_caches()
                 load_mdblist_dataset()
             st.rerun()
 
