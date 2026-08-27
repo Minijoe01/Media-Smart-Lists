@@ -924,6 +924,7 @@ PRESET_NAMES = [
     "📺 Binge express — mini-série terminée (≤ 8 ép.)",
     "♾️ Séries interminables (100+ épisodes)",
     "🌙 Séries à épisodes courts (≤ 30 min)",
+    "🕒 Séries à épisodes longs (≥ 45 min)",
     "▶️ Continuer ce que tu as commencé",
     "🎯 Presque finies — séries ≥ 80%",
     # ── Humeurs & genres ──
@@ -1011,6 +1012,8 @@ def preset_matches(name: str, row: dict[str, Any], profile: dict[str, Any]) -> b
         return row["type"] == "Film" and (row.get("runtime") or 0) >= 150
     if name.startswith("🌙"):
         return row["type"] == "Série" and 0 < (row.get("runtime") or 0) <= 30
+    if name.startswith("🕒"):
+        return row["type"] == "Série" and (row.get("runtime") or 0) >= 45
     if name.startswith("♾️"):
         return row["type"] == "Série" and (row.get("total_episodes") or 0) >= 100
     if name.startswith("🕵️"):

@@ -2963,6 +2963,35 @@ GENRE_TMDB_APPROX = {
     "One-man show": "Comédie",
     "One man show": "Comédie",
 }
+# MOTS-CLÉS TMDB : ces genres n'existent pas chez TMDB, mais ses MOTS-CLÉS
+# les couvrent précisément (ex. « sport » → The Last Dance, F1…). La
+# recherche hors-listes interroge le mot-clé : les résultats sont VRAIMENT
+# du sport, pas des drames approximatifs. Repli sur le genre approché
+# ci-dessus si le mot-clé est introuvable.
+GENRE_TMDB_KEYWORD = {
+    "Sport": "sport",
+    "Super-héros": "superhero",
+    "Biographie": "biography",
+    "Film noir": "film noir",
+    "Comédie musicale": "musical",
+    "One Man Show": "one man show",
+    "One-Man Show": "one man show",
+    "One-man show": "one man show",
+    "One man show": "one man show",
+}
+# Équivalences DANS les listes uniquement : labels désignant les mêmes
+# contenus selon la source (MDBList/IMDb vs TMDB). Sport et Super-héros en
+# sont EXCLUS (retour utilisateur) : ce sont de vrais genres dans tes
+# données, le filtre des listes reste exact pour eux.
+GENRE_LIST_EQUIV = {
+    "Biographie": "Histoire",
+    "Comédie musicale": "Musique",
+    "Film noir": "Crime",
+    "One Man Show": "Comédie",
+    "One-Man Show": "Comédie",
+    "One-man show": "Comédie",
+    "One man show": "Comédie",
+}
 GENRE_TMDB_TO_FR = {v: k for k, v in GENRE_FR_TO_TMDB.items()}
 
 GENRE_FR_TO_TMDB_TV = {
@@ -3053,6 +3082,54 @@ def _fetch_collection(collection_id: int, key: str) -> dict:
         raise
 
 
+@st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours : id de mot-clé
+def _tmdb_keyword_id(query: str, key: str) -> int | None:
+    """Cherche l'identifiant d'un MOT-CLÉ TMDB (ex. « sport », « superhero »).
+
+    None si introuvable (repli sur le genre approché) — sans lever d'erreur :
+    c'est une optimisation, pas une dépendance.
+    """
+    try:
+        response = requests.get(
+            "https://api.themoviedb.org/3/search/keyword",
+            params={"api_key": key, "query": query},
+            timeout=8,
+        )
+    except Exception:
+        return None
+    if response.status_code != 200:
+        return None
+    results = (response.json() or {}).get("results") or []
+    for item in results:
+        if str(item.get("name") or "").casefold() == query.casefold() and item.get("id"):
+            return int(item["id"])
+    if results and results[0].get("id"):
+        return int(results[0]["id"])
+    return None
+
+
+@st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours : mots-clés par contenu
+def _fetch_tmdb_keywords(kind: str, tmdb: int, key: str) -> dict:
+    """Mots-clés d'un film/série (endpoint séparé : le cache des fiches
+    principales reste invalide). Réseau → exception (non mis en cache)."""
+    try:
+        response = requests.get(
+            f"https://api.themoviedb.org/3/{kind}/{tmdb}/keywords",
+            params={"api_key": key},
+            timeout=8,
+        )
+    except requests.RequestException:
+        raise
+    if response.status_code == 404:
+        return {}
+    if response.status_code != 200:
+        raise RuntimeError(f"TMDB {kind}/{tmdb}/keywords a répondu HTTP {response.status_code}")
+    try:
+        return response.json()
+    except ValueError:
+        raise
+
+
 def _perfect_recommendation(
     profile: dict, dataset: dict, selected_type: str, selected_genres: list,
     note_min: float, api_key: str, excluded_genres: list | None = None,
@@ -3086,6 +3163,15 @@ def _perfect_recommendation(
     « 📚 Suite d'une saga entamée » ne renvoie QUE des suites de tes sagas.
     """
     sel_search = str(search_text or "").strip()
+    # Genres sans équivalent TMDB → MOTS-CLÉS TMDB (ex. « sport » → The Last
+    # Dance, F1…). Repli automatique sur le genre approché si introuvable.
+    keyword_resolved: dict[str, int] = {}
+    for g in (selected_genres or []):
+        kw_query = GENRE_TMDB_KEYWORD.get(str(g).strip())
+        if kw_query:
+            kw_id = _tmdb_keyword_id(kw_query, api_key)
+            if kw_id:
+                keyword_resolved[str(g).strip()] = kw_id
     sel_actors = [str(a).strip() for a in (selected_actors or []) if str(a).strip()]
     sel_directors = [str(d).strip() for d in (selected_directors or []) if str(d).strip()]
     sel_studios = [str(s).strip() for s in (selected_studios or []) if str(s).strip()]
@@ -3207,7 +3293,8 @@ def _perfect_recommendation(
     else:
         for media_type in types:
             genre_map = GENRE_FR_TO_TMDB_TV if media_type == "tv" else GENRE_FR_TO_TMDB
-            gids = [str(genre_map[g]) for g in query_genres if g in genre_map]
+            gids = [str(genre_map[g]) for g in query_genres
+                    if g in genre_map and g not in keyword_resolved]
             sep = "," if genre_mode == "Tous (ET)" else "|"
 
             if people_ids:
@@ -3254,6 +3341,10 @@ def _perfect_recommendation(
                 "api_key": api_key, "language": "fr-FR",
                 "vote_count.gte": 100, "vote_average.gte": 5.5,
             }
+            if keyword_resolved:
+                # Mot(s)-clé(s) TMDB : OR entre eux (le classement client
+                # exige ensuite chacun).
+                base["with_keywords"] = "|".join(str(k) for k in keyword_resolved.values())
             if year_range:
                 date_field = "primary_release_date" if media_type == "movie" else "first_air_date"
                 base[f"{date_field}.gte"] = f"{year_range[0]}-01-01"
@@ -3294,7 +3385,7 @@ def _perfect_recommendation(
         "Soirée (< 10h)": 600, "Week-end (< 24h)": 1440,
     }
 
-    def classify_misses(payload: dict, kind: str) -> list[str] | None:
+    def classify_misses(payload: dict, kind: str, item_keyword_ids: set | None = None) -> list[str] | None:
         """None = veto (genre/pays exclu, statut hors type) → jamais proposé.
         [] = parfait. Un seul élément = « presque ». Plusieurs = écarté."""
         # Carte des genres adaptée au type (les IDs TV ≠ IDs film).
@@ -3383,7 +3474,9 @@ def _perfect_recommendation(
 
         # Genres : comparaison par IDENTIFIANTS TMDB (robuste : les noms
         # fusionnés en TV comme « Sci-Fi & Fantasy » ne posent pas problème).
-        wanted_ids = {genre_map_ids.get(g) for g in sel_genres if genre_map_ids.get(g) is not None}
+        # Les genres résolus par MOT-CLÉ sont vérifiés à part ci-dessous.
+        wanted_ids = {genre_map_ids.get(g) for g in sel_genres
+                      if genre_map_ids.get(g) is not None and g not in keyword_resolved}
         if wanted_ids:
             if genre_mode == "Tous (ET)":
                 ok = wanted_ids.issubset(payload_genre_ids)
@@ -3393,6 +3486,11 @@ def _perfect_recommendation(
                 missing = [g for g in sel_genres if genre_map_ids.get(g) and genre_map_ids[g] not in payload_genre_ids]
                 missed.append("pas " + " / ".join(missing) + " (genre)")
 
+        # Genres résolus par mot-clé TMDB (ex. sport, superhero) : le contenu
+        # doit porter le mot-clé — sinon « presque ».
+        for g, kw_id in keyword_resolved.items():
+            if kw_id not in item_keyword_ids:
+                missed.append(f"sans {g.lower()} (mot-clé TMDB)")
         if included_countries and country not in included_countries:
             missed.append(f"pays non inclus ({country.upper() or '?'})")
         if year_range and not (year_range[0] <= year <= year_range[1]):
@@ -3448,9 +3546,19 @@ def _perfect_recommendation(
         item = _build_item_from_tmdb(cand["tmdb"], cand["kind"], payload)
         if not item:
             return None
+        item_kw: set = set()
+        if keyword_resolved:
+            try:
+                kwdata = _fetch_tmdb_keywords(cand["kind"], cand["tmdb"], api_key)
+                item_kw = {
+                    int(k.get("id")) for k in (kwdata.get("keywords") or kwdata.get("results") or [])
+                    if isinstance(k, dict) and k.get("id")
+                }
+            except Exception:
+                item_kw = set()
         row = score_item(item, profile, source_name="🌐 Hors de tes listes")
         row["_outside"] = True
-        return (row, classify_misses(payload, cand["kind"]))
+        return (row, classify_misses(payload, cand["kind"], item_kw))
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         enriched = [e for e in executor.map(enrich, candidates) if e]
@@ -3579,8 +3687,13 @@ def render_watchlist_page() -> None:
         # contenus DE tes listes reste, lui, exact.
         _notes_genre = []
         for _g in selected_genres:
-            if _g in GENRE_TMDB_APPROX:
-                _notes_genre.append(f"🔎 {_g} : recherche automatique sur {GENRE_TMDB_APPROX[_g]}")
+            if _g in GENRE_TMDB_KEYWORD:
+                _note = f"🔎 {_g} : recherche par mot-clé TMDB (« {GENRE_TMDB_KEYWORD[_g]} »)"
+                if _g in GENRE_LIST_EQUIV:
+                    _note += f" · dans tes listes : {_g} ≈ {GENRE_LIST_EQUIV[_g]}"
+                _notes_genre.append(_note)
+            elif _g in GENRE_LIST_EQUIV:
+                _notes_genre.append(f"🔎 {_g} ≈ {GENRE_LIST_EQUIV[_g]} dans tes listes")
             elif _g not in GENRE_FR_TO_TMDB and _g not in GENRE_FR_TO_TMDB_TV:
                 _notes_genre.append(f"🔎 {_g} : inconnu de TMDB, cherchable uniquement dans tes listes")
         if _notes_genre:
@@ -3762,10 +3875,10 @@ def render_watchlist_page() -> None:
         genre_groups: list[set] = []
         for g in selected_genres:
             grp = {str(g).casefold()}
-            sub = GENRE_TMDB_APPROX.get(g)
+            sub = GENRE_LIST_EQUIV.get(g)
             if sub:
                 grp.add(str(sub).casefold())
-            for origin, target in GENRE_TMDB_APPROX.items():
+            for origin, target in GENRE_LIST_EQUIV.items():
                 if target == g:
                     grp.add(str(origin).casefold())
             genre_groups.append(grp)
@@ -5910,6 +6023,34 @@ def _rated_contents_rows(dataset: dict) -> list[dict]:
     return out
 
 
+def _stats_period_bounds(period: str, now: datetime, custom_start=None, custom_end=None):
+    """Convertit la période des statistiques en bornes de dates.
+
+    Les libellés (« 12 derniers mois », « Ce mois-ci », « Aujourd'hui »…)
+    n'existent pas dans le moteur d'historique, qui les ignorait donc
+    silencieusement — le « Détail des visionnages » et « Mes contenus notés »
+    ne suivaient pas la période (bug signalé).
+    """
+    if period == "Cette année":
+        return date(now.year, 1, 1), date(now.year, 12, 31)
+    if period == "12 derniers mois":
+        return (now - timedelta(days=365)).date(), None
+    if period == "6 derniers mois":
+        return (now - timedelta(days=182)).date(), None
+    if period == "Ce mois-ci":
+        first = date(now.year, now.month, 1)
+        next_month = date(now.year + (1 if now.month == 12 else 0), 1 if now.month == 12 else now.month + 1, 1)
+        return first, next_month - timedelta(days=1)
+    if period == "Mois dernier":
+        prev_last = date(now.year, now.month, 1) - timedelta(days=1)
+        return date(prev_last.year, prev_last.month, 1), prev_last
+    if period == "Aujourd'hui":
+        return now.date(), now.date()
+    if period == "Période personnalisée":
+        return custom_start, custom_end
+    return None, None
+
+
 def render_basic_stats_page() -> None:
     st.markdown('<div class="page-title">📊 Statistiques</div>', unsafe_allow_html=True)
     dataset = _dataset()
@@ -6002,8 +6143,8 @@ def render_basic_stats_page() -> None:
         rated_rows = [r for r in rated_rows if r.get("type") == wanted_type]
     if genre_choice != "Tous":
         rated_rows = [r for r in rated_rows if genre_choice in (r.get("genres") or [])]
-    # Période : sur la DATE DE NOTATION (même moteur que l'historique,
-    # qui exige des datetimes — on parse les chaînes ISO).
+    # Période : sur la DATE DE NOTATION (bornes traduites — cf. le bug des
+    # libellés — et datetimes, comme l'exige le moteur d'historique).
     from history_engine import filter_history as _fh_rated
 
     def _dt(value):
@@ -6012,15 +6153,16 @@ def render_basic_stats_page() -> None:
         except (TypeError, ValueError):
             return None
 
+    _rated_lo, _rated_hi = _stats_period_bounds(period, datetime.now(PARIS_TZ), custom_start, custom_end)
     rated_rows = _fh_rated(
         [dict(r, watched_at=_dt(r.get("rated_at"))) for r in rated_rows],
-        period=period,
+        period="Période personnalisée",
         media_filter="Tous",
         genre_filter="Tous les genres",
         search="",
         sort_mode="Plus récents d’abord",
-        start_date=custom_start,
-        end_date=custom_end,
+        start_date=_rated_lo,
+        end_date=_rated_hi,
         now=datetime.now(PARIS_TZ),
     )
     rating_active = rating_lo > 0 or rating_hi < 10
@@ -6115,17 +6257,20 @@ def render_basic_stats_page() -> None:
             and (not query or query in f"{row.get('title', '')} {row.get('episode_label', '')}".casefold())
             and (genre_choice == "Tous" or genre_choice in (row.get("genres") or []))
         ]
-        # Appliquer la période sur les rows (via les dates)
+        # Appliquer la période sur les rows — bornes traduites (les libellés
+        # stats n'existent pas dans le moteur d'historique : la période était
+        # ignorée).
         from history_engine import filter_history as _fh
+        _hist_lo, _hist_hi = _stats_period_bounds(period, datetime.now(PARIS_TZ), custom_start, custom_end)
         visible = _fh(
             rows,
-            period=period,
+            period="Période personnalisée",
             media_filter="Tous",
             genre_filter="Tous les genres",
             search=search,
             sort_mode="Plus récents d’abord",
-            start_date=custom_start,
-            end_date=custom_end,
+            start_date=_hist_lo,
+            end_date=_hist_hi,
             now=datetime.now(PARIS_TZ),
         )
         if media_filter != "Tous":
