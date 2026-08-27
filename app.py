@@ -118,24 +118,99 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# PWA (application mobile) : manifest + icônes. BALISES SÉPARÉES du bloc
-# <style> ci-dessous : quand d'autres balises précèdent <style> dans le MÊME
-# bloc Markdown, le parseur du navigateur casse le bloc — le CSS entier
-# s'affichait alors en texte brut en haut de la page (V89). Ce petit bloc
-# n'a aucune ligne vide et aucun <style> : il passe toujours tel quel.
-st.markdown(
+def _file_b64(path: str) -> str:
+    """Contenu d'un fichier en base64 ('' si absent)."""
+    import base64 as _b64
+    try:
+        with open(path, "rb") as handle:
+            return _b64.b64encode(handle.read()).decode("ascii")
+    except Exception:
+        return ""
+
+
+_ICON_192_B64 = _file_b64("static/icon-192.png")
+_ICON_512M_B64 = _file_b64("static/icon-maskable-512.png")
+
+# Micro-script exécuté dans l'iframe composant (même origine grâce à
+# allow-same-origin) : il retire TOUT manifest concurrent (Streamlit peut en
+# injecter un à son nom) et déplace NOTRE manifest dans le <head> pour qu'il
+# soit le seul pris en compte par Chrome/Android à l'installation.
+_PWA_HEAD_SCRIPT = """
+<script>
+(function() {
+  try {
+    var doc = window.parent.document;
+    var links = Array.prototype.slice.call(doc.querySelectorAll('link[rel="manifest"]'));
+    var ours = null;
+    for (var i = 0; i < links.length; i++) {
+      var href = links[i].getAttribute('href') || '';
+      if (!ours && href.indexOf('data:') === 0) { ours = links[i]; }
+      else { links[i].parentNode.removeChild(links[i]); }
+    }
+    if (ours && ours.parentNode !== doc.head) { doc.head.appendChild(ours); }
+  } catch (e) { /* iframe isolée : le lien du corps suffit */ }
+})();
+</script>
+"""
+
+
+def _render_pwa_tags() -> None:
+    """PWA (application mobile) : manifest + icônes AUTO-CONTENUS (data URIs).
+
+    Pourquoi : l'app est privée (authentification Streamlit Cloud) — les
+    fichiers /app/static/* renvoient une REDIRECTION de connexion quand
+    l'installateur Android les récupère sans la session → l'icône et le nom
+    « Streamlit » remplaçaient les nôtres. En data URI, tout est embarqué
+    dans la page : aucun fetch externe, insensible à l'authentification.
+    Balises SÉPARÉES du bloc <style> (le parseur Markdown casse le bloc
+    <style> si d'autres balises le précèdent — incident V89).
     """
-    <link rel="manifest" href="/app/static/manifest.json">
-    <link rel="icon" href="/app/static/icon-192.png">
-    <meta name="theme-color" content="#00A392">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Media Smart">
-    <link rel="apple-touch-icon" href="/app/static/apple-touch-icon.png">
-    """,
-    unsafe_allow_html=True,
-)
+    try:
+        host = (st.context.headers or {}).get("Host") or "media-smart-lists.streamlit.app"
+    except Exception:
+        host = "media-smart-lists.streamlit.app"
+    base_url = f"https://{host}/"
+    import base64 as _b64
+    icons = []
+    if _ICON_192_B64:
+        icons.append({"src": "data:image/png;base64," + _ICON_192_B64,
+                      "sizes": "192x192", "type": "image/png"})
+    if _ICON_512M_B64:
+        icons.append({"src": "data:image/png;base64," + _ICON_512M_B64,
+                      "sizes": "512x512", "type": "image/png", "purpose": "maskable"})
+    manifest = {
+        "name": "Media Smart Lists",
+        "short_name": "Media Smart",
+        "lang": "fr",
+        "start_url": base_url,
+        "display": "standalone",
+        "orientation": "portrait-primary",
+        "background_color": "#021412",
+        "theme_color": "#00A392",
+        "icons": icons,
+    }
+    manifest_uri = "data:application/manifest+json;base64," + _b64.b64encode(
+        json.dumps(manifest, ensure_ascii=False).encode("utf-8")
+    ).decode("ascii")
+    tags = [f'<link rel="manifest" href="{manifest_uri}">']
+    if _ICON_192_B64:
+        tags.append(f'<link rel="icon" href="data:image/png;base64,{_ICON_192_B64}">')
+    tags += [
+        '<link rel="apple-touch-icon" href="/app/static/apple-touch-icon.png">',
+        '<meta name="theme-color" content="#00A392">',
+        '<meta name="mobile-web-app-capable" content="yes">',
+        '<meta name="apple-mobile-web-app-capable" content="yes">',
+        '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">',
+        '<meta name="apple-mobile-web-app-title" content="Media Smart">',
+    ]
+    st.markdown("\n".join(tags), unsafe_allow_html=True)
+    try:
+        st.components.v1.html(_PWA_HEAD_SCRIPT, height=0)
+    except Exception:
+        pass  # contexte composant indisponible : le lien du corps suffit
+
+
+_render_pwa_tags()
 
 st.markdown(
     """
@@ -2860,15 +2935,33 @@ GENRE_FR_TO_TMDB = {
     "Romance": 10749, "Science-Fiction": 878, "Thriller": 53, "Guerre": 10752,
     "Western": 37,
     # Genres sans identifiant TMDB propre : « Téléfilm » existe chez TMDB
-    # (TV Movie) ; « Biographie » et « Comédie musicale » sont assimilés au
-    # genre TMDB le plus proche pour la recherche « hors de mes listes »
-    # (le filtre des contenus de tes listes reste exact, lui).
-    "Téléfilm": 10770,
-    "Biographie": 36,           # → assimilé à Histoire
-    "Comédie musicale": 10402,  # → assimilé à Musique
+    # (TV Movie) ; les autres sont assimilés au genre TMDB le plus proche
+    # pour la recherche « hors de mes listes » — qui LANCE BIEN la recherche
+    # sur le genre de remplacement (le filtre des contenus de tes listes
+    # reste exact, lui).
+    "Téléfilm": 10770,           # genre réel TMDB (TV Movie)
+    "Biographie": 36,            # → recherche Histoire
+    "Comédie musicale": 10402,   # → recherche Musique
+    "Sport": 18,                 # → recherche Drame (films de sport)
+    "Super-héros": 28,           # → recherche Action
+    "Film noir": 80,             # → recherche Crime
+    "One Man Show": 35,          # → recherche Comédie (spectacles)
+    "One-Man Show": 35,
+    "One-man show": 35,
+    "One man show": 35,
 }
-# Genres affichés comme « assimilés » dans l'interface (information honnête).
-GENRE_TMDB_APPROX = {"Biographie": "Histoire", "Comédie musicale": "Musique"}
+# Substitutions affichées en une ligne courte (action, pas avertissement).
+GENRE_TMDB_APPROX = {
+    "Biographie": "Histoire",
+    "Comédie musicale": "Musique",
+    "Sport": "Drame",
+    "Super-héros": "Action",
+    "Film noir": "Crime",
+    "One Man Show": "Comédie",
+    "One-Man Show": "Comédie",
+    "One-man show": "Comédie",
+    "One man show": "Comédie",
+}
 GENRE_TMDB_TO_FR = {v: k for k, v in GENRE_FR_TO_TMDB.items()}
 
 GENRE_FR_TO_TMDB_TV = {
@@ -3382,6 +3475,43 @@ def _perfect_recommendation(
     return perfect_rows[:20], near_rows[:12]
 
 
+def _sort_rows_by_mode(rows: list[dict], sort_mode: str) -> list[dict]:
+    """Applique le tri choisi de la page aux résultats « hors de mes listes ».
+
+    Par défaut (et pour les tris sans objet ici, ex. dates d'ajout) :
+    score personnel décroissant. La sélection (20 parfaites / 12 presque)
+    reste fondée sur le score — seul l'ORDRE d'affichage change.
+    """
+    rows = list(rows)
+    if sort_mode.startswith("⭐ Moins bien"):
+        rows.sort(key=lambda r: ((r.get("note") or 0), -r.get("score", 0)))
+    elif sort_mode.startswith("⭐"):
+        rows.sort(key=lambda r: (-(r.get("note") or 0), -r.get("score", 0)))
+    elif sort_mode.startswith("⏱️ Plus long"):
+        rows.sort(key=lambda r: (-(r.get("runtime") or 0), -r.get("score", 0)))
+    elif sort_mode.startswith("⏱️"):
+        rows.sort(key=lambda r: ((r.get("runtime") or 10**9), -r.get("score", 0)))
+    elif sort_mode.startswith("🔥 Moins"):
+        rows.sort(key=lambda r: ((r.get("votes") or 0), -r.get("score", 0)))
+    elif sort_mode.startswith("🔥"):
+        rows.sort(key=lambda r: (-(r.get("votes") or 0), -r.get("score", 0)))
+    elif sort_mode.startswith("🆒"):
+        rows.sort(key=lambda r: ((r.get("year") or 0), -r.get("score", 0)))
+    elif sort_mode.startswith("🆕"):
+        rows.sort(key=lambda r: (-(r.get("year") or 0), -r.get("score", 0)))
+    elif sort_mode.startswith("🚪 Le plus exigeant"):
+        rows.sort(key=lambda r: ((r.get("friction") or 0), -r.get("score", 0)))
+    elif sort_mode.startswith("🚪"):
+        rows.sort(key=lambda r: (-(r.get("friction") or 0), -r.get("score", 0)))
+    elif sort_mode.startswith("🎬"):
+        rows.sort(key=lambda r: (r.get("type") != "Film", -r.get("score", 0)))
+    elif sort_mode.startswith("📺"):
+        rows.sort(key=lambda r: (r.get("type") != "Série", -r.get("score", 0)))
+    else:
+        rows.sort(key=lambda r: -r.get("score", 0))
+    return rows
+
+
 def render_watchlist_page() -> None:
     st.markdown('<div class="page-title">🎯 Que regarder ?</div>', unsafe_allow_html=True)
     sections = _sections()
@@ -3448,17 +3578,17 @@ def render_watchlist_page() -> None:
             key="qr_genre_mode",
             horizontal=True,
         )
-        # Transparence : genres que TMDB ne connaît pas (ex. Biographie).
-        # Le filtre des contenus DE tes listes reste exact ; seule la
-        # recherche « hors de tes listes » est concernée.
+        # Genres que TMDB ne connaît pas : la recherche « hors de tes
+        # listes » est LANCÉE sur le genre de remplacement indiqué (le
+        # filtre des contenus DE tes listes reste, lui, exact).
         _notes_genre = []
         for _g in selected_genres:
             if _g in GENRE_TMDB_APPROX:
-                _notes_genre.append(f"{_g} → assimilé à {GENRE_TMDB_APPROX[_g]} hors de tes listes")
+                _notes_genre.append(f"🔎 {_g} → recherche {GENRE_TMDB_APPROX[_g]} sur TMDB")
             elif _g not in GENRE_FR_TO_TMDB and _g not in GENRE_FR_TO_TMDB_TV:
-                _notes_genre.append(f"{_g} : inconnu de TMDB, cherchable uniquement dans tes listes")
+                _notes_genre.append(f"🔎 {_g} : inconnu de TMDB, cherchable uniquement dans tes listes")
         if _notes_genre:
-            st.caption("ℹ️ " + " · ".join(_notes_genre) + ".")
+            st.caption(" · ".join(_notes_genre) + ".")
         excluded_genres = st.multiselect(
             "🚫 Genres à exclure",
             genre_titles,
@@ -3593,8 +3723,8 @@ def render_watchlist_page() -> None:
             "Trier par",
             [
                 "✨ Pour moi (recommandé)",
-                "⭐ Meilleures notes",
-                "⭐ Notes les plus basses",
+                "⭐ Mieux notés par la communauté",
+                "⭐ Moins bien notés par la communauté",
                 "⏱️ Plus rapide",
                 "⏱️ Plus long d'abord",
                 "🔥 Populaires",
@@ -3731,7 +3861,7 @@ def render_watchlist_page() -> None:
     display_rows = list(filtered)
     if sort_mode.startswith("✨"):
         display_rows.sort(key=lambda row: (-row["score"], -row["friction"]))
-    elif sort_mode.startswith("⭐ Notes"):
+    elif sort_mode.startswith("⭐ Moins bien"):
         display_rows.sort(key=lambda row: ((row.get("note") or 0), -row["score"]))
     elif sort_mode.startswith("⭐"):
         display_rows.sort(key=lambda row: (-(row.get("note") or 0), -row["score"]))
@@ -3857,12 +3987,16 @@ def render_watchlist_page() -> None:
 
     if _perfect_results is not None:
         perfect_rows, near_rows = _perfect_results
+        # Le tri choisi s'applique AUSSI aux résultats hors-listes.
+        perfect_rows = _sort_rows_by_mode(perfect_rows, sort_mode)
+        near_rows = _sort_rows_by_mode(near_rows, sort_mode)
         st.markdown(f"### 🎯 Vos propositions parfaites — hors de vos listes ({len(perfect_rows)})")
         st.caption(
             "Tous les critères remplis de la page sont appliqués : recherche, genres, acteurs, "
             "réalisateur, studio, pays, époque, durée, temps max, statut, note. Le grand bassin TMDB "
             "(filmographies complètes, suites de sagas entamées, tri popularité/note/récence) est "
             "scoré par TON profil : seuls tes meilleurs scores remontent — pas les seuls contenus populaires."
+            + (f" Tri affiché : {sort_mode}." if not sort_mode.startswith("✨") else "")
         )
         if perfect_rows:
             for result in perfect_rows:
@@ -3906,8 +4040,8 @@ def render_watchlist_page() -> None:
         # « Du plus rapide au plus long », « Moins populaires » → « Les plus
         # populaires », « Plus anciens » → « récentes », etc.).
         sort_section_titles = {
-            "⭐ Meilleures notes": "⭐ Les mieux notés d’abord",
-            "⭐ Notes les plus basses": "⭐ Notes les plus basses d’abord",
+            "⭐ Mieux notés par la communauté": "⭐ Les mieux notés par la communauté",
+            "⭐ Moins bien notés par la communauté": "⭐ Les moins bien notés par la communauté",
             "⏱️ Plus rapide": "⏱️ Du plus rapide au plus long",
             "⏱️ Plus long d'abord": "⏱️ Du plus long au plus rapide",
             "🔥 Populaires": "🔥 Les plus populaires",
@@ -5667,6 +5801,69 @@ def render_detailed_stats_page(filtered: "pd.DataFrame", period_label: str) -> N
         st.caption("La période filtrée couvre moins de 2 années — élargis la période (« Tout ») pour voir l'évolution.")
 
 
+def _rated_contents_rows(dataset: dict) -> list[dict]:
+    """Contenus NOTÉS (films/séries), dédupliqués — pas les visionnages.
+
+    Ex. « Dragon Ball Z 10/10 » apparaît une ligne, sans le détail de chaque
+    épisode. Les notes d'épisodes/saisons sont attribuées à la série parente
+    (la meilleure note donnée est conservée).
+    """
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+    ratings = sections.get("ratings") or {}
+    by_key: dict[str, dict] = {}
+
+    def rating_of(row: dict):
+        try:
+            value = float(row.get("rating") or 0)
+        except (TypeError, ValueError):
+            return None
+        return value if value > 0 else None
+
+    def base_item(media: dict, kind: str, rating: float, rated_at) -> dict:
+        return {
+            "type": "Film" if kind == "movie" else "Série",
+            "title": _media_title(media),
+            "year": _media_year(media),
+            "genres": _genres(media),
+            "rating": rating,
+            "note_publique": _public_note(media),
+            "rated_at": rated_at,
+        }
+
+    for section, kind in (("movies", "movie"), ("shows", "tv")):
+        for row in ratings.get(section) or []:
+            if not isinstance(row, dict):
+                continue
+            media = _unwrap_media(row)
+            rating = rating_of(row)
+            if not isinstance(media, dict) or rating is None:
+                continue
+            key = str(_media_tmdb_id(media) or id(media))
+            by_key[key] = base_item(media, kind, rating, row.get("rated_at"))
+    # Notes d'épisodes/saisons → série parente (meilleure note conservée).
+    for section in ("episodes", "seasons"):
+        for row in ratings.get(section) or []:
+            if not isinstance(row, dict):
+                continue
+            rating = rating_of(row)
+            if rating is None:
+                continue
+            episode = row.get("episode") if isinstance(row.get("episode"), dict) else row
+            show = episode.get("show") if isinstance(episode.get("show"), dict) else row.get("show")
+            if not isinstance(show, dict):
+                continue
+            key = str(_media_tmdb_id(show) or id(show))
+            existing = by_key.get(key)
+            if existing is None:
+                by_key[key] = base_item(show, "tv", rating, row.get("rated_at"))
+            elif (existing.get("rating") or 0) < rating:
+                existing["rating"] = rating
+                existing["rated_at"] = row.get("rated_at")
+    out = list(by_key.values())
+    out.sort(key=lambda r: (-(r.get("rating") or 0), str(r.get("title") or "").casefold()))
+    return out
+
+
 def render_basic_stats_page() -> None:
     st.markdown('<div class="page-title">📊 Statistiques</div>', unsafe_allow_html=True)
     dataset = _dataset()
@@ -5750,6 +5947,53 @@ def render_basic_stats_page() -> None:
     rating_txt = f" · **ma note {rating_lo}–{rating_hi}/10**" if (rating_lo > 0 or rating_hi < 10) else ""
     st.caption(f"🎯 Filtres appliqués : **{media_filter}** · **{genre_choice}** · **{period_label}**{rating_txt} — {len(filtered)} visionnage(s).")
 
+    # ── ⭐ Mes contenus notés (retrouver vite ses 10/10, etc.) ──────────────
+    rated_rows = _rated_contents_rows(dataset)
+    if rating_lo > 0 or rating_hi < 10:
+        rated_rows = [r for r in rated_rows if rating_lo <= (r.get("rating") or 0) <= rating_hi]
+    if media_filter != "Tous":
+        wanted_type = "Film" if media_filter == "Films" else "Série"
+        rated_rows = [r for r in rated_rows if r.get("type") == wanted_type]
+    if genre_choice != "Tous":
+        rated_rows = [r for r in rated_rows if genre_choice in (r.get("genres") or [])]
+    rating_active = rating_lo > 0 or rating_hi < 10
+    with st.expander(f"⭐ Mes contenus notés ({len(rated_rows)})", expanded=bool(rated_rows) and rating_active):
+        st.caption(
+            "Une ligne par contenu noté (pas de détail par épisode : « DBZ 10/10 » "
+            "suffit). Suit le filtre « Ma note personnelle » et les slicers "
+            "type/genre — pratique pour recommander tes coups de cœur."
+        )
+        if rated_rows:
+            rated_table = [
+                {
+                    "Type": r.get("type"),
+                    "Titre": r.get("title"),
+                    "Année": r.get("year") or "—",
+                    "Genres": " · ".join(r.get("genres") or []) or "—",
+                    "Ma note": f"{r['rating']:g}/10",
+                    "Note communauté": f"{r['note_publique']:.1f}/10" if r.get("note_publique") else "—",
+                    "Noté le": _format_date(r.get("rated_at")) or "—",
+                }
+                for r in rated_rows
+            ]
+            st.dataframe(rated_table, use_container_width=True, hide_index=True)
+            import csv as _csv
+            import io as _io
+            buf = _io.StringIO()
+            writer = _csv.DictWriter(buf, fieldnames=list(rated_table[0].keys()))
+            writer.writeheader()
+            writer.writerows(rated_table)
+            st.download_button(
+                "⬇️ Télécharger mes contenus notés (CSV)",
+                data="\ufeff" + buf.getvalue(),
+                file_name="media-smart-lists-mes-notes.csv",
+                mime="text/csv",
+                type="primary",
+                key="download_rated_contents",
+            )
+        else:
+            st.caption("Aucun contenu noté dans cette plage de notes.")
+
     # ── Acteurs & studios préférés — suit les slicers (période, type, genre) ──
     filtered_tmdb: set[str] = set()
     for ids in filtered.get("ids", []):
@@ -5823,6 +6067,8 @@ def render_basic_stats_page() -> None:
             visible = [r for r in visible if r.get("type") == wanted]
         if genre_choice != "Tous":
             visible = [r for r in visible if genre_choice in (r.get("genres") or [])]
+        if rating_lo > 0 or rating_hi < 10:
+            visible = [r for r in visible if rating_lo <= (r.get("personal_rating") or 0) <= rating_hi]
 
         total_plays = sum(int(row.get("plays") or 1) for row in visible)
         total_minutes = sum(int(row.get("total_minutes") or 0) for row in visible)
