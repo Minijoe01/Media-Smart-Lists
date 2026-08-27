@@ -131,10 +131,11 @@ def _file_b64(path: str) -> str:
 _ICON_192_B64 = _file_b64("static/icon-192.png")
 _ICON_512M_B64 = _file_b64("static/icon-maskable-512.png")
 
-# Micro-script exécuté dans l'iframe composant (même origine grâce à
-# allow-same-origin) : il retire TOUT manifest concurrent (Streamlit peut en
-# injecter un à son nom) et déplace NOTRE manifest dans le <head> pour qu'il
-# soit le seul pris en compte par Chrome/Android à l'installation.
+# Micro-script exécuté dans l'iframe (même origine grâce à allow-same-
+# origin) : (1) il retire TOUT manifest concurrent (Streamlit peut en
+# injecter un à son nom) et déplace NOTRE manifest dans le <head> ; (2) il
+# gère l'ascenseur : changement de page → haut de page, retour sur une page
+# déjà visitée → position mémorisée (sessionStorage, par onglet).
 _PWA_HEAD_SCRIPT = """
 <script>
 (function() {
@@ -149,6 +150,52 @@ _PWA_HEAD_SCRIPT = """
     }
     if (ours && ours.parentNode !== doc.head) { doc.head.appendChild(ours); }
   } catch (e) { /* iframe isolée : le lien du corps suffit */ }
+
+  // ── Ascenseur : haut en changement de page, position restaurée au retour
+  try {
+    var w = window.parent;
+    var d = w.document;
+    var KEY = 'msl_scroll_positions';
+    function load() {
+      try { return JSON.parse(w.sessionStorage.getItem(KEY) || '{}'); } catch (e) { return {}; }
+    }
+    function save(obj) {
+      try { w.sessionStorage.setItem(KEY, JSON.stringify(obj)); } catch (e) {}
+    }
+    function currentPage() {
+      var t = d.querySelector('.page-title');
+      return t ? String(t.textContent || '').trim() : '';
+    }
+    function scrollPos() {
+      return w.scrollY || d.documentElement.scrollTop || d.body.scrollTop || 0;
+    }
+    // Sauvegarde (allégée) de la position de la page courante.
+    var pending = null;
+    d.addEventListener('scroll', function() {
+      if (pending) return;
+      pending = w.setTimeout(function() {
+        pending = null;
+        var p = currentPage();
+        if (!p) return;
+        var obj = load();
+        obj[p] = scrollPos();
+        save(obj);
+      }, 250);
+    }, true);
+    // Au changement de page : restaurer la position connue, sinon le haut.
+    var lastPage = null;
+    function apply() {
+      var p = currentPage();
+      if (!p || p === lastPage) return;
+      lastPage = p;
+      var target = load()[p];
+      w.scrollTo(0, (typeof target === 'number' && target > 60) ? target : 0);
+    }
+    var root = d.querySelector('.stApp') || d.body;
+    var obs = new MutationObserver(function() { w.setTimeout(apply, 80); });
+    obs.observe(root, { childList: true, subtree: true });
+    w.setTimeout(apply, 120);
+  } catch (e) { /* ascenseur : comportement normal sans le script */ }
 })();
 </script>
 """
@@ -2684,13 +2731,16 @@ def render_dataset_overview() -> None:
         total_titles = len(all_media)
         with_actors = sum(1 for m, _ in all_media if m.get("actors"))
         with_studios = sum(1 for m, _ in all_media if m.get("studios"))
+        with_keywords = sum(1 for m, _ in all_media if m.get("keywords"))
         if total_titles:
             full = with_actors == total_titles and with_studios == total_titles
             st.caption(
                 f"🎭 Acteurs TMDB : {with_actors}/{total_titles} titre(s) · "
-                f"🏢 Studios : {with_studios}/{total_titles} titre(s)"
+                f"🏢 Studios : {with_studios}/{total_titles} titre(s) · "
+                f"🏷️ Mots-clés : {with_keywords}/{total_titles} titre(s)"
                 + (" ✅ couverture complète de ton historique et de tes listes" if full else
                    " — les titres manquants n'ont pas de fiche TMDB ou d'identifiant TMDb")
+                + (" · ⏳ enrichissement en cours" if any(_ENRICH_IN_FLIGHT.values()) else "")
             )
     except Exception:
         pass
@@ -2715,6 +2765,7 @@ def _reset_recommendation_filters() -> None:
         "qr_directors": [],
         "qr_studios": [],
         "qr_cast_mode": "Au moins un (OU)",
+        "qr_styles": [],
     }
     for key, value in defaults.items():
         st.session_state[key] = value
@@ -3049,6 +3100,68 @@ GENRE_TMDB_KEYWORD = {
     "Court-métrage": "short film",
     "Événement sportif": "sporting event",
 }
+# CATALOGUE DE STYLES & AMBIANCES : filtres thématiques par MOT-CLÉ TMDB
+# (demande : « pleeein de filtres possibles » — mindfuck, films qui font
+# pleurer, énigmes, sport auto…). Les identifiants sont résolus à la
+# première utilisation puis mis en cache 30 jours. Le filtre s'applique
+# aux contenus de tes listes (mots-clés stockés) ET à la recherche
+# hors-listes (with_keywords).
+STYLE_CATALOG: dict[str, str] = {
+    "🌀 Mindfuck": "mindfuck",
+    "😢 Bouleversant": "tearjerker",
+    "🧩 Énigme à résoudre": "puzzle",
+    "🪢 Intrigue non linéaire": "nonlinear timeline",
+    "🏎️ Sport auto": "auto racing",
+    "🏎️ Formule 1": "formula one",
+    "🏁 NASCAR": "nascar",
+    "🥊 Boxe": "boxing",
+    "⚽ Football": "football",
+    "🏀 Basket": "basketball",
+    "⚾ Baseball": "baseball",
+    "🥋 Arts martiaux": "martial arts",
+    "♟️ Échecs": "chess",
+    "🕰️ Voyage dans le temps": "time travel",
+    "🔁 Boucle temporelle": "time loop",
+    "🚔 Course-poursuite": "car chase",
+    "💰 Braquage / heist": "heist",
+    "😨 Body horror": "body horror",
+    "🔪 Slasher": "slasher",
+    "📹 Found footage": "found footage",
+    "🤡 Comédie noire": "dark comedy",
+    "🦖 Kaiju / monstres géants": "kaiju",
+    "🤖 Cyberpunk": "cyberpunk",
+    "⚙️ Steampunk": "steampunk",
+    "🌍 Post-apocalyptique": "post-apocalypse",
+    "🏛️ Dystopie": "dystopia",
+    "😊 Feel-good": "feel good",
+    "🎭 Satire": "satire",
+    "📋 Histoire vraie": "based on true story",
+    "⚔️ Vengeance": "revenge",
+    "🌌 Space opera": "space opera",
+    "🔍 Néo-noir": "neo-noir",
+    "📸 Mockumentaire": "mockumentary",
+    "🧟 Zombie": "zombie",
+    "🧛 Vampire": "vampire",
+    "🐺 Loup-garou": "werewolf",
+    "👻 Fantômes": "ghost",
+    "🧙 Magie et sorcellerie": "witchcraft",
+    "🐉 Dragons": "dragon",
+    "🎓 Coming of age": "coming of age",
+    "✈️ Aviation": "aviation",
+    "🌋 Survie": "survival",
+    "🏔️ Montagne / alpinisme": "mountaineering",
+    "🎸 Film de concert": "concert film",
+    "🍳 Cuisine": "cooking",
+    "🐺 Nature et animaux sauvages": "wildlife",
+    "📖 Adaptation d'un roman": "based on novel",
+    "🗞️ Journalisme": "journalism",
+    "⚖️ Procès / tribunal": "courtroom",
+    "🕵️ True crime": "true crime",
+    "🌍 Film de voyage (road movie)": "road movie",
+    "🎅 Film de Noël": "christmas",
+    "🧸 Animation en volume": "stop motion",
+}
+
 # Identifiants de mots-clés VÉRIFIÉS (liens TMDB de l'utilisateur) : pas
 # de recherche runtime, le bon mot-clé garanti (sports=6075, superhero=9715).
 GENRE_TMDB_KEYWORD_ID = {
@@ -3218,7 +3331,7 @@ def _perfect_recommendation(
     genre_mode: str = "Au moins un (OU)", cast_mode: str = "Au moins un (OU)",
     search_text: str | None = None, duration_min: str = "Aucune",
     time_filter: str = "Aucune limite", status_filter: str = "Tous les statuts",
-    preset: str = "Aucun preset",
+    preset: str = "Aucun preset", selected_styles: list | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Reco « Hors de mes listes » — GRAND BASSIN TMDB + TOUS les critères en ET.
 
@@ -3242,8 +3355,9 @@ def _perfect_recommendation(
     « 📚 Suite d'une saga entamée » ne renvoie QUE des suites de tes sagas.
     """
     sel_search = str(search_text or "").strip()
-    # Genres sans équivalent TMDB → MOTS-CLÉS TMDB (ex. « sport » → The Last
+    # Genres sans équivalent TMDB → MOTS-CLÉS TMDB (ex. « sports » → The Last
     # Dance, F1…). Repli automatique sur le genre approché si introuvable.
+    # Les STYLES du catalogue sont résolus pareil (mindfuck, heist…).
     keyword_resolved: dict[str, int] = {}
     for g in (selected_genres or []):
         kw_query = GENRE_TMDB_KEYWORD.get(str(g).strip())
@@ -3251,6 +3365,22 @@ def _perfect_recommendation(
             kw_id = GENRE_TMDB_KEYWORD_ID.get(kw_query) or _tmdb_keyword_id(kw_query, api_key)
             if kw_id:
                 keyword_resolved[str(g).strip()] = kw_id
+    for style in (selected_styles or []):
+        kw_query = STYLE_CATALOG.get(str(style).strip())
+        if kw_query:
+            kw_id = GENRE_TMDB_KEYWORD_ID.get(kw_query) or _tmdb_keyword_id(kw_query, api_key)
+            if kw_id:
+                keyword_resolved[str(style).strip()] = kw_id
+    # Générique : n'importe quel autre genre inconnu de TMDB (ex. un genre
+    # exotique de tes données) est tenté comme mot-clé — s'il existe, le
+    # filtre fonctionne sans aucune configuration.
+    for g in (selected_genres or []):
+        g = str(g).strip()
+        if (g and g not in keyword_resolved and g not in GENRE_TMDB_KEYWORD
+                and g not in GENRE_FR_TO_TMDB and g not in GENRE_FR_TO_TMDB_TV):
+            kw_id = _tmdb_keyword_id(g, api_key)
+            if kw_id:
+                keyword_resolved[g] = kw_id
     sel_actors = [str(a).strip() for a in (selected_actors or []) if str(a).strip()]
     sel_directors = [str(d).strip() for d in (selected_directors or []) if str(d).strip()]
     sel_studios = [str(s).strip() for s in (selected_studios or []) if str(s).strip()]
@@ -3422,7 +3552,7 @@ def _perfect_recommendation(
             }
             if keyword_resolved:
                 # Mot(s)-clé(s) TMDB : OR entre eux (le classement client
-                # exige ensuite chacun).
+                # exige ensuite chacun — ET implicite entre styles/genres).
                 base["with_keywords"] = "|".join(str(k) for k in keyword_resolved.values())
             if year_range:
                 date_field = "primary_release_date" if media_type == "movie" else "first_air_date"
@@ -3890,12 +4020,20 @@ def render_watchlist_page() -> None:
             key="qr_studios",
             placeholder="Studio…",
         )
+        # ── 🎭 Styles & ambiances (catalogue de mots-clés TMDB) ────────────
+        selected_styles = st.multiselect(
+            "🎭 Styles & ambiances",
+            list(STYLE_CATALOG.keys()),
+            key="qr_styles",
+            placeholder="Mindfuck, heist, histoire vraie, Formule 1…",
+        )
+
         st.caption(
             "🎭 Genres : « Tous (ET) » = TOUS les genres choisis · « Au moins un (OU) » = n'importe lequel. "
             "🎬 Acteurs : même logique ET/OU. 🏢 Studios : toujours « au moins un ». "
             "🎯 « Hors de mes listes » applique TOUS les critères remplis de la page en ET "
             "(recherche par titre, genres, acteurs, réalisateur, studio, pays, époque, durée, "
-            "statut, note) — un critère vide est ignoré."
+            "statut, note, styles) — un critère vide est ignoré."
         )
 
     # ── 🔍 Filtres ────────────────────────────────────────────────────────
@@ -3968,6 +4106,16 @@ def render_watchlist_page() -> None:
     st.button("🔄 Réinitialiser tous les filtres", on_click=_reset_recommendation_filters, key="reset_qr", type="primary", use_container_width=True)
 
     items = list(source["movies"]) + list(source["shows"])
+    if selected_styles:
+        # Styles = MOTS-CLÉS TMDB stockés sur les médias enrichis. Tous les
+        # styles choisis doivent être présents (ET) — comme un mood précis.
+        wanted_styles = {STYLE_CATALOG[s].casefold() for s in selected_styles if s in STYLE_CATALOG}
+
+        def _match_styles(media):
+            kws = {str(kw).casefold() for kw in (media.get("keywords") or [])}
+            return wanted_styles.issubset(kws)
+
+        items = [item for item in items if _match_styles(item)]
     if selected_genres:
         # Filtrage LOCAL : les items ont DÉJÀ tous leurs genres grâce à
         # l'enrichissement TMDB. Plus d'appel API MDBList → économise le quota
@@ -4192,6 +4340,7 @@ def render_watchlist_page() -> None:
         int(year_lo), int(year_hi), float(note_min),
         str(search or "").strip().casefold(),
         duration_min, time_filter, status_filter, cast_mode, preset,
+        tuple(selected_styles or []),
         str((_dataset() or {}).get("loaded_at") or ""),
     )
     if st.session_state.get("_outside_sig") == _outside_sig:
@@ -4219,6 +4368,7 @@ def render_watchlist_page() -> None:
                     time_filter=time_filter,
                     status_filter=status_filter,
                     preset=preset,
+                    selected_styles=selected_styles if selected_styles else None,
                 )
                 st.session_state["_outside_results"] = _perfect_results
                 st.session_state["_outside_sig"] = _outside_sig
