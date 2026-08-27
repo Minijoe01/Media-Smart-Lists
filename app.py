@@ -2452,11 +2452,9 @@ def _enrich_in_background(cache_key: str, data: dict) -> None:
     Les médias sont modifiés EN PLACE : ce sont les mêmes objets que ceux de
     la session — l'app se complète au fil des reruns, sans attendre. Une fois
     terminé, le dataset enrichi est mémorisé pour les rechargements (F5) tant
-    que le conteneur vit.
+    que le conteneur vit. (Le drapeau `_ENRICH_IN_FLIGHT` est posé par
+    l'APPELANT avant le lancement du thread.)
     """
-    if _ENRICH_IN_FLIGHT.get(cache_key):
-        return
-    _ENRICH_IN_FLIGHT[cache_key] = True
     try:
         _enrich_tmdb_metadata(data)
         _ENRICHED_DATASETS[cache_key] = data
@@ -2492,6 +2490,9 @@ def load_mdblist_dataset() -> None:
         #    PLAN : invisible, il complète la session au fil des reruns.
         if key not in _ENRICHED_DATASETS:
             import threading
+            _ENRICH_IN_FLIGHT[key] = True  # posé AVANT le lancement : sinon
+            # le rerun qui suit peut passer avant le thread et le message
+            # « enrichissement en cours » n'apparaissait jamais.
             threading.Thread(
                 target=_enrich_in_background, args=(key, data), daemon=True
             ).start()
@@ -3029,7 +3030,10 @@ GENRE_TMDB_APPROX = {
 # du sport, pas des drames approximatifs. Repli sur le genre approché
 # ci-dessus si le mot-clé est introuvable.
 GENRE_TMDB_KEYWORD = {
-    "Sport": "sport",
+    # ⚠️ Noms EXACTS des mots-clés TMDB : le mot-clé sport est « sports »
+    # (id 6075, lien fourni par l'utilisateur), pas « sport » — c'est pour
+    # ça que The Last Dance ne remontait pas.
+    "Sport": "sports",
     "Super-héros": "superhero",
     "Biographie": "biography",
     "Film noir": "film noir",
@@ -3044,6 +3048,12 @@ GENRE_TMDB_KEYWORD = {
     "One woman show": "one woman show",
     "Court-métrage": "short film",
     "Événement sportif": "sporting event",
+}
+# Identifiants de mots-clés VÉRIFIÉS (liens TMDB de l'utilisateur) : pas
+# de recherche runtime, le bon mot-clé garanti (sports=6075, superhero=9715).
+GENRE_TMDB_KEYWORD_ID = {
+    "sports": 6075,
+    "superhero": 9715,
 }
 # Équivalences DANS les listes uniquement : labels désignant les mêmes
 # contenus selon la source (MDBList/IMDb vs TMDB). Sport et Super-héros en
@@ -3238,7 +3248,7 @@ def _perfect_recommendation(
     for g in (selected_genres or []):
         kw_query = GENRE_TMDB_KEYWORD.get(str(g).strip())
         if kw_query:
-            kw_id = _tmdb_keyword_id(kw_query, api_key)
+            kw_id = GENRE_TMDB_KEYWORD_ID.get(kw_query) or _tmdb_keyword_id(kw_query, api_key)
             if kw_id:
                 keyword_resolved[str(g).strip()] = kw_id
     sel_actors = [str(a).strip() for a in (selected_actors or []) if str(a).strip()]
@@ -3699,6 +3709,25 @@ def _sort_rows_by_mode(rows: list[dict], sort_mode: str) -> list[dict]:
 
 def render_watchlist_page() -> None:
     st.markdown('<div class="page-title">🎯 Que regarder ?</div>', unsafe_allow_html=True)
+    # AUDIT : cette page dépend des données TMDB (genres complets, acteurs,
+    # studios → scores et tri). Pendant l'enrichissement en arrière-plan, on
+    # affiche un écran d'attente auto-actualisé au lieu de listes mal triées
+    # (les autres pages fonctionnent, elles, avec les données MDBList).
+    if any(_ENRICH_IN_FLIGHT.values()):
+        st.markdown(
+            '<div class="accent-callout"><strong>⏳ CHARGEMENT DES DONNÉES TMDB EN COURS</strong> · '
+            'Cette page trie et note tes contenus grâce aux genres, acteurs et studios TMDB '
+            '(≈ 1 min après un redémarrage). Elle va s\'actualiser toute seule — ou reviens '
+            'dans un instant. Les autres pages sont déjà utilisables.</div>',
+            unsafe_allow_html=True,
+        )
+        count = int(st.session_state.get("_qr_tmdb_wait") or 0) + 1
+        st.session_state["_qr_tmdb_wait"] = count
+        if count <= 25:  # ~100 s d'attente active maximum, puis on affiche
+            time.sleep(4)
+            st.rerun()
+    else:
+        st.session_state["_qr_tmdb_wait"] = 0
     sections = _sections()
     sources = _dataset().get("sources") or []
     if not any(source["movies"] or source["shows"] for source in sources):
@@ -3957,6 +3986,13 @@ def render_watchlist_page() -> None:
             for origin, target in GENRE_LIST_EQUIV.items():
                 if target == g:
                     grp.add(str(origin).casefold())
+            # Le NOM du mot-clé TMDB (ex. « superhero », « sports ») fait
+            # partie du groupe : c'est lui qui est stocké sur les médias
+            # enrichis — sans lui, Ant-Man (mot-clé « superhero ») ne
+            # remontait pas sous « Super-héros ».
+            kwq = GENRE_TMDB_KEYWORD.get(g)
+            if kwq:
+                grp.add(str(kwq).casefold())
             genre_groups.append(grp)
 
         def _match_genre(media):
@@ -4800,7 +4836,76 @@ def render_ghost_page() -> None:
         st.caption(f"{len(visible) - display_limit} progression(s) supplémentaire(s) masquée(s).")
     if not visible:
         st.caption("Aucune progression ne correspond à ces filtres.")
-    st.caption("Vos reprises restent intactes : aucune suppression n’est proposée sur cette page.")
+
+    # ── 🗑️ Supprimer une progression fantôme (une à la fois, confirmée) ────
+    _render_ghost_clear_section(rows)
+
+
+def _clear_ghost_progression(row: dict) -> tuple[bool, str]:
+    """Efface une reprise sur MDBList (scrobble/clear), puis la retire de la
+    session locale."""
+    item = row.get("item") or {}
+    try:
+        provider = MDBListProvider(mdb_oauth.access_token())
+        provider.clear_playback(
+            playback_id=row.get("id"),
+            movie=item.get("movie") if isinstance(item.get("movie"), dict) else None,
+            show=item.get("show") if isinstance(item.get("show"), dict) else None,
+            episode=item.get("episode") if isinstance(item.get("episode"), dict) else None,
+        )
+        # Retrait local : la ligne disparaît de la session sans recharger.
+        sections = _sections()
+        playback = sections.get("playback")
+        if isinstance(playback, list) and row.get("id") is not None:
+            removed = str(row.get("id"))
+            sections["playback"] = [
+                p for p in playback
+                if str((p or {}).get("id")) != removed
+            ]
+        return True, ""
+    except Exception as exc:
+        return False, f"Suppression impossible : {exc}"
+
+
+def _render_ghost_clear_section(rows: list[dict]) -> None:
+    """Suppression d'une progression fantôme — compact (GSM), une à la fois.
+
+    S'inspire du flux éprouvé du Nettoyage des listes (choix unique →
+    confirmation → exécution), mais tient en un expander replié."""
+    if not rows or not mdb_oauth.is_connected():
+        return
+    with st.expander("🗑️ Supprimer une progression fantôme", expanded=False):
+        st.caption(
+            "Retire une reprise de « Continue Watching » sur MDBList (session en pause "
+            "abandonnée). Une à la fois, avec confirmation. Si tu as en réalité TERMINÉ "
+            "le contenu, marque-le plutôt comme vu depuis « 🧹 Nettoyage des listes »."
+        )
+        options = []
+        for row in rows:
+            label = f"{row.get('type')} — {row.get('title')}"
+            if row.get("episode_label"):
+                label += f" ({row.get('episode_label')})"
+            label += f" · {float(row.get('progress') or 0):.0f} %"
+            options.append(label)
+        choice = st.selectbox("Progression à supprimer", options, key="ghost_clear_choice")
+        if not choice:
+            return
+        target = rows[options.index(choice)]
+        confirm = st.checkbox("✅ Je confirme la suppression de cette reprise", key="ghost_clear_confirm")
+        if not confirm:
+            return
+        if st.button("🗑️ Supprimer la progression", type="primary", key="ghost_clear_go"):
+            with st.spinner("Suppression sur MDBList…"):
+                ok, message = _clear_ghost_progression(target)
+            if ok:
+                st.markdown(
+                    '<div class="accent-callout"><strong>✓ PROGRESSION SUPPRIMÉE</strong> · '
+                    'La reprise a été retirée de ton compte MDBList. Recharge tes données '
+                    '(Actualiser) pour voir la liste à jour.</div>',
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.error(message)
 
 
 def render_static_lists_page() -> None:
@@ -6293,6 +6398,9 @@ def render_basic_stats_page() -> None:
     director_stats = _collect_director_stats(dataset, tmdb_whitelist=filtered_tmdb)
     st.divider()
     st.markdown("#### 🎬🎭 Tes réalisateurs, acteurs & studios préférés")
+    if any(_ENRICH_IN_FLIGHT.values()):
+        st.caption("⏳ Acteurs et studios en cours de chargement (TMDB en arrière-plan) — "
+                   "cette section se complète d'elle même.")
     if people_stats or studio_stats or director_stats:
         st.caption(
             "Détectés automatiquement sur la sélection filtrée ci-dessus "

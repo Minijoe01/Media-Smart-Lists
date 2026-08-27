@@ -245,6 +245,59 @@ class MDBListProvider:
         response = self._post(path, payload)
         return response if isinstance(response, dict) else {"response": response}
 
+    def clear_playback(self, playback_id: Any = None, movie: dict[str, Any] | None = None,
+                       show: dict[str, Any] | None = None, episode: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Efface une session de reprise (« continue watching ») — /scrobble/clear.
+
+        API bêta : le format exact n'est pas garanti, donc on essaie
+        l'identifiant de reprise puis le payload complet, en POST puis en
+        DELETE, jusqu'à ce qu'un format passe.
+        """
+        bodies: list[dict[str, Any]] = []
+        if playback_id is not None:
+            try:
+                bodies.append({"id": int(playback_id)})
+            except (TypeError, ValueError):
+                pass
+        payload: dict[str, Any] = {}
+        if isinstance(movie, dict) and movie:
+            payload["movie"] = movie
+        if isinstance(show, dict) and show:
+            payload["show"] = show
+        if isinstance(episode, dict) and episode:
+            payload["episode"] = episode
+        if payload:
+            bodies.append(payload)
+        if not bodies:
+            raise MDBListReadError("Aucun identifiant de reprise à effacer")
+        last_error: Exception | None = None
+        for body in bodies:
+            for method in ("POST", "DELETE"):
+                try:
+                    if method == "POST":
+                        response = requests.post(
+                            f"{API_BASE}/scrobble/clear", json=body,
+                            headers=self.headers, timeout=TIMEOUT,
+                        )
+                    else:
+                        response = requests.delete(
+                            f"{API_BASE}/scrobble/clear", json=body,
+                            headers=self.headers, timeout=TIMEOUT,
+                        )
+                except requests.RequestException as exc:
+                    last_error = exc
+                    continue
+                self.request_count += 1
+                if response.status_code in (200, 201, 202, 204):
+                    try:
+                        return response.json() if response.text else {"cleared": True}
+                    except ValueError:
+                        return {"cleared": True}
+                last_error = MDBListReadError(
+                    f"MDBList a répondu HTTP {response.status_code} pour /scrobble/clear"
+                )
+        raise last_error or MDBListReadError("Suppression impossible")
+
     def add_watchlist_items(self, movies: list[dict[str, Any]] | None = None, shows: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         """Ajoute des films/séries à la Watchlist MDBList."""
         payload = self._write_payload(movies or [], shows or [])
