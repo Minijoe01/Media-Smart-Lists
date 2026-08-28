@@ -151,7 +151,10 @@ _PWA_HEAD_SCRIPT = """
     if (ours && ours.parentNode !== doc.head) { doc.head.appendChild(ours); }
   } catch (e) { /* iframe isolée : le lien du corps suffit */ }
 
-  // ── Ascenseur : haut en changement de page, position restaurée au retour
+  // ── Ascenseur v2 : haut de page au changement, position restaurée au
+  // retour (demande : stats en bas → que regarder en haut → stats à nouveau
+  // en bas). v2 : détecte le VRAI conteneur qui défile (fenêtre OU conteneur
+  // interne Streamlit) — la v1 n'agissait que sur la fenêtre.
   try {
     var w = window.parent;
     var d = w.document;
@@ -166,8 +169,29 @@ _PWA_HEAD_SCRIPT = """
       var t = d.querySelector('.page-title');
       return t ? String(t.textContent || '').trim() : '';
     }
+    // Le conteneur qui défile : la fenêtre, ou un bloc interne Streamlit.
+    function getScroller() {
+      if (d.documentElement && d.documentElement.scrollHeight > (w.innerHeight || 0) + 20) {
+        return null; // la fenêtre défile
+      }
+      var nodes = d.querySelectorAll(
+        'section[data-testid="stMain"], div[data-testid="stAppViewContainer"], ' +
+        'div[data-testid="stApp"], section.main, .block-container'
+      );
+      for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].scrollHeight > nodes[i].clientHeight + 20) { return nodes[i]; }
+      }
+      return null;
+    }
     function scrollPos() {
+      var el = getScroller();
+      if (el) { return el.scrollTop; }
       return w.scrollY || d.documentElement.scrollTop || d.body.scrollTop || 0;
+    }
+    function scrollToPos(y) {
+      var el = getScroller();
+      if (el) { el.scrollTop = y; return; }
+      w.scrollTo(0, y);
     }
     // Sauvegarde (allégée) de la position de la page courante.
     var pending = null;
@@ -189,12 +213,13 @@ _PWA_HEAD_SCRIPT = """
       if (!p || p === lastPage) return;
       lastPage = p;
       var target = load()[p];
-      w.scrollTo(0, (typeof target === 'number' && target > 60) ? target : 0);
+      scrollToPos((typeof target === 'number' && target > 60) ? target : 0);
     }
     var root = d.querySelector('.stApp') || d.body;
-    var obs = new MutationObserver(function() { w.setTimeout(apply, 80); });
+    var obs = new MutationObserver(function() { w.setTimeout(apply, 90); });
     obs.observe(root, { childList: true, subtree: true });
-    w.setTimeout(apply, 120);
+    w.setTimeout(apply, 150);
+    w.setTimeout(apply, 600);
   } catch (e) { /* ascenseur : comportement normal sans le script */ }
 })();
 </script>
@@ -256,13 +281,18 @@ def _render_pwa_tags() -> None:
     # (documenté : « allows JavaScript execution and same-origin access »)
     # → le script peut retirer le manifest injecté par Streamlit Cloud et
     # placer le nôtre dans le <head>. st.components.v1.html ne le faisait pas.
+    # Deux canaux pour maximiser les chances d'exécution du script (manifest
+    # + ascenseur) : st.iframe (same-origin documenté) et, en repli/addition,
+    # le composant HTML classique — exécuté une fois suffit (le script est
+    # idempotent).
     try:
         st.iframe(_PWA_HEAD_SCRIPT, height=0)
     except Exception:
-        try:
-            st.components.v1.html(_PWA_HEAD_SCRIPT, height=0)
-        except Exception:
-            pass  # le lien du corps suffit alors
+        pass
+    try:
+        st.components.v1.html(_PWA_HEAD_SCRIPT, height=0)
+    except Exception:
+        pass  # le lien du corps suffit pour le manifest alors
 
 
 _render_pwa_tags()
@@ -1138,6 +1168,34 @@ st.markdown(
         white-space: nowrap;
     }
     .links-spacer { margin-left: auto; display: inline-flex; align-items: center; }
+    /* Popover « ➕ Ajouter une découverte » : même verre vert que les
+       boutons secondaires (il apparaissait avec le style par défaut). */
+    [data-testid="stPopover"] > button,
+    button[data-testid="stPopoverTriggerButton"],
+    [data-testid="stPopover"] button[kind="secondary"] {
+        background: rgba(5, 38, 34, 0.75) !important;
+        border: 1px solid rgba(0,163,146,0.30) !important;
+        border-radius: 16px !important;
+        box-shadow: none !important;
+        color: var(--am-text) !important;
+        font-weight: 600 !important;
+        min-height: 2.4rem !important;
+        padding: .45em 1.1em !important;
+        width: auto !important;
+    }
+    [data-testid="stPopover"] > button:hover,
+    button[data-testid="stPopoverTriggerButton"]:hover {
+        background: rgba(8, 55, 50, 0.85) !important;
+        border-color: rgba(0,163,146,0.50) !important;
+    }
+    [data-testid="stPopoverBody"] {
+        background: rgba(2, 20, 18, 0.97) !important;
+        border: 1px solid var(--am-border) !important;
+        border-radius: 13px !important;
+        color: var(--am-text) !important;
+        backdrop-filter: blur(16px);
+    }
+
     .gsm-only { display: none; }
     .only-gsm { display: none; }
     details.pills-details { margin-top: .35rem; }
@@ -3186,14 +3244,24 @@ STYLE_CATALOG: dict[str, str] = {
     "🤖 Intelligence artificielle": "artificial intelligence",
     "🦾 Robots": "robot",
     "👽 Extraterrestres": "alien",
-    "📚 Univers comics": "comic book",
     "🦸 Adapté d'un comics": "based on comic",
     "📕 Manga": "manga",
     "🎲 Jeu de société": "board game",
     "🐉 Jeu de rôle (JDR)": "role playing game",
-    "🎭 Cosplay": "cosplay",
-    "🌐 Cyberspace": "cyberspace",
     "🎩 Film culte": "cult film",
+    # ── Horreur (IDs relevés sur tes films : Final Destination, Insidious,
+    # Saw, The Substance) ─────────────────────────────────────────────────
+    "🩸 Gore": "gore",
+    "👻 Horreur surnaturelle": "supernatural horror",
+    "😈 Démons / possession": "demon",
+    "🏚️ Maison hantée": "haunted house",
+    "⛓️ Torture / sadisme": "torture",
+    "🧠 Horreur psychologique": "psychological horror",
+    # ── Parodies (Scary Movie, Hot Shots, Y a-t-il un flic…) ──────────────
+    "🤪 Parodie / spoof": "parody",
+    # ── Romance (Titanic…) ────────────────────────────────────────────────
+    "💔 Amour tragique": "tragic love",
+    "🚫 Amour interdit": "forbidden love",
 }
 
 # Identifiants de mots-clés VÉRIFIÉS (liens TMDB de l'utilisateur) : pas
@@ -3279,6 +3347,16 @@ GENRE_TMDB_KEYWORD_ID = {
     "cosplay": 172141,
     "cyberspace": 15256,
     "cult film": 374649,
+    # Horreur / parodie / romance (vérifiés sur les fiches des films cités).
+    "gore": 10292,
+    "supernatural horror": 256183,
+    "demon": 15001,
+    "haunted house": 3358,
+    "torture": 13006,
+    "psychological horror": 295907,
+    "parody": 9755,
+    "tragic love": 10703,
+    "forbidden love": 3691,
 }
 # Équivalences DANS les listes uniquement : labels désignant les mêmes
 # contenus selon la source (MDBList/IMDb vs TMDB). Sport et Super-héros en
@@ -4053,18 +4131,20 @@ def render_watchlist_page() -> None:
     with st.expander("❓ Comment utiliser cette page ?", expanded=False):
         st.markdown(
             """
-            <div class="guide-step"><strong>1 · FILTRE TES CONTENUS</strong> — Ouvre
-            « 🗂️ Sélection de contenu » : genres, <strong>styles &amp; ambiances</strong> (mindfuck,
-            Formule 1, histoire vraie…), acteurs, réalisateurs. « 🔍 Filtres » ajoute durée,
-            époque, note. Les résultats classés par score s'affichent en bas.</div>
-            <div class="guide-step"><strong>2 · DÉCOUVRE HORS DE TES LISTES</strong> — Clique
-            « 🎯 Hors de mes listes » : l'app interroge TMDB avec TOUS tes critères et
-            propose des <strong>parfaites</strong> (tout respecte) et des <strong>presque</strong>
-            (il ne manque qu'un critère, indiqué par 🧩).</div>
-            <div class="guide-step"><strong>3 · LAISSE-TOI TENTER</strong> — « 🎲 Roulette »
-            choisit pour toi, les <strong>presets</strong> filtrent par envie du soir
-            (soirée cinéma, mini-série…), et « ➕ Ajouter une découverte » range un
-            contenu dans ta Watchlist ou une liste MDBList.</div>
+            <div class="guide-step"><strong>OPTION 1 · FILTRER TES LISTES</strong> —
+            Choisis tes critères (genres, <strong>styles &amp; ambiances</strong>, acteurs,
+            réalisateurs, époque…) : les contenus de tes listes sont filtrés et classés,
+            avec à droite une <strong>note de recommandation</strong> calculée sur ton
+            profil et tes visionnages.</div>
+            <div class="guide-step"><strong>OPTION 2 · DÉCOUVRIR HORS DE TES LISTES</strong> —
+            Les mêmes filtres s'appliquent au monde entier (TMDB) : clique
+            « 🎯 Hors de mes listes » pour des <strong>parfaites</strong> (tout respecte)
+            et des <strong>presque</strong> (un seul critère manque, indiqué par 🧩) —
+            puis « ➕ Ajouter une découverte » pour les ranger dans tes listes.</div>
+            <div class="guide-step"><strong>OPTION 3 · AUCUNE IDÉE ?</strong> — La
+            « 🎲 Roulette » choisit pour toi dans tes contenus bien notés, et les
+            <strong>presets</strong> cernent une envie du soir (soirée cinéma,
+            mini-série…).</div>
             """,
             unsafe_allow_html=True,
         )
