@@ -2304,11 +2304,13 @@ def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
 
 def _apply_tmdb_payload(media: dict, payload: dict) -> None:
     """Remplit genres, studios et acteurs d'un média depuis une réponse TMDB."""
-    # Genres (uniquement si absents).
+    # Genres (uniquement si absents) — TRADUITS EN FRANÇAIS : la fiche est
+    # récupérée en en-US, et les genres anglais (« Documentary ») polluaient
+    # le dataset déjà normalisé en français (The Last Dance « documentary »).
     if not media.get("genres"):
         genres = payload.get("genres") or []
         names = sorted(
-            {str(g.get("name") or "").strip().title() for g in genres if isinstance(g, dict) and g.get("name")},
+            {_tr_genre(str(g.get("name") or "").strip()) for g in genres if isinstance(g, dict) and g.get("name")},
             key=str.casefold,
         )
         if names:
@@ -2488,9 +2490,20 @@ def _load_mdblist_raw_cached(cache_key: str, access_token: str) -> dict[str, Any
     return data
 
 
-# Datasets déjà enrichis (en mémoire du processus) et enrichissements en cours.
-_ENRICHED_DATASETS: dict[str, dict] = {}
-_ENRICH_IN_FLIGHT: dict[str, bool] = {}
+@st.cache_resource(show_spinner=False)
+def _enrichment_state() -> dict:
+    """État d'enrichissement PERSISTANT (datasets faits + en cours).
+
+    ⚠️ Indispensable : les variables de module sont RÉINITIALISÉES à chaque
+    rerun Streamlit — un dictionnaire module-level perdait les drapeaux
+    aussitôt posés (d'où « aucun message d'attente » et l'actualisation
+    manuelle nécessaire). st.cache_resource conserve l'objet pour toute la
+    vie du processus, partagé entre sessions.
+    """
+    return {"datasets": {}, "in_flight": {}}
+
+
+_ENRICH_STATE = _enrichment_state()
 
 
 def _enrich_in_background(cache_key: str, data: dict) -> None:
@@ -2499,22 +2512,22 @@ def _enrich_in_background(cache_key: str, data: dict) -> None:
     Les médias sont modifiés EN PLACE : ce sont les mêmes objets que ceux de
     la session — l'app se complète au fil des reruns, sans attendre. Une fois
     terminé, le dataset enrichi est mémorisé pour les rechargements (F5) tant
-    que le conteneur vit. (Le drapeau `_ENRICH_IN_FLIGHT` est posé par
-    l'APPELANT avant le lancement du thread.)
+    que le conteneur vit. (Le drapeau d'état est posé par l'APPELANT avant
+    le lancement du thread.)
     """
     try:
         _enrich_tmdb_metadata(data)
-        _ENRICHED_DATASETS[cache_key] = data
+        _ENRICH_STATE["datasets"][cache_key] = data
     except Exception:
         pass
     finally:
-        _ENRICH_IN_FLIGHT[cache_key] = False
+        _ENRICH_STATE["in_flight"][cache_key] = False
 
 
 def _clear_mdblist_caches() -> None:
     """Vide les caches de données (bouton « Actualiser »)."""
     _load_mdblist_raw_cached.clear()
-    _ENRICHED_DATASETS.clear()
+    _ENRICH_STATE["datasets"].clear()
 
 
 def load_mdblist_dataset() -> None:
@@ -2532,12 +2545,12 @@ def load_mdblist_dataset() -> None:
         # 1) Données MDBList seules (rapide) — l'app est utilisable aussitôt.
         #    Si un dataset enrichi est déjà en mémoire (F5 dans le même
         #    conteneur), on le reprend tel quel.
-        data = _ENRICHED_DATASETS.get(key) or _load_mdblist_raw_cached(key, token)
+        data = _ENRICH_STATE["datasets"].get(key) or _load_mdblist_raw_cached(key, token)
         # 2) Enrichissement TMDB (acteurs, studios, mots-clés) en ARRIÈRE-
         #    PLAN : invisible, il complète la session au fil des reruns.
-        if key not in _ENRICHED_DATASETS:
+        if key not in _ENRICH_STATE["datasets"] and not _ENRICH_STATE["in_flight"].get(key):
             import threading
-            _ENRICH_IN_FLIGHT[key] = True  # posé AVANT le lancement : sinon
+            _ENRICH_STATE["in_flight"][key] = True  # posé AVANT le lancement : sinon
             # le rerun qui suit peut passer avant le thread et le message
             # « enrichissement en cours » n'apparaissait jamais.
             threading.Thread(
@@ -2740,7 +2753,7 @@ def render_dataset_overview() -> None:
                 f"🏷️ Mots-clés : {with_keywords}/{total_titles} titre(s)"
                 + (" ✅ couverture complète de ton historique et de tes listes" if full else
                    " — les titres manquants n'ont pas de fiche TMDB ou d'identifiant TMDb")
-                + (" · ⏳ enrichissement en cours" if any(_ENRICH_IN_FLIGHT.values()) else "")
+                + (" · ⏳ enrichissement en cours" if any(_ENRICH_STATE["in_flight"].values()) else "")
             )
     except Exception:
         pass
@@ -3086,6 +3099,8 @@ GENRE_TMDB_KEYWORD = {
     # ça que The Last Dance ne remontait pas.
     "Sport": "sports",
     "Super-héros": "superhero",
+    # (les genres « sport »/« super-héros » pointent vers les mots-clés
+    # vérifiés sports=6075 / superhero=9715)
     "Biographie": "biography",
     "Film noir": "film noir",
     "Comédie musicale": "musical",
@@ -3107,22 +3122,23 @@ GENRE_TMDB_KEYWORD = {
 # aux contenus de tes listes (mots-clés stockés) ET à la recherche
 # hors-listes (with_keywords).
 STYLE_CATALOG: dict[str, str] = {
-    "🌀 Mindfuck": "mindfuck",
+    "🌀 Mindfuck": "mind fuck",
     "😢 Bouleversant": "tearjerker",
     "🧩 Énigme à résoudre": "puzzle",
     "🪢 Intrigue non linéaire": "nonlinear timeline",
-    "🏎️ Sport auto": "auto racing",
+    "🏎️ Sport auto / motorsport": "motorsport",
     "🏎️ Formule 1": "formula one",
     "🏁 NASCAR": "nascar",
     "🥊 Boxe": "boxing",
-    "⚽ Football": "football",
+    "⚽ Football": "football soccer",
     "🏀 Basket": "basketball",
     "⚾ Baseball": "baseball",
     "🥋 Arts martiaux": "martial arts",
     "♟️ Échecs": "chess",
+    "🏷️ Doc sportif": "sports documentary",
     "🕰️ Voyage dans le temps": "time travel",
     "🔁 Boucle temporelle": "time loop",
-    "🚔 Course-poursuite": "car chase",
+    "🚔 Course-poursuite": "chase",
     "💰 Braquage / heist": "heist",
     "😨 Body horror": "body horror",
     "🔪 Slasher": "slasher",
@@ -3131,9 +3147,9 @@ STYLE_CATALOG: dict[str, str] = {
     "🦖 Kaiju / monstres géants": "kaiju",
     "🤖 Cyberpunk": "cyberpunk",
     "⚙️ Steampunk": "steampunk",
-    "🌍 Post-apocalyptique": "post-apocalypse",
+    "🌍 Post-apocalyptique": "post-apocalyptic",
     "🏛️ Dystopie": "dystopia",
-    "😊 Feel-good": "feel good",
+    "😊 Feel-good": "feelgood",
     "🎭 Satire": "satire",
     "📋 Histoire vraie": "based on true story",
     "⚔️ Vengeance": "revenge",
@@ -3153,7 +3169,7 @@ STYLE_CATALOG: dict[str, str] = {
     "🎸 Film de concert": "concert film",
     "🍳 Cuisine": "cooking",
     "🐺 Nature et animaux sauvages": "wildlife",
-    "📖 Adaptation d'un roman": "based on novel",
+    "📖 Adaptation d'un roman": "based on novel or book",
     "🗞️ Journalisme": "journalism",
     "⚖️ Procès / tribunal": "courtroom",
     "🕵️ True crime": "true crime",
@@ -3165,8 +3181,69 @@ STYLE_CATALOG: dict[str, str] = {
 # Identifiants de mots-clés VÉRIFIÉS (liens TMDB de l'utilisateur) : pas
 # de recherche runtime, le bon mot-clé garanti (sports=6075, superhero=9715).
 GENRE_TMDB_KEYWORD_ID = {
+    # Genres (liens fournis par l'utilisateur).
     "sports": 6075,
     "superhero": 9715,
+    # Styles — TOUS vérifiés sur les pages publiques TMDB (audit V98) :
+    # le mot-clé réel est parfois différent du libellé évident (« mind
+    # fuck » et non « mindfuck », « feelgood », « motorsport » et non
+    # « auto racing » — Days of Thunder porte racing/motorsport/nascar,
+    # PAS « auto racing » —, « chase », « post-apocalyptic »,
+    # « based on novel or book », « football soccer »…).
+    "mind fuck": 374835,
+    "tearjerker": 156924,
+    "puzzle": 9228,
+    "nonlinear timeline": 157171,
+    "motorsport": 242128,
+    "formula one": 233981,
+    "nascar": 161630,
+    "boxing": 209476,
+    "football soccer": 13042,
+    "basketball": 6496,
+    "baseball": 1480,
+    "martial arts": 779,
+    "chess": 316,
+    "sports documentary": 159290,
+    "time travel": 4379,
+    "time loop": 10854,
+    "chase": 3713,
+    "heist": 10051,
+    "body horror": 283085,
+    "slasher": 12339,
+    "found footage": 163053,
+    "dark comedy": 10123,
+    "kaiju": 161791,
+    "cyberpunk": 12190,
+    "steampunk": 10028,
+    "post-apocalyptic": 359337,
+    "dystopia": 4565,
+    "feelgood": 275276,
+    "satire": 8201,
+    "based on true story": 9672,
+    "revenge": 9748,
+    "space opera": 161176,
+    "neo-noir": 207268,
+    "mockumentary": 11800,
+    "zombie": 12377,
+    "vampire": 3133,
+    "werewolf": 12564,
+    "ghost": 162846,
+    "witchcraft": 40931,
+    "dragon": 12554,
+    "coming of age": 10683,
+    "aviation": 10168,
+    "survival": 10349,
+    "mountaineering": 160177,
+    "concert film": 156205,
+    "cooking": 1918,
+    "wildlife": 9902,
+    "based on novel or book": 818,
+    "journalism": 917,
+    "courtroom": 33519,
+    "true crime": 33722,
+    "road movie": 167043,
+    "christmas": 207317,
+    "stop motion": 10121,
 }
 # Équivalences DANS les listes uniquement : labels désignant les mêmes
 # contenus selon la source (MDBList/IMDb vs TMDB). Sport et Super-héros en
@@ -3843,7 +3920,7 @@ def render_watchlist_page() -> None:
     # studios → scores et tri). Pendant l'enrichissement en arrière-plan, on
     # affiche un écran d'attente auto-actualisé au lieu de listes mal triées
     # (les autres pages fonctionnent, elles, avec les données MDBList).
-    if any(_ENRICH_IN_FLIGHT.values()):
+    if any(_ENRICH_STATE["in_flight"].values()):
         st.markdown(
             '<div class="accent-callout"><strong>⏳ CHARGEMENT DES DONNÉES TMDB EN COURS</strong> · '
             'Cette page trie et note tes contenus grâce aux genres, acteurs et studios TMDB '
@@ -3930,7 +4007,7 @@ def render_watchlist_page() -> None:
             elif _g in GENRE_LIST_EQUIV:
                 _notes_genre.append(f"🔎 {_g} ≈ {GENRE_LIST_EQUIV[_g]} dans tes listes")
             elif _g not in GENRE_FR_TO_TMDB and _g not in GENRE_FR_TO_TMDB_TV:
-                _notes_genre.append(f"🔎 {_g} : inconnu de TMDB, cherchable uniquement dans tes listes")
+                _notes_genre.append(f"🔎 {_g} : cherché comme mot-clé TMDB automatiquement")
         if _notes_genre:
             st.caption(" · ".join(_notes_genre) + ".")
         genre_mode = st.radio(
@@ -3938,6 +4015,14 @@ def render_watchlist_page() -> None:
             ["Au moins un (OU)", "Tous (ET)"],
             key="qr_genre_mode",
             horizontal=True,
+        )
+        # ── 🎭 Styles & ambiances (catalogue de mots-clés TMDB), juste sous
+        # les genres : critères thématiques du même niveau (audit demandé). ──
+        selected_styles = st.multiselect(
+            "🎭 Styles & ambiances",
+            list(STYLE_CATALOG.keys()),
+            key="qr_styles",
+            placeholder="Mindfuck, heist, histoire vraie, Formule 1…",
         )
         excluded_genres = st.multiselect(
             "🚫 Genres à exclure",
@@ -4020,14 +4105,6 @@ def render_watchlist_page() -> None:
             key="qr_studios",
             placeholder="Studio…",
         )
-        # ── 🎭 Styles & ambiances (catalogue de mots-clés TMDB) ────────────
-        selected_styles = st.multiselect(
-            "🎭 Styles & ambiances",
-            list(STYLE_CATALOG.keys()),
-            key="qr_styles",
-            placeholder="Mindfuck, heist, histoire vraie, Formule 1…",
-        )
-
         st.caption(
             "🎭 Genres : « Tous (ET) » = TOUS les genres choisis · « Au moins un (OU) » = n'importe lequel. "
             "🎬 Acteurs : même logique ET/OU. 🏢 Studios : toujours « au moins un ». "
@@ -4149,7 +4226,12 @@ def render_watchlist_page() -> None:
                 if isinstance(genre, dict):
                     genre = genre.get("name") or genre.get("slug")
                 if genre:
-                    names.add(str(genre).casefold())
+                    g = str(genre).strip()
+                    # Normalise les éventuels genres anglais restants
+                    # (« Documentary » → « Documentaire ») : la comparaison
+                    # se fait toujours côté français.
+                    names.add(g.casefold())
+                    names.add(_tr_genre(g).casefold())
             # Les MOTS-CLÉS TMDB du média participent : « Sport » trouve
             # aussi les contenus (de tes listes) marqués du mot-clé sport.
             names |= {str(kw).casefold() for kw in (media.get("keywords") or [])}
@@ -6548,7 +6630,7 @@ def render_basic_stats_page() -> None:
     director_stats = _collect_director_stats(dataset, tmdb_whitelist=filtered_tmdb)
     st.divider()
     st.markdown("#### 🎬🎭 Tes réalisateurs, acteurs & studios préférés")
-    if any(_ENRICH_IN_FLIGHT.values()):
+    if any(_ENRICH_STATE["in_flight"].values()):
         st.caption("⏳ Acteurs et studios en cours de chargement (TMDB en arrière-plan) — "
                    "cette section se complète d'elle même.")
     if people_stats or studio_stats or director_stats:
@@ -7326,7 +7408,7 @@ def page_dashboard() -> None:
     # ── Données MDBList affichées ────────────────────────────────────────────
     st.divider()
     st.markdown('<div class="page-title">📥 Vos données MDBList</div>', unsafe_allow_html=True)
-    if any(_ENRICH_IN_FLIGHT.values()):
+    if any(_ENRICH_STATE["in_flight"].values()):
         st.caption(
             "🎭 Enrichissement TMDB en arrière-plan (acteurs, studios, mots-clés)… "
             "L'app est déjà utilisable ; les pages se complètent dans ~1 min "
