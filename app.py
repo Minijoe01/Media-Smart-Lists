@@ -3176,6 +3176,24 @@ STYLE_CATALOG: dict[str, str] = {
     "🌍 Film de voyage (road movie)": "road movie",
     "🎅 Film de Noël": "christmas",
     "🧸 Animation en volume": "stop motion",
+    # ── Geek & tech (identifiants vérifiés — liens fournis par l'utilisateur
+    # pour video game/programmer/virtual reality/virtual game) ─────────────
+    "🎮 Jeux vidéo": "video game",
+    "🕹️ Monde de jeu virtuel": "virtual game",
+    "🥽 Réalité virtuelle": "virtual reality",
+    "👨‍💻 Programmeur": "programmer",
+    "💀 Hacker": "hacker",
+    "🤖 Intelligence artificielle": "artificial intelligence",
+    "🦾 Robots": "robot",
+    "👽 Extraterrestres": "alien",
+    "📚 Univers comics": "comic book",
+    "🦸 Adapté d'un comics": "based on comic",
+    "📕 Manga": "manga",
+    "🎲 Jeu de société": "board game",
+    "🐉 Jeu de rôle (JDR)": "role playing game",
+    "🎭 Cosplay": "cosplay",
+    "🌐 Cyberspace": "cyberspace",
+    "🎩 Film culte": "cult film",
 }
 
 # Identifiants de mots-clés VÉRIFIÉS (liens TMDB de l'utilisateur) : pas
@@ -3244,6 +3262,23 @@ GENRE_TMDB_KEYWORD_ID = {
     "road movie": 167043,
     "christmas": 207317,
     "stop motion": 10121,
+    # Geek & tech (vérifiés).
+    "video game": 282,
+    "virtual game": 249451,
+    "virtual reality": 4563,
+    "programmer": 202838,
+    "hacker": 2157,
+    "artificial intelligence": 378084,
+    "robot": 14544,
+    "alien": 9951,
+    "comic book": 5451,
+    "based on comic": 9717,
+    "manga": 295446,
+    "board game": 10090,
+    "role playing game": 18360,
+    "cosplay": 172141,
+    "cyberspace": 15256,
+    "cult film": 374649,
 }
 # Équivalences DANS les listes uniquement : labels désignant les mêmes
 # contenus selon la source (MDBList/IMDb vs TMDB). Sport et Super-héros en
@@ -3914,6 +3949,73 @@ def _sort_rows_by_mode(rows: list[dict], sort_mode: str) -> list[dict]:
     return rows
 
 
+def _render_outside_add_popover(rows: list[dict], sources: list, section_key: str) -> None:
+    """➕ Ajouter une découverte à la Watchlist OU à une liste statique.
+
+    Le petit bouton vit dans un POPOVER compact (une ligne, discret) au-dessus
+    des propositions : le flux complet demandé — choix du contenu, puis
+    « Watchlist » ou « une de mes listes statiques », puis confirmation.
+    Réservé aux contenus hors-listes et à une session MDBList connectée.
+    """
+    if not rows or not mdb_oauth.is_connected():
+        return
+    static_lists = [
+        (str(s.get("name") or s.get("label") or "?"), s.get("id"))
+        for s in sources
+        if str(s.get("type") or "") == "static" and s.get("id") is not None
+    ]
+    with st.popover("➕ Ajouter une découverte à mes listes", use_container_width=False):
+        st.caption(
+            "Ajoute un contenu proposé ci-dessous à ta Watchlist ou à l'une de tes "
+            "listes statiques MDBList. Une écriture par ajout, réversible depuis MDBList."
+        )
+        options = [
+            f"{r.get('type')} — {_media_title(r.get('item') or {})}"
+            for r in rows
+        ]
+        choice = st.selectbox("Contenu à ajouter", options, key=f"outside_add_choice_{section_key}")
+        if not choice:
+            return
+        target = rows[options.index(choice)]
+        destination = st.radio(
+            "Destination",
+            ["📌 Ma Watchlist", "🗂️ Une de mes listes statiques"],
+            key=f"outside_add_dest_{section_key}",
+            horizontal=True,
+        )
+        list_id = None
+        if destination.startswith("🗂️"):
+            if not static_lists:
+                st.caption("Aucune liste statique trouvée dans tes données.")
+                return
+            list_names = [name for name, _ in static_lists]
+            chosen_list = st.selectbox("Liste", list_names, key=f"outside_add_list_{section_key}")
+            list_id = next((lid for name, lid in static_lists if name == chosen_list), None)
+        if st.button("Ajouter le contenu", type="primary", key=f"outside_add_go_{section_key}"):
+            item = target.get("item") or {}
+            try:
+                provider = MDBListProvider(mdb_oauth.access_token())
+                if target.get("type") == "Série":
+                    if list_id is not None:
+                        provider.add_list_items(int(list_id), shows=[item])
+                    else:
+                        provider.add_watchlist_items(shows=[item])
+                else:
+                    if list_id is not None:
+                        provider.add_list_items(int(list_id), movies=[item])
+                    else:
+                        provider.add_watchlist_items(movies=[item])
+                st.markdown(
+                    '<div class="accent-callout"><strong>✓ AJOUTÉ</strong> · '
+                    f'« {escape(_media_title(item))} » a été ajouté '
+                    f'{"à la liste « " + escape(str(chosen_list)) + " »" if list_id is not None else "à ta Watchlist"}. '
+                    "Il disparaîtra des découvertes au prochain « Actualiser ».</div>",
+                    unsafe_allow_html=True,
+                )
+            except Exception as exc:
+                st.error(f"Ajout impossible : {exc}")
+
+
 def render_watchlist_page() -> None:
     st.markdown('<div class="page-title">🎯 Que regarder ?</div>', unsafe_allow_html=True)
     # AUDIT : cette page dépend des données TMDB (genres complets, acteurs,
@@ -3946,6 +4048,26 @@ def render_watchlist_page() -> None:
         return
 
     profile = build_profile(_dataset())
+    # Guide d'accueil (audit UX : un nouvel utilisateur doit comprendre la
+    # page en 30 secondes — 3 blocs, replié par défaut, zéro place perdue).
+    with st.expander("❓ Comment utiliser cette page ?", expanded=False):
+        st.markdown(
+            """
+            <div class="guide-step"><strong>1 · FILTRE TES CONTENUS</strong> — Ouvre
+            « 🗂️ Sélection de contenu » : genres, <strong>styles &amp; ambiances</strong> (mindfuck,
+            Formule 1, histoire vraie…), acteurs, réalisateurs. « 🔍 Filtres » ajoute durée,
+            époque, note. Les résultats classés par score s'affichent en bas.</div>
+            <div class="guide-step"><strong>2 · DÉCOUVRE HORS DE TES LISTES</strong> — Clique
+            « 🎯 Hors de mes listes » : l'app interroge TMDB avec TOUS tes critères et
+            propose des <strong>parfaites</strong> (tout respecte) et des <strong>presque</strong>
+            (il ne manque qu'un critère, indiqué par 🧩).</div>
+            <div class="guide-step"><strong>3 · LAISSE-TOI TENTER</strong> — « 🎲 Roulette »
+            choisit pour toi, les <strong>presets</strong> filtrent par envie du soir
+            (soirée cinéma, mini-série…), et « ➕ Ajouter une découverte » range un
+            contenu dans ta Watchlist ou une liste MDBList.</div>
+            """,
+            unsafe_allow_html=True,
+        )
     st.caption(
         f"🧠 Profil établi à partir de {profile.get('history_count', 0)} visionnage(s) "
         f"et {profile.get('ratings_count', 0)} note(s) personnelle(s). "
@@ -4474,6 +4596,7 @@ def render_watchlist_page() -> None:
             + (f" Tri affiché : {sort_mode}." if not sort_mode.startswith("✨") else "")
         )
         if perfect_rows:
+            _render_outside_add_popover(perfect_rows, sources, "parfaites")
             for result in perfect_rows:
                 _render_recommendation_card(result)
         else:
@@ -4494,6 +4617,7 @@ def render_watchlist_page() -> None:
                 "(ex. le bon réalisateur mais pas l'acteur choisi, ou un acteur présent mais comme "
                 "producteur). La recherche n'est jamais réduite à un seul critère sur dix."
             )
+            _render_outside_add_popover(near_rows, sources, "presque")
             for result in near_rows:
                 _render_recommendation_card(result)
 
