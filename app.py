@@ -693,6 +693,9 @@ st.markdown(
     .stButton > button,
     div[data-testid="stButton"] > button,
     [data-testid="stButton"] button,
+    button[kind="secondary"],
+    button[kind="primary"],
+    button[data-baseweb="button"],
     [data-testid="stBaseButton-secondary"],
     [data-testid="stBaseButton-primary"],
     [data-testid="baseButton-secondary"],
@@ -717,13 +720,17 @@ st.markdown(
     }
     .stButton > button p,
     div[data-testid="stButton"] > button p,
-    [data-testid="stButton"] button p {
+    [data-testid="stButton"] button p,
+    button[kind="secondary"] p,
+    button[kind="primary"] p {
         text-align: center !important;
         margin: 0 !important;
     }
     .stButton > button:hover,
     div[data-testid="stButton"] > button:hover,
     [data-testid="stButton"] button:hover,
+    button[kind="secondary"]:hover,
+    button[data-baseweb="button"]:hover,
     [data-testid="stBaseButton-secondary"]:hover,
     [data-testid="stBaseButton-primary"]:hover,
     [data-testid="baseButton-secondary"]:hover,
@@ -2524,13 +2531,22 @@ def _enrich_tmdb_metadata(data: dict) -> None:
             # listes, pas seulement hors de tes listes).
             kw_block = payload.get("keywords") if isinstance(payload.get("keywords"), dict) else {}
             if kw_block:
+                entries = [x for x in (kw_block.get("keywords") or kw_block.get("results") or [])
+                           if isinstance(x, dict)]
                 names = sorted({
                     str(x.get("name") or "").casefold()
-                    for x in (kw_block.get("keywords") or kw_block.get("results") or [])
-                    if isinstance(x, dict) and x.get("name")
+                    for x in entries if x.get("name")
+                })
+                # Les IDENTIFIANTS aussi : le mot-clé TMDB « Formula One (F1) »
+                # (id 233981) ne matchait pas par nom « formula one » — Senna
+                # ne remontait pas sous « Sport - Formule 1 » dans les listes.
+                kw_ids = sorted({
+                    int(x["id"]) for x in entries if x.get("id")
                 })
                 if names:
                     m["keywords"] = names
+                if kw_ids:
+                    m["keyword_ids"] = kw_ids
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(executor.map(work, targets))
@@ -4268,6 +4284,27 @@ def _save_qr_bookmarks(bookmarks: list[dict]) -> None:
         pass  # cookie trop gros ou indisponible : la session garde le signet
 
 
+def _apply_pending_bookmark() -> None:
+    """Applique un signet en attente — AVANT la création des widgets.
+
+    ⚠️ Streamlit interdit de modifier `st.session_state[clé_de_widget]` APRÈS
+    l'instanciation du widget dans le même run (StreamlitAPIException, crash
+    signalé). Le clic sur 📌 pose donc une clé `_qr_bookmark_pending` et
+    déclenche un rerun ; au run suivant, cette fonction applique les valeurs
+    au tout début de la page — avant tout widget.
+    """
+    pending = st.session_state.pop("_qr_bookmark_pending", None)
+    if not isinstance(pending, dict):
+        return
+    for key, value in pending.items():
+        if key == "qr_year_range" and isinstance(value, list):
+            value = tuple(value)  # JSON : liste → tuple
+        try:
+            st.session_state[key] = value
+        except Exception:
+            pass
+
+
 def _render_search_bookmarks() -> None:
     """🔖 Signets de recherche : mémorise/recharge une combinaison de filtres."""
     with st.expander("🔖 Signets de recherche", expanded=False):
@@ -4299,11 +4336,10 @@ def _render_search_bookmarks() -> None:
         for index, bm in enumerate(bookmarks):
             row = st.columns([0.64, 0.22, 0.14])
             if row[0].button(f"📌 {bm.get('name')}", key=f"qr_bm_load_{index}", use_container_width=True):
-                filters = bm.get("filters") or {}
-                for key, value in filters.items():
-                    if key == "qr_year_range" and isinstance(value, list):
-                        value = tuple(value)  # JSON : liste → tuple
-                    st.session_state[key] = value
+                # ⚠️ Pas de modification directe des widgets ici (interdite
+                # après instanciation → crash) : on pose une clé d'attente,
+                # appliquée au DÉBUT du run suivant.
+                st.session_state["_qr_bookmark_pending"] = bm.get("filters") or {}
                 st.rerun()
             meta = len(filters) if (filters := bm.get("filters") or {}) else 0
             row[1].caption(f"{meta} filtre(s)")
@@ -4333,6 +4369,8 @@ def render_watchlist_page() -> None:
             st.rerun()
     else:
         st.session_state["_qr_tmdb_wait"] = 0
+    # Signet en attente : appliqué ICI, avant la création de tout widget.
+    _apply_pending_bookmark()
     sections = _sections()
     sources = _dataset().get("sources") or []
     if not any(source["movies"] or source["shows"] for source in sources):
@@ -4608,14 +4646,24 @@ def render_watchlist_page() -> None:
         # Styles = MOTS-CLÉS TMDB stockés sur les médias enrichis. Tous les
         # styles choisis doivent être présents (ET entre styles), un style
         # fusionné passant si UN de ses mots-clés est là (OU dans le groupe).
+        # Matching par IDENTIFIANT en priorité (robuste : « Formula One
+        # (F1) » ≠ « formula one » par nom), repli par nom.
         style_name_groups = [
             {q.casefold() for q in STYLE_CATALOG[s]}
+            for s in selected_styles if s in STYLE_CATALOG
+        ]
+        style_id_groups = [
+            {GENRE_TMDB_KEYWORD_ID[q] for q in STYLE_CATALOG[s] if q in GENRE_TMDB_KEYWORD_ID}
             for s in selected_styles if s in STYLE_CATALOG
         ]
 
         def _match_styles(media):
             kws = {str(kw).casefold() for kw in (media.get("keywords") or [])}
-            return all(kws & grp for grp in style_name_groups)
+            kw_ids = {int(k) for k in (media.get("keyword_ids") or [])}
+            for names, ids in zip(style_name_groups, style_id_groups):
+                if not (kws & names or kw_ids & ids):
+                    return False
+            return True
 
         items = [item for item in items if _match_styles(item)]
     if selected_genres:
