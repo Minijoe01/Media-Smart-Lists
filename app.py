@@ -4305,15 +4305,41 @@ def _params_to_bookmark() -> dict | None:
     return {"name": name, "filters": filters}
 
 
-def _load_qr_bookmarks() -> list[dict]:
-    """Signets : URL en cours (partage) → localStorage → cookie → session.
+@st.cache_resource(show_spinner=False)
+def _bookmarks_store() -> dict:
+    """Signets PERSISTANTS (st.cache_resource) : survivent au F5 et sont
+    PARTAGÉS entre appareils (même conteneur Streamlit, même utilisateur).
 
-    localStorage (via le script PWA same-origin) survit au F5 et est plus
-    fiable que le CookieController (JS asynchrone, invisible au 1er rendu).
+    Clé = hash du token MDBList (comme le cache de données) → chaque
+    utilisateur a ses propres signets. À la reconnexion sur un autre
+    appareil, les signets sont là. Seul un Reboot du conteneur les efface
+    (le partage par URL reste le mécanisme de secours).
     """
+    return {}
+
+
+def _bookmarks_key() -> str:
+    try:
+        return _mdblist_cache_key(mdb_oauth.access_token())
+    except Exception:
+        return "anonymous"
+
+
+def _load_qr_bookmarks() -> list[dict]:
+    """Signets : URL partagée → cache_resource (F5 + cross-device) → cookie."""
+    # 0) Cache persistant par utilisateur (survit au F5, partagé appareils).
+    store = _bookmarks_store()
+    user_key = _bookmarks_key()
+    if user_key in store and isinstance(store[user_key], list):
+        st.session_state["_qr_bookmarks"] = store[user_key]
+        return store[user_key]
     # 1) Priorité : signet partagé dans l'URL → appliqué ET ajouté à la liste.
     from_url = _params_to_bookmark()
     if from_url:
+        # Navigation AUTOMATIQUE vers « Que regarder ? » (demande : « j'arrive
+        # au dashboard puis dois aller dans Que regarder » — pas intuitif).
+        st.session_state["page_active"] = "🎯 Que regarder ?"
+        st.session_state["_qr_bookmark_flash"] = from_url["name"]
         st.session_state["_qr_bookmark_pending"] = from_url["filters"]
         existing = st.session_state.get("_qr_bookmarks")
         if not isinstance(existing, list) or not any(
@@ -4361,8 +4387,11 @@ def _load_qr_bookmarks() -> list[dict]:
 
 def _save_qr_bookmarks(bookmarks: list[dict]) -> None:
     st.session_state["_qr_bookmarks"] = bookmarks
+    # Cache persistant (F5 + cross-device) : LA solution fiable.
+    store = _bookmarks_store()
+    store[_bookmarks_key()] = bookmarks
+    # Cookie en repli (pour un conteneur redémarré où le cache est vide).
     payload = json.dumps(bookmarks, ensure_ascii=False)
-    # Cookie (best-effort — peut nécessiter un rerun pour être relu).
     try:
         cookies.set(
             "msl_qr_bookmarks", payload,
@@ -4441,9 +4470,11 @@ def _render_search_bookmarks() -> None:
         load_col, share_col, del_col = st.columns([0.38, 0.34, 0.28])
         if load_col.button("📌 Charger", key="qr_bookmark_load", type="primary", use_container_width=True):
             st.session_state["_qr_bookmark_pending"] = entry.get("filters") or {}
+            st.session_state["_qr_bookmark_flash"] = chosen
             st.rerun()
-        if share_col.button("🔗 Lien", key="qr_bookmark_share", use_container_width=True,
-                            help="Copie une URL qui recharge ce signet sur n'importe quel appareil"):
+        if share_col.button("🔗 Lien", key="qr_bookmark_share", type="primary",
+                            use_container_width=True,
+                            help="Affiche une URL qui recharge ce signet sur n'importe quel appareil"):
             params = _bookmark_to_params(entry)
             try:
                 base = f"https://{(st.context.headers or {}).get('Host', 'media-smart-lists.streamlit.app')}/"
@@ -4454,7 +4485,7 @@ def _render_search_bookmarks() -> None:
             st.code(share_url, language=None)
             st.caption("Copie ce lien (ou clique dessus) : il ouvre l'app avec ce signet appliqué, "
                        "sur n'importe quel appareil.")
-        if del_col.button("🗑️ Supprimer", key="qr_bookmark_delete", use_container_width=True):
+        if del_col.button("🗑️ Supprimer", key="qr_bookmark_delete", type="primary", use_container_width=True):
             _save_qr_bookmarks([b for b in bookmarks if str(b.get("name")) != chosen])
             st.rerun()
         st.caption(f"📌 {chosen} · {nb} filtre(s) mémorisé(s)")
@@ -4483,6 +4514,14 @@ def render_watchlist_page() -> None:
         st.session_state["_qr_tmdb_wait"] = 0
     # Signet en attente : appliqué ICI, avant la création de tout widget.
     _apply_pending_bookmark()
+    # Flash de confirmation après un signet chargé (URL ou bouton).
+    _flash = st.session_state.pop("_qr_bookmark_flash", None)
+    if _flash:
+        st.markdown(
+            f'<div class="accent-callout"><strong>📌 SIGNET « {escape(str(_flash))} » APPLIQUÉ</strong> · '
+            "Tes filtres sont en place — les résultats se mettent à jour.</div>",
+            unsafe_allow_html=True,
+        )
     sections = _sections()
     sources = _dataset().get("sources") or []
     if not any(source["movies"] or source["shows"] for source in sources):
