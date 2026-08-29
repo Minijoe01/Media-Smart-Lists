@@ -264,7 +264,11 @@ def _render_pwa_tags() -> None:
     manifest_uri = "data:application/manifest+json;base64," + _b64.b64encode(
         json.dumps(manifest, ensure_ascii=False).encode("utf-8")
     ).decode("ascii")
-    tags = [f'<link rel="manifest" href="{manifest_uri}">']
+    tags = [f'<link rel="manifest" href="{manifest_uri}">',
+            # Préconnexion aux serveurs d'images TMDB : les posters
+            # s'affichent plus vite au premier chargement.
+            '<link rel="preconnect" href="https://image.tmdb.org">',
+            '<link rel="dns-prefetch" href="https://image.tmdb.org">']
     if _ICON_192_B64:
         tags.append(f'<link rel="icon" href="data:image/png;base64,{_ICON_192_B64}">')
     tags += [
@@ -4070,6 +4074,28 @@ def _perfect_recommendation(
     with ThreadPoolExecutor(max_workers=10) as executor:
         enriched = [e for e in executor.map(enrich, candidates) if e]
 
+    _count_genre_map = GENRE_FR_TO_TMDB_TV  # approx. films+séries confondus
+    # Nombre de critères ACTIFS : la section « presque » relâche UN critère —
+    # avec UN SEUL critère sélectionné, elle reviendrait à proposer n'importe
+    # quoi (retour utilisateur : Moana 2 en « presque Formule 1 », résultats
+    # hyper génériques). On ne la garde qu'à partir de DEUX critères.
+    criteria_count = (
+        len(keyword_resolved)
+        + (1 if any(_count_genre_map.get(g) for g in sel_genres if g not in keyword_resolved) else 0)
+        + (1 if sel_actors else 0)
+        + (1 if sel_directors else 0)
+        + (1 if sel_studios else 0)
+        + (1 if included_countries else 0)
+        + (1 if excluded_countries else 0)
+        + (1 if year_range else 0)
+        + (1 if note_min else 0)
+        + (1 if duration_min != "Aucune" else 0)
+        + (1 if time_filter != "Aucune limite" else 0)
+        + (1 if status_filter != "Tous les statuts" else 0)
+        + (1 if sel_search else 0)
+    )
+    allow_near = criteria_count >= 2
+
     perfect_rows: list[dict] = []
     near_rows: list[dict] = []
     seen_rows: list[dict] = []
@@ -4081,16 +4107,17 @@ def _perfect_recommendation(
         if preset and preset != "Aucun preset" and not preset_matches(preset, row, profile):
             continue
         if row.get("_seen_long_ago") is not None:
-            # Vu il y a plus d'un an : section dédiée (même tolérance « un
-            # critère manquant maximum » que les presque).
-            if len(missed) <= 1:
+            # Vu il y a plus d'un an : section dédiée. À un critère unique,
+            # seuls les VRAIS matchs (0 critère manquant) sont proposés —
+            # pas les « vus qui ne matchent même pas ».
+            if len(missed) == 0 or (allow_near and len(missed) == 1):
                 if missed:
                     row["near_reason"] = missed[0]
                 seen_rows.append(row)
             continue
         if not missed:
             perfect_rows.append(row)
-        elif len(missed) == 1:
+        elif len(missed) == 1 and allow_near:
             row["near_reason"] = missed[0]
             near_rows.append(row)
 
@@ -4203,6 +4230,86 @@ def _render_outside_add_popover(rows: list[dict], sources: list, section_key: st
                 )
             except Exception as exc:
                 st.error(f"Ajout impossible : {exc}")
+
+
+# Clés de filtres mémorisables dans un signet de recherche.
+_BOOKMARK_KEYS = (
+    "watchlist_type", "qr_source", "qr_genres", "qr_genre_mode", "qr_genres_exclude",
+    "qr_countries_include", "qr_countries_exclude", "qr_actors", "qr_directors",
+    "qr_studios", "qr_cast_mode", "qr_styles", "qr_duration_min", "qr_time",
+    "qr_year_range", "qr_note_min", "qr_status", "qr_preset", "qr_sort", "qr_search",
+)
+
+
+def _load_qr_bookmarks() -> list[dict]:
+    """Signets de recherche : depuis le cookie (persistant PC + GSM)."""
+    cached = st.session_state.get("_qr_bookmarks")
+    if isinstance(cached, list):
+        return cached
+    try:
+        raw = cookies.get("msl_qr_bookmarks")
+        data = json.loads(raw) if raw else []
+        data = [b for b in data if isinstance(b, dict) and b.get("name")]
+    except Exception:
+        data = []
+    st.session_state["_qr_bookmarks"] = data
+    return data
+
+
+def _save_qr_bookmarks(bookmarks: list[dict]) -> None:
+    st.session_state["_qr_bookmarks"] = bookmarks
+    try:
+        cookies.set(
+            "msl_qr_bookmarks",
+            json.dumps(bookmarks, ensure_ascii=False),
+            expires=datetime.now() + timedelta(days=3650),
+        )
+    except Exception:
+        pass  # cookie trop gros ou indisponible : la session garde le signet
+
+
+def _render_search_bookmarks() -> None:
+    """🔖 Signets de recherche : mémorise/recharge une combinaison de filtres."""
+    with st.expander("🔖 Signets de recherche", expanded=False):
+        st.caption(
+            "Mémorise la combinaison de filtres ACTUELLE (genres, styles, acteurs, époque, "
+            "preset…) sous un nom, puis recharge-la en un clic. Conservé sur cet appareil."
+        )
+        bookmarks = _load_qr_bookmarks()
+        cols = st.columns([0.62, 0.38])
+        name = cols[0].text_input(
+            "Nom du signet", key="qr_bookmark_name", placeholder="Ex : Horreur psy un soir",
+        )
+        if cols[1].button("💾 Enregistrer les filtres actuels", key="qr_bookmark_save",
+                          type="primary", use_container_width=True):
+            label = str(name or "").strip()
+            if not label:
+                st.warning("Donne un nom à ton signet d'abord.")
+            else:
+                entry = {"name": label, "filters": {
+                    k: st.session_state.get(k) for k in _BOOKMARK_KEYS if k in st.session_state
+                }}
+                kept = [b for b in bookmarks if str(b.get("name")) != label]
+                kept.append(entry)
+                _save_qr_bookmarks(kept[-15:])  # 15 signets max (taille cookie)
+                st.rerun()
+        if not bookmarks:
+            st.caption("Aucun signet pour le moment.")
+            return
+        for index, bm in enumerate(bookmarks):
+            row = st.columns([0.64, 0.22, 0.14])
+            if row[0].button(f"📌 {bm.get('name')}", key=f"qr_bm_load_{index}", use_container_width=True):
+                filters = bm.get("filters") or {}
+                for key, value in filters.items():
+                    if key == "qr_year_range" and isinstance(value, list):
+                        value = tuple(value)  # JSON : liste → tuple
+                    st.session_state[key] = value
+                st.rerun()
+            meta = len(filters) if (filters := bm.get("filters") or {}) else 0
+            row[1].caption(f"{meta} filtre(s)")
+            if row[2].button("🗑️", key=f"qr_bm_del_{index}", help="Supprimer ce signet"):
+                _save_qr_bookmarks([b for b in bookmarks if b is not bm])
+                st.rerun()
 
 
 def render_watchlist_page() -> None:
@@ -4494,6 +4601,7 @@ def render_watchlist_page() -> None:
 
     search = st.text_input("🔎 Rechercher un titre", key="qr_search", placeholder="Tape un titre…")
     st.button("🔄 Réinitialiser tous les filtres", on_click=_reset_recommendation_filters, key="reset_qr", type="primary", use_container_width=True)
+    _render_search_bookmarks()
 
     items = list(source["movies"]) + list(source["shows"])
     if selected_styles:
