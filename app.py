@@ -4257,31 +4257,119 @@ _BOOKMARK_KEYS = (
 )
 
 
+def _bookmark_to_params(entry: dict) -> dict:
+    """Encode un signet en paramètres d'URL (partageable entre appareils)."""
+    filters = entry.get("filters") or {}
+    params = {"signet": str(entry.get("name") or "Sans nom")}
+    for key, value in filters.items():
+        if value is None or value == "" or value == []:
+            continue
+        if isinstance(value, (list, tuple)):
+            params[f"s_{key}"] = "|".join(str(v) for v in value)
+        elif isinstance(value, bool):
+            params[f"s_{key}"] = "1" if value else "0"
+        else:
+            params[f"s_{key}"] = str(value)
+    return params
+
+
+def _params_to_bookmark() -> dict | None:
+    """Décode un signet depuis les paramètres d'URL (st.query_params)."""
+    try:
+        params = dict(st.query_params)
+    except Exception:
+        return None
+    if "signet" not in params:
+        return None
+    name = str(params.get("signet") or "")
+    filters = {}
+    for key, value in params.items():
+        if not key.startswith("s_"):
+            continue
+        widget_key = key[2:]
+        if widget_key == "qr_year_range":
+            parts = [int(v) for v in str(value).split("|") if v.strip().isdigit()]
+            if len(parts) == 2:
+                filters[widget_key] = tuple(parts)
+        elif widget_key in ("qr_genres", "qr_genres_exclude", "qr_actors",
+                            "qr_directors", "qr_studios", "qr_styles",
+                            "qr_countries_include", "qr_countries_exclude"):
+            filters[widget_key] = [v for v in str(value).split("|") if v]
+        elif widget_key in ("qr_note_min",):
+            try:
+                filters[widget_key] = float(value)
+            except (TypeError, ValueError):
+                pass
+        else:
+            filters[widget_key] = str(value)
+    return {"name": name, "filters": filters}
+
+
 def _load_qr_bookmarks() -> list[dict]:
-    """Signets de recherche : depuis le cookie (persistant PC + GSM)."""
+    """Signets : URL en cours (partage) → localStorage → cookie → session.
+
+    localStorage (via le script PWA same-origin) survit au F5 et est plus
+    fiable que le CookieController (JS asynchrone, invisible au 1er rendu).
+    """
+    # 1) Priorité : signet partagé dans l'URL → appliqué ET ajouté à la liste.
+    from_url = _params_to_bookmark()
+    if from_url:
+        st.session_state["_qr_bookmark_pending"] = from_url["filters"]
+        existing = st.session_state.get("_qr_bookmarks")
+        if not isinstance(existing, list) or not any(
+            b.get("name") == from_url["name"] for b in existing if isinstance(b, dict)
+        ):
+            if isinstance(existing, list):
+                existing.append(from_url)
+            else:
+                existing = [from_url]
+            st.session_state["_qr_bookmarks"] = existing
+        # Nettoie l'URL pour ne pas réappliquer le signet à chaque F5.
+        try:
+            st.query_params.clear()
+        except Exception:
+            pass
+        return existing or [from_url]
+
+    # 2) Session en cours (déjà chargée).
     cached = st.session_state.get("_qr_bookmarks")
-    if isinstance(cached, list):
+    if isinstance(cached, list) and cached:
         return cached
+
+    # 3) Cookie (best-effort : peut être vide au tout premier rendu).
+    data = []
     try:
         raw = cookies.get("msl_qr_bookmarks")
-        data = json.loads(raw) if raw else []
-        data = [b for b in data if isinstance(b, dict) and b.get("name")]
+        if raw:
+            data = [b for b in json.loads(raw) if isinstance(b, dict) and b.get("name")]
     except Exception:
         data = []
+
+    # 4) localStorage (via le canal PWA — rempli par le script côté navigateur).
+    try:
+        raw_ls = cookies.get("msl_bookmarks_ls")
+        if raw_ls:
+            ls_data = [b for b in json.loads(raw_ls) if isinstance(b, dict) and b.get("name")]
+            if len(ls_data) > len(data):
+                data = ls_data
+    except Exception:
+        pass
+
     st.session_state["_qr_bookmarks"] = data
     return data
 
 
 def _save_qr_bookmarks(bookmarks: list[dict]) -> None:
     st.session_state["_qr_bookmarks"] = bookmarks
+    payload = json.dumps(bookmarks, ensure_ascii=False)
+    # Cookie (best-effort — peut nécessiter un rerun pour être relu).
     try:
         cookies.set(
-            "msl_qr_bookmarks",
-            json.dumps(bookmarks, ensure_ascii=False),
+            "msl_qr_bookmarks", payload,
             expires=datetime.now() + timedelta(days=3650),
         )
     except Exception:
-        pass  # cookie trop gros ou indisponible : la session garde le signet
+        pass
 
 
 def _apply_pending_bookmark() -> None:
@@ -4306,19 +4394,27 @@ def _apply_pending_bookmark() -> None:
 
 
 def _render_search_bookmarks() -> None:
-    """🔖 Signets de recherche : mémorise/recharge une combinaison de filtres."""
-    with st.expander("🔖 Signets de recherche", expanded=False):
+    """🔖 Signets de recherche : mémorise/recharge une combinaison de filtres.
+
+    UI volontairement sobre (selectbox + boutons uniques) : les boutons par
+    item ne respectaient pas le thème (CSS Streamlit instable selon la
+    version). Le partage par URL rend les signets accessibles depuis un
+    AUTRE appareil.
+    """
+    bookmarks = _load_qr_bookmarks()
+    with st.expander(f"🔖 Signets de recherche ({len(bookmarks)})", expanded=False):
         st.caption(
-            "Mémorise la combinaison de filtres ACTUELLE (genres, styles, acteurs, époque, "
-            "preset…) sous un nom, puis recharge-la en un clic. Conservé sur cet appareil."
+            "Mémorise la combinaison de filtres ACTUELLE (genres, styles, acteurs, époque…) "
+            "sous un nom. « 🔗 Lien » copie une URL qui recharge ce signet sur N'IMPORTE QUEL "
+            "appareil — colle-la dans tes favoris ou envoie-la toi."
         )
-        bookmarks = _load_qr_bookmarks()
-        cols = st.columns([0.62, 0.38])
-        name = cols[0].text_input(
+        # ── Sauvegarde ──
+        save_col, _ = st.columns([0.55, 0.45])
+        name = save_col.text_input(
             "Nom du signet", key="qr_bookmark_name", placeholder="Ex : Horreur psy un soir",
         )
-        if cols[1].button("💾 Enregistrer les filtres actuels", key="qr_bookmark_save",
-                          type="primary", use_container_width=True):
+        if st.button("💾 Enregistrer les filtres actuels", key="qr_bookmark_save",
+                     type="primary", use_container_width=True):
             label = str(name or "").strip()
             if not label:
                 st.warning("Donne un nom à ton signet d'abord.")
@@ -4328,24 +4424,40 @@ def _render_search_bookmarks() -> None:
                 }}
                 kept = [b for b in bookmarks if str(b.get("name")) != label]
                 kept.append(entry)
-                _save_qr_bookmarks(kept[-15:])  # 15 signets max (taille cookie)
+                _save_qr_bookmarks(kept[-15:])
                 st.rerun()
+
+        # ── Chargement / partage / suppression ──
         if not bookmarks:
             st.caption("Aucun signet pour le moment.")
             return
-        for index, bm in enumerate(bookmarks):
-            row = st.columns([0.64, 0.22, 0.14])
-            if row[0].button(f"📌 {bm.get('name')}", key=f"qr_bm_load_{index}", use_container_width=True):
-                # ⚠️ Pas de modification directe des widgets ici (interdite
-                # après instanciation → crash) : on pose une clé d'attente,
-                # appliquée au DÉBUT du run suivant.
-                st.session_state["_qr_bookmark_pending"] = bm.get("filters") or {}
-                st.rerun()
-            meta = len(filters) if (filters := bm.get("filters") or {}) else 0
-            row[1].caption(f"{meta} filtre(s)")
-            if row[2].button("🗑️", key=f"qr_bm_del_{index}", help="Supprimer ce signet"):
-                _save_qr_bookmarks([b for b in bookmarks if b is not bm])
-                st.rerun()
+        names = [str(b.get("name") or "?") for b in bookmarks]
+        chosen = st.selectbox("Signet à charger", names, key="qr_bookmark_pick")
+        if not chosen:
+            return
+        entry = next((b for b in bookmarks if str(b.get("name")) == chosen), bookmarks[0])
+        nb = len(entry.get("filters") or {})
+
+        load_col, share_col, del_col = st.columns([0.38, 0.34, 0.28])
+        if load_col.button("📌 Charger", key="qr_bookmark_load", type="primary", use_container_width=True):
+            st.session_state["_qr_bookmark_pending"] = entry.get("filters") or {}
+            st.rerun()
+        if share_col.button("🔗 Lien", key="qr_bookmark_share", use_container_width=True,
+                            help="Copie une URL qui recharge ce signet sur n'importe quel appareil"):
+            params = _bookmark_to_params(entry)
+            try:
+                base = f"https://{(st.context.headers or {}).get('Host', 'media-smart-lists.streamlit.app')}/"
+            except Exception:
+                base = "https://media-smart-lists.streamlit.app/"
+            from urllib.parse import urlencode
+            share_url = base + "?" + urlencode(params)
+            st.code(share_url, language=None)
+            st.caption("Copie ce lien (ou clique dessus) : il ouvre l'app avec ce signet appliqué, "
+                       "sur n'importe quel appareil.")
+        if del_col.button("🗑️ Supprimer", key="qr_bookmark_delete", use_container_width=True):
+            _save_qr_bookmarks([b for b in bookmarks if str(b.get("name")) != chosen])
+            st.rerun()
+        st.caption(f"📌 {chosen} · {nb} filtre(s) mémorisé(s)")
 
 
 def render_watchlist_page() -> None:
