@@ -3179,89 +3179,90 @@ GENRE_TMDB_KEYWORD = {
 # première utilisation puis mis en cache 30 jours. Le filtre s'applique
 # aux contenus de tes listes (mots-clés stockés) ET à la recherche
 # hors-listes (with_keywords).
-STYLE_CATALOG: dict[str, str] = {
-    "🌀 Mindfuck": "mind fuck",
-    "😢 Bouleversant": "tearjerker",
-    "🧩 Énigme à résoudre": "puzzle",
-    "🪢 Intrigue non linéaire": "nonlinear timeline",
-    "🏎️ Sport auto / motorsport": "motorsport",
-    "🏎️ Formule 1": "formula one",
-    "🏁 NASCAR": "nascar",
-    "🥊 Boxe": "boxing",
-    "⚽ Football": "football soccer",
-    "🏀 Basket": "basketball",
-    "⚾ Baseball": "baseball",
-    "🥋 Arts martiaux": "martial arts",
-    "♟️ Échecs": "chess",
-    "🏷️ Doc sportif": "sports documentary",
-    "🕰️ Voyage dans le temps": "time travel",
-    "🔁 Boucle temporelle": "time loop",
-    "🚔 Course-poursuite": "chase",
-    "💰 Braquage / heist": "heist",
-    "😨 Body horror": "body horror",
-    "🔪 Slasher": "slasher",
-    "📹 Found footage": "found footage",
-    "🤡 Comédie noire": "dark comedy",
-    "🦖 Kaiju / monstres géants": "kaiju",
-    "🤖 Cyberpunk": "cyberpunk",
-    "⚙️ Steampunk": "steampunk",
-    "🌍 Post-apocalyptique": "post-apocalyptic",
-    "🏛️ Dystopie": "dystopia",
-    "😊 Feel-good": "feelgood",
-    "🎭 Satire": "satire",
-    "📋 Histoire vraie": "based on true story",
-    "⚔️ Vengeance": "revenge",
-    "🌌 Space opera": "space opera",
-    "🔍 Néo-noir": "neo-noir",
-    "📸 Mockumentaire": "mockumentary",
-    "🧟 Zombie": "zombie",
-    "🧛 Vampire": "vampire",
-    "🐺 Loup-garou": "werewolf",
-    "👻 Fantômes": "ghost",
-    "🧙 Magie et sorcellerie": "witchcraft",
-    "🐉 Dragons": "dragon",
-    "🎓 Coming of age": "coming of age",
-    "✈️ Aviation": "aviation",
-    "🌋 Survie": "survival",
-    "🏔️ Montagne / alpinisme": "mountaineering",
-    "🎸 Film de concert": "concert film",
-    "🍳 Cuisine": "cooking",
-    "🐺 Nature et animaux sauvages": "wildlife",
-    "📖 Adaptation d'un roman": "based on novel or book",
-    "🗞️ Journalisme": "journalism",
-    "⚖️ Procès / tribunal": "courtroom",
-    "🕵️ True crime": "true crime",
-    "🌍 Film de voyage (road movie)": "road movie",
-    "🎅 Film de Noël": "christmas",
-    "🧸 Animation en volume": "stop motion",
-    # ── Geek & tech (identifiants vérifiés — liens fournis par l'utilisateur
-    # pour video game/programmer/virtual reality/virtual game) ─────────────
-    "🎮 Jeux vidéo": "video game",
-    "🕹️ Monde de jeu virtuel": "virtual game",
-    "🥽 Réalité virtuelle": "virtual reality",
-    "👨‍💻 Programmeur": "programmer",
-    "💀 Hacker": "hacker",
-    "🤖 Intelligence artificielle": "artificial intelligence",
-    "🦾 Robots": "robot",
-    "👽 Extraterrestres": "alien",
-    "🦸 Adapté d'un comics": "based on comic",
-    "📕 Manga": "manga",
-    "🎲 Jeu de société": "board game",
-    "🐉 Jeu de rôle (JDR)": "role playing game",
-    "🎩 Film culte": "cult film",
-    # ── Horreur (IDs relevés sur tes films : Final Destination, Insidious,
-    # Saw, The Substance) ─────────────────────────────────────────────────
-    "🩸 Gore": "gore",
-    "👻 Horreur surnaturelle": "supernatural horror",
-    "😈 Démons / possession": "demon",
-    "🏚️ Maison hantée": "haunted house",
-    "⛓️ Torture / sadisme": "torture",
-    "🧠 Horreur psychologique": "psychological horror",
-    # ── Parodies (Scary Movie, Hot Shots, Y a-t-il un flic…) ──────────────
-    "🤪 Parodie / spoof": "parody",
-    # ── Romance (Titanic…) ────────────────────────────────────────────────
-    "💔 Amour tragique": "tragic love",
-    "🚫 Amour interdit": "forbidden love",
+STYLE_CATALOG: dict[str, tuple[str, ...]] = {
+    "Aventure - 🌋 Survie": ("survival",),
+    "Aventure - 🏔️ Montagne / alpinisme": ("mountaineering",),
+    "Aventure - 💎 Chasse au trésor": ("treasure hunt",),
+    "Business - 📈 Requins de la finance": ("wall street",),
+    "Comédie - 😊 Feel-good": ("feelgood",),
+    "Comédie - 🤡 Comédie noire": ("dark comedy",),
+    "Comédie - 🤪 Parodie / spoof": ("parody",),
+    "Contes - 🧚 Il était une fois": ("fairy tale",),
+    "Cuisine - 🍽️ Chef & gastronomie": ("cooking", "chef"),
+    "Divers - 📸 Mockumentaire": ("mockumentary",),
+    "Divers - 🧸 Animation en volume": ("stop motion",),
+    "Fêtes - 🌴 Spring break": ("spring break",),
+    "Fêtes - 🎃 Halloween": ("halloween",),
+    "Fêtes - 🎅 Noël": ("christmas",),
+    "Geek - 🎮 Jeux vidéo / réalité virtuelle": ("video game", "virtual game", "virtual reality"),
+    "Geek - 🎲 Jeu de société": ("board game",),
+    "Geek - 🐉 Jeu de rôle (JDR)": ("role playing game",),
+    "Geek - 👽 Extraterrestres": ("alien",),
+    "Geek - 💻 Hackers & programmeurs": ("hacker", "programmer"),
+    "Geek - 📕 Manga": ("manga",),
+    "Geek - 🤖 Intelligence artificielle": ("artificial intelligence",),
+    "Geek - 🦸 Adapté d'un comics": ("based on comic",),
+    "Geek - 🦾 Robots": ("robot",),
+    "Histoire vraie - 🏷️ Doc sportif": ("sports documentary",),
+    "Histoire vraie - 📋 Inspiré de faits réels": ("based on true story",),
+    "Horreur - ⛓️ Torture / sadisme": ("torture",),
+    "Horreur - 🏚️ Maison hantée": ("haunted house",),
+    "Horreur - 🐺 Loups-garous": ("werewolf",),
+    "Horreur - 👻 Fantômes": ("ghost",),
+    "Horreur - 👻 Horreur surnaturelle": ("supernatural horror",),
+    "Horreur - 📹 Found footage": ("found footage",),
+    "Horreur - 🔪 Slasher": ("slasher",),
+    "Horreur - 😈 Démons / possession": ("demon",),
+    "Horreur - 😨 Body horror": ("body horror",),
+    "Horreur - 🦖 Kaiju / monstres géants": ("kaiju",),
+    "Horreur - 🧛 Vampires": ("vampire",),
+    "Horreur - 🧟 Zombies": ("zombie",),
+    "Horreur - 🧠 Horreur psychologique": ("psychological horror",),
+    "Horreur - 🩸 Gore": ("gore",),
+    "Humeur - 🌀 Mindfuck": ("mind fuck",),
+    "Humeur - 🎩 Film culte": ("cult film",),
+    "Humeur - 😢 Bouleversant": ("tearjerker",),
+    "Inspiration - 💪 Persévérance": ("perseverance",),
+    "Lecture - 📖 Adapté d'un roman": ("based on novel or book",),
+    "Musique - 🎵 Musiciens & chanteurs": ("musician",),
+    "Musique - 🎸 Film de concert": ("concert film",),
+    "Métiers - ✈️ Aviation": ("aviation",),
+    "Métiers - 🗞️ Journalisme": ("journalism",),
+    "Narration - 🔁 Boucle temporelle": ("time loop",),
+    "Narration - 🕰️ Voyage dans le temps": ("time travel",),
+    "Narration - 🧩 Énigme à résoudre": ("puzzle",),
+    "Narration - 🪢 Intrigue non linéaire": ("nonlinear timeline",),
+    "Nature - 🐺 Nature & animaux sauvages": ("wildlife",),
+    "Passage - 🎓 Coming of age": ("coming of age",),
+    "Romance - 💔 Amour tragique": ("tragic love",),
+    "Romance - 🚫 Amour interdit": ("forbidden love",),
+    "Spectacle - 🎤 One-man / one-woman show": ("one man show", "one woman show"),
+    "Sport - ♟️ Échecs": ("chess",),
+    "Sport - ⚽ Football": ("football soccer",),
+    "Sport - ⚾ Baseball": ("baseball",),
+    "Sport - 🏀 Basket": ("basketball",),
+    "Sport - 🏁 NASCAR": ("nascar",),
+    "Sport - 🏎️ Formule 1": ("formula one",),
+    "Sport - 🏎️ Motorsport": ("motorsport",),
+    "Sport - 🥊 Boxe": ("boxing",),
+    "Sport - 🥋 Arts martiaux": ("martial arts",),
+    "Suspens - ⏳ Course contre la montre": ("race against time",),
+    "Suspens - 🚔 Course-poursuite": ("chase",),
+    "Thriller - ⚔️ Vengeance": ("revenge",),
+    "Thriller - ⚖️ Procès / tribunal": ("courtroom",),
+    "Thriller - 🎯 Tueur à gages": ("hitman",),
+    "Thriller - 💰 Braquage / heist": ("heist",),
+    "Thriller - 🔍 Néo-noir": ("neo-noir",),
+    "Thriller - 🔫 Gangsters & mafia": ("gangster", "mafia"),
+    "Thriller - 🕵️ True crime": ("true crime",),
+    "Univers - ⚙️ Steampunk": ("steampunk",),
+    "Univers - 🌌 Space opera": ("space opera",),
+    "Univers - 🌍 Post-apocalyptique": ("post-apocalyptic",),
+    "Univers - 🏛️ Dystopie": ("dystopia",),
+    "Univers - 🐉 Dragons": ("dragon",),
+    "Univers - 🤖 Cyberpunk": ("cyberpunk",),
+    "Univers - 🧙 Magie et sorcellerie": ("witchcraft",),
+    "École - 🎒 Vie scolaire": ("high school",),
 }
 
 # Identifiants de mots-clés VÉRIFIÉS (liens TMDB de l'utilisateur) : pas
@@ -3357,6 +3358,22 @@ GENRE_TMDB_KEYWORD_ID = {
     "parody": 9755,
     "tragic love": 10703,
     "forbidden love": 3691,
+    # V101 (vérifiés sur les pages publiques TMDB).
+    "one man show": 6656,
+    "one woman show": 193300,
+    "halloween": 3335,
+    "spring break": 158054,
+    "fairy tale": 3205,
+    "hitman": 2708,
+    "gangster": 3149,
+    "mafia": 10391,
+    "treasure hunt": 6956,
+    "wall street": 5636,
+    "musician": 4048,
+    "chef": 18293,
+    "race against time": 4776,
+    "perseverance": 216923,
+    "high school": 6270,
 }
 # Équivalences DANS les listes uniquement : labels désignant les mêmes
 # contenus selon la source (MDBList/IMDb vs TMDB). Sport et Super-héros en
@@ -3536,7 +3553,10 @@ def _perfect_recommendation(
     remontent : un contenu populaire mais « 40/100 chez toi » ne masque plus
     une suite de saga à 90/100.
 
-    Retourne (parfaites, presque) : « parfaites » respecte TOUS les critères
+    Retourne (parfaites, presque, deja_vu) : « parfaites » respecte TOUS les
+    critères ; « presque » respecte tout SAUF UN ; « deja_vu » = contenus
+    VUS il y a plus d'un an qui correspondent (relégation demandée au lieu
+    d'une exclusion pure et simple).
     remplis (recherche, genres, acteurs, réalisateur, studio, pays, époque,
     durée, temps max, statut, note) ; « presque » respecte tout SAUF UN critère
     (pastille 🧩). Un critère vide est ignoré. Genres/pays exclus et filtre
@@ -3548,19 +3568,33 @@ def _perfect_recommendation(
     # Genres sans équivalent TMDB → MOTS-CLÉS TMDB (ex. « sports » → The Last
     # Dance, F1…). Repli automatique sur le genre approché si introuvable.
     # Les STYLES du catalogue sont résolus pareil (mindfuck, heist…).
-    keyword_resolved: dict[str, int] = {}
+    # Chaque critère (genre exotique ou STYLE) se résout en UN GROUPE de
+    # mots-clés acceptés (fusion : « Geek - Jeux vidéo » = video game OU
+    # virtual game OU virtual reality). Entre critères : ET. Dans un groupe : OU.
+    keyword_resolved: dict[str, list[int]] = {}
+
+    def _resolve_group(queries) -> list[int]:
+        ids: list[int] = []
+        for q in queries:
+            if not q:
+                continue
+            kw_id = GENRE_TMDB_KEYWORD_ID.get(q) or _tmdb_keyword_id(q, api_key)
+            if kw_id and kw_id not in ids:
+                ids.append(kw_id)
+        return ids
+
     for g in (selected_genres or []):
         kw_query = GENRE_TMDB_KEYWORD.get(str(g).strip())
         if kw_query:
-            kw_id = GENRE_TMDB_KEYWORD_ID.get(kw_query) or _tmdb_keyword_id(kw_query, api_key)
-            if kw_id:
-                keyword_resolved[str(g).strip()] = kw_id
+            ids = _resolve_group([kw_query])
+            if ids:
+                keyword_resolved[str(g).strip()] = ids
     for style in (selected_styles or []):
-        kw_query = STYLE_CATALOG.get(str(style).strip())
-        if kw_query:
-            kw_id = GENRE_TMDB_KEYWORD_ID.get(kw_query) or _tmdb_keyword_id(kw_query, api_key)
-            if kw_id:
-                keyword_resolved[str(style).strip()] = kw_id
+        queries = STYLE_CATALOG.get(str(style).strip())
+        if queries:
+            ids = _resolve_group(queries)
+            if ids:
+                keyword_resolved[str(style).strip()] = ids
     # Générique : n'importe quel autre genre inconnu de TMDB (ex. un genre
     # exotique de tes données) est tenté comme mot-clé — s'il existe, le
     # filtre fonctionne sans aucune configuration.
@@ -3568,9 +3602,9 @@ def _perfect_recommendation(
         g = str(g).strip()
         if (g and g not in keyword_resolved and g not in GENRE_TMDB_KEYWORD
                 and g not in GENRE_FR_TO_TMDB and g not in GENRE_FR_TO_TMDB_TV):
-            kw_id = _tmdb_keyword_id(g, api_key)
-            if kw_id:
-                keyword_resolved[g] = kw_id
+            ids = _resolve_group([g])
+            if ids:
+                keyword_resolved[g] = ids
     sel_actors = [str(a).strip() for a in (selected_actors or []) if str(a).strip()]
     sel_directors = [str(d).strip() for d in (selected_directors or []) if str(d).strip()]
     sel_studios = [str(s).strip() for s in (selected_studios or []) if str(s).strip()]
@@ -3621,11 +3655,57 @@ def _perfect_recommendation(
     else:
         types = ["movie", "tv"]
 
+    # Contenus VUS (avec date du dernier visionnage) : ceux vus il y a PLUS
+    # d'un an peuvent ressortir dans la section « Déjà vu mais ça correspond »
+    # (demande : Tetris, vu il y a 3 ans et adoré, ne remontait jamais).
+    # Vus il y a moins d'un an : exclus. En liste/watchlist non vus : exclus.
+    def _watched_at_of(row: Any):
+        if not isinstance(row, dict):
+            return None
+        value = row.get("last_watched_at") or row.get("watched_at")
+        if value is None:
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+
+    watched_when: dict[str, datetime | None] = {}
+    watched_section = (dataset.get("sections") or {}).get("watched") or {}
+    for row in watched_section.get("movies") or []:
+        media = _unwrap_media(row)
+        tmdb = _media_tmdb_id(media)
+        if tmdb:
+            watched_when.setdefault(str(tmdb), _watched_at_of(row))
+    for row in watched_section.get("shows") or []:
+        media = _unwrap_media(row)
+        tmdb = _media_tmdb_id(media)
+        if tmdb:
+            watched_when.setdefault(str(tmdb), _watched_at_of(row))
+    for row in watched_section.get("episodes") or []:
+        episode = row.get("episode") if isinstance(row.get("episode"), dict) else row
+        show = episode.get("show") if isinstance(episode.get("show"), dict) else row.get("show")
+        tmdb = _media_tmdb_id(show) if isinstance(show, dict) else None
+        if tmdb:
+            watched_when.setdefault(str(tmdb), _watched_at_of(row))
+    _now_ref = datetime.now(ZoneInfo("UTC"))
+    seen_recently: set[str] = set()
+    seen_long_ago: dict[str, datetime | None] = {}
+    for tid, when in watched_when.items():
+        if when is not None and (_now_ref - when).days <= 365:
+            seen_recently.add(tid)
+        else:
+            seen_long_ago[tid] = when
+    # Tout ce qui est dans les listes/watchlist (non vu) reste exclu.
     seen_tmdb: set[str] = set()
     for media, _kind in _all_media(dataset):
         tmdb = _media_tmdb_id(media)
-        if tmdb:
-            seen_tmdb.add(str(tmdb))
+        if not tmdb:
+            continue
+        tid = str(tmdb)
+        if tid in watched_when:
+            continue  # géré par la logique vu récemment / vu il y a longtemps
+        seen_tmdb.add(tid)
 
     MAX_CANDIDATES = 250  # grand bassin : le classement final se fait sur le score perso
     candidates: list[dict] = []
@@ -3655,9 +3735,13 @@ def _perfect_recommendation(
             for parts in executor.map(_saga_parts, collection_ids):
                 for part in parts:
                     tid = str(part.get("id"))
-                    if tid and tid not in seen_tmdb:
-                        candidates.append({"tmdb": part.get("id"), "kind": "movie"})
-                        seen_tmdb.add(tid)
+                    if not tid or tid in seen_tmdb or tid in seen_recently:
+                        continue
+                    candidates.append({
+                        "tmdb": part.get("id"), "kind": "movie",
+                        "seen_long_ago": seen_long_ago.get(tid, "inconnu") if tid in seen_long_ago else None,
+                    })
+                    seen_tmdb.add(tid)
                 if len(candidates) >= MAX_CANDIDATES:
                     break
 
@@ -3682,9 +3766,13 @@ def _perfect_recommendation(
                     if mtype not in types:
                         continue  # films/séries seulement (pas les personnes)
                     tid = str(item.get("id"))
-                    if tid not in seen_tmdb:
-                        candidates.append({"tmdb": item.get("id"), "kind": mtype})
-                        seen_tmdb.add(tid)
+                    if tid in seen_tmdb or tid in seen_recently:
+                        continue
+                    candidates.append({
+                        "tmdb": item.get("id"), "kind": mtype,
+                        "seen_long_ago": seen_long_ago.get(tid, "inconnu") if tid in seen_long_ago else None,
+                    })
+                    seen_tmdb.add(tid)
             except Exception:
                 pass
             if len(candidates) >= MAX_CANDIDATES:
@@ -3706,9 +3794,13 @@ def _perfect_recommendation(
                         continue
                     for item in (data.get("cast") or []) + (data.get("crew") or []):
                         tid = str(item.get("id"))
-                        if tid not in seen_tmdb and item.get("poster_path"):
-                            candidates.append({"tmdb": item.get("id"), "kind": media_type})
-                            seen_tmdb.add(tid)
+                        if tid in seen_tmdb or tid in seen_recently or not item.get("poster_path"):
+                            continue
+                        candidates.append({
+                            "tmdb": item.get("id"), "kind": media_type,
+                            "seen_long_ago": seen_long_ago.get(tid, "inconnu") if tid in seen_long_ago else None,
+                        })
+                        seen_tmdb.add(tid)
                     if len(candidates) >= MAX_CANDIDATES:
                         break
 
@@ -3741,9 +3833,10 @@ def _perfect_recommendation(
                 "vote_count.gte": 100, "vote_average.gte": 5.5,
             }
             if keyword_resolved:
-                # Mot(s)-clé(s) TMDB : OR entre eux (le classement client
-                # exige ensuite chacun — ET implicite entre styles/genres).
-                base["with_keywords"] = "|".join(str(k) for k in keyword_resolved.values())
+                # Tous les ids de mots-clés, OR entre eux : le classement
+                # client exige ensuite CHAQUE groupe (ET entre critères).
+                all_kw_ids = sorted({k for ids in keyword_resolved.values() for k in ids})
+                base["with_keywords"] = "|".join(str(k) for k in all_kw_ids)
             if year_range:
                 date_field = "primary_release_date" if media_type == "movie" else "first_air_date"
                 base[f"{date_field}.gte"] = f"{year_range[0]}-01-01"
@@ -3765,9 +3858,13 @@ def _perfect_recommendation(
                                 break
                             for item in (resp.json().get("results") or []):
                                 tid = str(item.get("id"))
-                                if tid not in seen_tmdb:
-                                    candidates.append({"tmdb": item.get("id"), "kind": media_type})
-                                    seen_tmdb.add(tid)
+                                if tid in seen_tmdb or tid in seen_recently:
+                                    continue
+                                candidates.append({
+                                    "tmdb": item.get("id"), "kind": media_type,
+                                    "seen_long_ago": seen_long_ago.get(tid, "inconnu") if tid in seen_long_ago else None,
+                                })
+                                seen_tmdb.add(tid)
                         except Exception:
                             pass
                         if len(candidates) >= MAX_CANDIDATES:
@@ -3885,10 +3982,11 @@ def _perfect_recommendation(
                 missing = [g for g in sel_genres if genre_map_ids.get(g) and genre_map_ids[g] not in payload_genre_ids]
                 missed.append("pas " + " / ".join(missing) + " (genre)")
 
-        # Genres résolus par mot-clé TMDB (ex. sport, superhero) : le contenu
-        # doit porter le mot-clé — sinon « presque ».
-        for g, kw_id in keyword_resolved.items():
-            if kw_id not in item_keyword_ids:
+        # Critères résolus par mots-clés TMDB (sport, superhero, styles…) :
+        # le contenu doit porter AU MOINS UN mot-clé du groupe — sinon
+        # « presque ».
+        for g, kw_ids in keyword_resolved.items():
+            if not (set(kw_ids) & item_keyword_ids):
                 missed.append(f"sans {g.lower()} (mot-clé TMDB)")
         if included_countries and country not in included_countries:
             missed.append(f"pays non inclus ({country.upper() or '?'})")
@@ -3964,6 +4062,9 @@ def _perfect_recommendation(
             }
         row = score_item(item, profile, source_name="🌐 Hors de tes listes")
         row["_outside"] = True
+        seen_marker = cand.get("seen_long_ago")
+        if seen_marker is not None:
+            row["_seen_long_ago"] = seen_marker
         return (row, classify_misses(payload, cand["kind"], item_kw))
 
     with ThreadPoolExecutor(max_workers=10) as executor:
@@ -3971,12 +4072,21 @@ def _perfect_recommendation(
 
     perfect_rows: list[dict] = []
     near_rows: list[dict] = []
+    seen_rows: list[dict] = []
     for row, missed in enriched:
         if missed is None:
             continue  # veto : jamais proposé
-        # Preset : filtre STRICT sur les deux sections (un preset est une
+        # Preset : filtre STRICT sur toutes les sections (un preset est une
         # vue ciblée, pas un critère à relâcher en « presque »).
         if preset and preset != "Aucun preset" and not preset_matches(preset, row, profile):
+            continue
+        if row.get("_seen_long_ago") is not None:
+            # Vu il y a plus d'un an : section dédiée (même tolérance « un
+            # critère manquant maximum » que les presque).
+            if len(missed) <= 1:
+                if missed:
+                    row["near_reason"] = missed[0]
+                seen_rows.append(row)
             continue
         if not missed:
             perfect_rows.append(row)
@@ -3987,7 +4097,8 @@ def _perfect_recommendation(
     # Classement final sur TON score perso — pas sur la popularité TMDB.
     perfect_rows.sort(key=lambda r: r["score"], reverse=True)
     near_rows.sort(key=lambda r: r["score"], reverse=True)
-    return perfect_rows[:20], near_rows[:12]
+    seen_rows.sort(key=lambda r: r["score"], reverse=True)
+    return perfect_rows[:20], near_rows[:12], seen_rows[:10]
 
 
 def _sort_rows_by_mode(rows: list[dict], sort_mode: str) -> list[dict]:
@@ -4387,12 +4498,16 @@ def render_watchlist_page() -> None:
     items = list(source["movies"]) + list(source["shows"])
     if selected_styles:
         # Styles = MOTS-CLÉS TMDB stockés sur les médias enrichis. Tous les
-        # styles choisis doivent être présents (ET) — comme un mood précis.
-        wanted_styles = {STYLE_CATALOG[s].casefold() for s in selected_styles if s in STYLE_CATALOG}
+        # styles choisis doivent être présents (ET entre styles), un style
+        # fusionné passant si UN de ses mots-clés est là (OU dans le groupe).
+        style_name_groups = [
+            {q.casefold() for q in STYLE_CATALOG[s]}
+            for s in selected_styles if s in STYLE_CATALOG
+        ]
 
         def _match_styles(media):
             kws = {str(kw).casefold() for kw in (media.get("keywords") or [])}
-            return wanted_styles.issubset(kws)
+            return all(kws & grp for grp in style_name_groups)
 
         items = [item for item in items if _match_styles(item)]
     if selected_genres:
@@ -4663,10 +4778,11 @@ def render_watchlist_page() -> None:
         _render_recommendation_card(roulette, highlighted=True)
 
     if _perfect_results is not None:
-        perfect_rows, near_rows = _perfect_results
+        perfect_rows, near_rows, seen_rows = _perfect_results
         # Le tri choisi s'applique AUSSI aux résultats hors-listes.
         perfect_rows = _sort_rows_by_mode(perfect_rows, sort_mode)
         near_rows = _sort_rows_by_mode(near_rows, sort_mode)
+        seen_rows = _sort_rows_by_mode(seen_rows, sort_mode)
         st.markdown(f"### 🎯 Vos propositions parfaites — hors de vos listes ({len(perfect_rows)})")
         st.caption(
             "Tous les critères remplis de la page sont appliqués : recherche, genres, acteurs, "
@@ -4699,6 +4815,16 @@ def render_watchlist_page() -> None:
             )
             _render_outside_add_popover(near_rows, sources, "presque")
             for result in near_rows:
+                _render_recommendation_card(result)
+        if seen_rows:
+            st.markdown(f"### 👀 Déjà vu, mais ça correspond à ta demande ({len(seen_rows)})")
+            st.caption(
+                "Des contenus que tu as vus il y a PLUS d'un an et qui correspondent à tes "
+                "critères (ex. un coup de cœur oublié, comme Tetris). Ils sont écartés des "
+                "propositions principales pendant 1 an après leur visionnage, puis redeviennent "
+                "éligibles ici. Parfait pour une rewatch ou pour le faire découvrir à quelqu'un."
+            )
+            for result in seen_rows:
                 _render_recommendation_card(result)
 
     if sort_mode.startswith("✨"):
