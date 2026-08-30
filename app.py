@@ -4522,14 +4522,16 @@ def _render_search_bookmarks() -> None:
             # (Le st.button refusait le thème CSS ; le popover s'affiche comme
             # un bouton primary et s'ouvre en panneau sombre.)
             with st.popover("🔗 Lien", use_container_width=True):
-                st.caption("Clique sur le lien (ou copie-le) — il recharge ce signet sur n'importe quel appareil :")
+                st.caption("Clique sur le lien pour l'ouvrir, ou copie-le :")
                 st.markdown(
                     f'<a href="{escape(share_url, quote=True)}" '
-                    f'style="color: var(--am-yellow); font-weight: 700; word-break: break-all;">'
-                    f'{escape(share_url)}</a>',
+                    f'style="color: var(--am-yellow); font-weight: 700; word-break: break-all; '
+                    f'display:inline-block; padding:.3rem .5rem; border:1px solid rgba(255,225,0,.35); '
+                    f'border-radius:8px; text-decoration:none;" '
+                    f'title="Clique pour appliquer ce signet">'
+                    f'{escape(share_url[:80])}…</a>',
                     unsafe_allow_html=True,
                 )
-                st.code(share_url, language=None)
         if del_col.button("🗑️ Supprimer", key="qr_bookmark_delete", type="primary", use_container_width=True):
             _save_qr_bookmarks([b for b in bookmarks if str(b.get("name")) != chosen])
             st.rerun()
@@ -8072,34 +8074,22 @@ def page_dashboard() -> None:
         )
         return
 
-    # ── Signet partagé détecté dans l'URL → redirection après chargement ────
-    # Vérifié à CHAQUE rendu du dashboard (pas seulement après l'auto-load) :
-    # si l'utilisateur arrive via un lien signet après le premier chargement,
-    # la redirection doit aussi fonctionner.
+    # ── Signet partagé détecté dans l'URL → bandeau simple (pas de
+    # redirection auto : elle provoquait des boucles de rerun et des
+    # déconnexions MDBList — retour utilisateur). L'utilisateur va sur
+    # « Que regarder ? » quand il veut.
     if st.session_state.get("_qr_bookmark_flash"):
         _flash_text = str(st.session_state["_qr_bookmark_flash"])
-        _has_data_for_redirect = bool(_dataset() and _dataset().get("sections"))
         if "signet(s) importé(s)" in _flash_text:
-            # Import groupé : bandeau de confirmation, pas de redirection auto.
             st.markdown(
                 f'<div class="accent-callout"><strong>📦 {_flash_text}</strong> · '
-                "Va sur « 🎯 Que regarder ? » puis ouvre « 🔖 Signets » pour les voir.</div>",
+                "Ouvre « 🎯 Que regarder ? » puis « 🔖 Signets » pour les voir.</div>",
                 unsafe_allow_html=True,
             )
-        elif _has_data_for_redirect:
-            # Données prêtes → redirection IMMÉDIATE vers « Que regarder ? ».
-            st.markdown(
-                f'<div class="accent-callout"><strong>📌 SIGNET « {escape(_flash_text)} » DÉTECTÉ</strong> · '
-                "Redirection vers « Que regarder ? »…</div>",
-                unsafe_allow_html=True,
-            )
-            st.session_state["page_active"] = "🎯 Que regarder ?"
-            st.rerun()
         else:
-            # Données pas encore chargées → l'auto-chargement va les chercher.
             st.markdown(
-                f'<div class="accent-callout"><strong>📌 SIGNET « {escape(_flash_text)} » DÉTECTÉ</strong> · '
-                "Tes données chargent, puis va sur « 🎯 Que regarder ? » pour voir le signet appliqué.</div>",
+                f'<div class="accent-callout"><strong>📌 SIGNET « {escape(_flash_text)} » CHARGÉ</strong> · '
+                "Ouvre « 🎯 Que regarder ? » pour le voir appliqué.</div>",
                 unsafe_allow_html=True,
             )
 
