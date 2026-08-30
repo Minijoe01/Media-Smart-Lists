@@ -4319,10 +4319,16 @@ def _bookmarks_store() -> dict:
 
 
 def _bookmarks_key() -> str:
+    """Clé des signets : le NOM D'UTILISATEUR MDBList (stable, ne change pas
+    lors d'une reconnexion — le token, lui, change et perdait les signets)."""
     try:
-        return _mdblist_cache_key(mdb_oauth.access_token())
+        account = mdb_oauth.account_summary() or {}
+        username = str(account.get("username") or "").strip().lower()
+        if username:
+            return f"user:{username}"
     except Exception:
-        return "anonymous"
+        pass
+    return "anonymous"
 
 
 def _load_qr_bookmarks() -> list[dict]:
@@ -4472,9 +4478,7 @@ def _render_search_bookmarks() -> None:
             st.session_state["_qr_bookmark_pending"] = entry.get("filters") or {}
             st.session_state["_qr_bookmark_flash"] = chosen
             st.rerun()
-        if share_col.button("🔗 Lien", key="qr_bookmark_share", type="primary",
-                            use_container_width=True,
-                            help="Affiche une URL qui recharge ce signet sur n'importe quel appareil"):
+        with share_col:
             params = _bookmark_to_params(entry)
             try:
                 base = f"https://{(st.context.headers or {}).get('Host', 'media-smart-lists.streamlit.app')}/"
@@ -4482,9 +4486,17 @@ def _render_search_bookmarks() -> None:
                 base = "https://media-smart-lists.streamlit.app/"
             from urllib.parse import urlencode
             share_url = base + "?" + urlencode(params)
-            st.code(share_url, language=None)
-            st.caption("Copie ce lien (ou clique dessus) : il ouvre l'app avec ce signet appliqué, "
-                       "sur n'importe quel appareil.")
+            # Lien HTML stylé (link-pill) : le bouton st.button « 🔗 » ne
+            # prenait pas le thème CSS malgré type=primary — contournement
+            # complet par un lien HTML qui, lui, respecte toujours le style.
+            st.markdown(
+                f'<a class="link-pill" href="{escape(share_url, quote=True)}" '
+                f'style="display:inline-flex;align-items:center;justify-content:center;'
+                f'width:100%;min-height:2.4rem;font-weight:700;" '
+                f'title="Ouvre ce signet sur n\'importe quel appareil">🔗 Lien</a>',
+                unsafe_allow_html=True,
+            )
+            st.caption("Clique → ce signet s'applique ici. Copie l'URL pour un autre appareil.")
         if del_col.button("🗑️ Supprimer", key="qr_bookmark_delete", type="primary", use_container_width=True):
             _save_qr_bookmarks([b for b in bookmarks if str(b.get("name")) != chosen])
             st.rerun()
@@ -8793,6 +8805,17 @@ if restored:
         st.session_state["pending_source"] = "mdblist"
     if not mdb_oauth.account_summary():
         mdb_oauth.load_account_summary(cookies)
+
+# ── Signet partagé par URL : détecté AVANT le routage pour aller DIRECTEMENT
+# sur « Que regarder ? » (sinon l'utilisateur arrive au dashboard et doit
+# naviguer manuellement — pas intuitif, signalé). ──────────────────────────
+try:
+    _url_params = dict(st.query_params)
+    if "signet" in _url_params:
+        st.session_state["page_active"] = "🎯 Que regarder ?"
+        st.session_state["_qr_bookmark_flash"] = str(_url_params.get("signet") or "")
+except Exception:
+    pass
 
 page = navigation()
 header()
