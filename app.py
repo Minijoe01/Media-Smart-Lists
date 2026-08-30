@@ -4458,6 +4458,12 @@ def _apply_pending_bookmark() -> None:
     for key, value in pending.items():
         if key == "qr_year_range" and isinstance(value, list):
             value = tuple(value)  # JSON : liste → tuple
+        if key == "qr_preset" and value not in PRESET_NAMES:
+            # V111 : les presets doublons (genre/style) ont été supprimés —
+            # un signet ancien (bouton 📌 ou lien 🔗) qui les référence est
+            # ignoré proprement pour ce champ : le reste du signet
+            # s'applique, sans crash ni choix disparu dans le selectbox.
+            continue
         try:
             st.session_state[key] = value
         except Exception:
@@ -4611,8 +4617,8 @@ def render_watchlist_page() -> None:
             puis « ➕ Ajouter une découverte » pour les ranger dans tes listes.</div>
             <div class="guide-step"><strong>OPTION 3 · AUCUNE IDÉE ?</strong> — La
             « 🎲 Roulette » choisit pour toi dans tes contenus bien notés, et les
-            <strong>presets</strong> cernent une envie du soir (soirée cinéma,
-            mini-série…).</div>
+            <strong>💡 presets</strong> (juste sous les styles) cernent une envie
+            du soir en un clic (soirée cinéma, mini-série, suite de saga…).</div>
             """,
             unsafe_allow_html=True,
         )
@@ -4657,8 +4663,10 @@ def render_watchlist_page() -> None:
             genre_titles = sorted(seen, key=str.casefold)
         selected_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
         # Genres : le multiselect est juste au-dessus de son mode ET/OU (regroupé).
+        # 🏷️ (V111) : icône ajoutée — le trio 🏷️ Genres → 🎭 Styles → 💡 Preset
+        # est désormais homogène (seul Genres n'en avait pas).
         selected_genres = st.multiselect(
-            "Genres (recherche intégrée)",
+            "🏷️ Genres (recherche intégrée)",
             genre_titles,
             key="qr_genres",
             placeholder="Choisis 1+ genres…",
@@ -4693,6 +4701,19 @@ def render_watchlist_page() -> None:
             list(STYLE_CATALOG.keys()),
             key="qr_styles",
             placeholder="Mindfuck, heist, histoire vraie, Formule 1…",
+        )
+        # ── 💡 AUDIT DE POSITION (V111) : le preset déménage dans la
+        # sélection. Un preset FILTRE (durée + type + note + profil…), il ne
+        # trie pas — il n'avait donc rien à faire dans « 🔃 Tri & affichage »,
+        # replié de surcroît : il fallait OUVRIR un menu pour le trouver.
+        # Ici, juste sous les styles, le trio 🏷️ Genres → 🎭 Styles → 💡 Preset
+        # se lit d'un seul bloc, visible d'emblée (expander ouvert par défaut)
+        # — y compris sur GSM où tout s'empile. La clé « qr_preset » ne change
+        # pas : les signets enregistrés continuent de fonctionner.
+        preset = st.selectbox("💡 Preset rapide", PRESET_NAMES, key="qr_preset")
+        st.caption(
+            "💡 Un preset combine plusieurs critères d'un coup (durée, type, note, saga…). "
+            "Une envie simple ? → 🏷️ Genres ou 🎭 Styles."
         )
         excluded_genres = st.multiselect(
             "🚫 Genres à exclure",
@@ -4779,8 +4800,8 @@ def render_watchlist_page() -> None:
             "🎭 Genres : « Tous (ET) » = TOUS les genres choisis · « Au moins un (OU) » = n'importe lequel. "
             "🎬 Acteurs : même logique ET/OU. 🏢 Studios : toujours « au moins un ». "
             "🎯 « Hors de mes listes » applique TOUS les critères remplis de la page en ET "
-            "(recherche par titre, genres, acteurs, réalisateur, studio, pays, époque, durée, "
-            "statut, note, styles) — un critère vide est ignoré."
+            "(recherche par titre, genres, styles, preset, acteurs, réalisateur, studio, pays, époque, durée, "
+            "statut, note) — un critère vide est ignoré."
         )
 
     # ── 🔍 Filtres ────────────────────────────────────────────────────────
@@ -4821,10 +4842,11 @@ def render_watchlist_page() -> None:
     # ── 🔃 Tri & affichage ────────────────────────────────────────────────
     # Replié par défaut (même logique que Filtres) : le tri recommandé
     # « ✨ Pour moi » s'applique sans ouvrir ce menu.
+    # V111 : le preset a déménagé dans « 🗂️ Sélection de contenu » (il filtre,
+    # il ne trie pas) — il ne reste ici que le VRAI tri et la pagination.
     with st.expander("🔃 Tri & affichage", expanded=False):
-        p1, p2, p3 = st.columns([0.44, 0.34, 0.22])
-        preset = p1.selectbox("Preset rapide", PRESET_NAMES, key="qr_preset")
-        sort_mode = p2.selectbox(
+        p1, p2 = st.columns([0.72, 0.28])
+        sort_mode = p1.selectbox(
             "Trier par",
             [
                 "✨ Pour moi (recommandé)",
@@ -4846,7 +4868,7 @@ def render_watchlist_page() -> None:
             ],
             key="qr_sort",
         )
-        display_limit = p3.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
+        display_limit = p2.selectbox("Afficher", [20, 50, 100], key="watchlist_limit")
 
 
     search = st.text_input("🔎 Rechercher un titre", key="qr_search", placeholder="Tape un titre…")

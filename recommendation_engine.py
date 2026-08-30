@@ -914,6 +914,21 @@ def score_item(
     }
 
 
+# V111 — NETTOYAGE DES PRESETS : les entrées qui ne dupliquaient qu'un genre
+# ou un style ont été supprimées (validation utilisateur) — un preset doit
+# COMBINER plusieurs critères (durée + type + note + profil…), pas refaire
+# un filtre déjà disponible :
+#   · 😄 Envie de rire        → genres Comédie / Animation
+#   · 😱 Envie de frissons    → genres Horreur / Thriller / Mystère
+#   · 💥 Adrénaline           → genres Action / Aventure
+#   · 🕵️ Polars & thrillers   → style « Thriller - 🔍 Polar / enquête » (V110)
+#   · 🚀 Science-fiction      → genre Science-fiction
+#   · ❤️ Romance              → genre Romance
+#   · 🎞️ Documentaires        → genre Documentaire
+#   · 👨‍👩‍👧 Soirée en famille   → genres Familial / Animation
+# « 🌍 Cinéma du monde » RESTE : ce n'est ni un genre ni un style, c'est une
+# vraie combinaison (pays ≠ USA + note ≥ 7) impossible à sélectionner
+# autrement en un clic.
 PRESET_NAMES = [
     "Aucun preset",
     # ── Durée & effort ──
@@ -927,14 +942,6 @@ PRESET_NAMES = [
     "🕒 Séries à épisodes longs (≥ 45 min)",
     "▶️ Continuer ce que tu as commencé",
     "🎯 Presque finies — séries ≥ 80%",
-    # ── Humeurs & genres ──
-    "😄 Envie de rire",
-    "😱 Envie de frissons",
-    "💥 Adrénaline",
-    "🕵️ Polars & thrillers",
-    "🚀 Science-fiction",
-    "❤️ Romance",
-    "🎞️ Documentaires",
     # ── Tes chouchous (favoris détectés) ──
     "🌟 Acteur incontournable",
     "🏢 Studio préféré",
@@ -952,7 +959,6 @@ PRESET_NAMES = [
     "⏳ Ça traîne — ajouté il y a 3 ans ou +",
     "🏆 Classiques cultes (25 ans et +)",
     # ── Découverte & autres ──
-    "👨‍👩‍👧 Soirée en famille",
     "🌍 Cinéma du monde",
     "🧭 Hors de ta zone de confort",
 ]
@@ -961,7 +967,10 @@ PRESET_NAMES = [
 def preset_matches(name: str, row: dict[str, Any], profile: dict[str, Any]) -> bool:
     if name == "Aucun preset":
         return True
-    genres = {genre.lower() for genre in row.get("genres") or []}
+    # V111 : plus de filtrage par genre ici — les presets qui ne dupliquaient
+    # qu'un genre ou un style ont été supprimés (cf. PRESET_NAMES). Il ne
+    # reste que des COMBINAISONS : durée, type, épisodes, note, votes,
+    # ancienneté, profil détecté.
     note = row.get("note") or 0
     runtime = row.get("runtime") or 0
     year = row.get("year") or 0
@@ -981,14 +990,6 @@ def preset_matches(name: str, row: dict[str, Any], profile: dict[str, Any]) -> b
         return (row.get("added_days") or 0) >= 1095
     if name.startswith("▶️"):
         return row.get("watched_episodes", 0) > 0
-    if name.startswith("👨‍👩‍👧"):
-        return row.get("certification") in {"G", "PG", "TV-Y", "TV-Y7", "TV-G"} or bool(genres & {"family", "animation", "familial"})
-    if name.startswith("😄"):
-        return bool(genres & {"comedy", "animation", "comédie"})
-    if name.startswith("😱"):
-        return bool(genres & {"horror", "thriller", "mystery", "horreur", "mystère"})
-    if name.startswith("💥"):
-        return bool(genres & {"action", "adventure", "aventure"})
     if name.startswith("🎯"):
         total = row.get("total_episodes") or 0
         watched = row.get("watched_episodes") or 0
@@ -1016,14 +1017,6 @@ def preset_matches(name: str, row: dict[str, Any], profile: dict[str, Any]) -> b
         return row["type"] == "Série" and (row.get("runtime") or 0) >= 45
     if name.startswith("♾️"):
         return row["type"] == "Série" and (row.get("total_episodes") or 0) >= 100
-    if name.startswith("🕵️"):
-        return bool(genres & {"crime", "thriller", "mystery", "detective", "mystère"})
-    if name.startswith("🚀"):
-        return bool(genres & {"science fiction", "sci-fi", "scifi", "science-fiction"})
-    if name.startswith("❤️"):
-        return bool(genres & {"romance"})
-    if name.startswith("🎞️"):
-        return bool(genres & {"documentary", "documentaire"})
     if name.startswith("📚"):
         coll = row.get("collection")
         if isinstance(coll, dict) and coll.get("id"):
