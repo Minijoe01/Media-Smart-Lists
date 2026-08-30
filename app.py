@@ -3279,6 +3279,7 @@ STYLE_CATALOG: dict[str, tuple[str, ...]] = {
     "Thriller - 💰 Braquage / heist": ("heist",),
     "Thriller - 🔍 Néo-noir": ("neo-noir",),
     "Thriller - 🔫 Gangsters & mafia": ("gangster", "mafia"),
+    "Thriller - 🔍 Polar / enquête": ("detective", "crime", "mystery"),
     "Thriller - 🕵️ True crime": ("true crime",),
     "Univers - ⚙️ Steampunk": ("steampunk",),
     "Univers - 🌌 Space opera": ("space opera",),
@@ -3412,6 +3413,9 @@ GENRE_TMDB_KEYWORD_ID = {
     "tragedy": 10614,
     "plot twist": 275311,
     "twist ending": 326438,
+    "detective": 11868,
+    "crime": 832,
+    "mystery": 9648,
 }
 # Équivalences DANS les listes uniquement : labels désignant les mêmes
 # contenus selon la source (MDBList/IMDb vs TMDB). Sport et Super-héros en
@@ -4522,16 +4526,8 @@ def _render_search_bookmarks() -> None:
             # (Le st.button refusait le thème CSS ; le popover s'affiche comme
             # un bouton primary et s'ouvre en panneau sombre.)
             with st.popover("🔗 Lien", use_container_width=True):
-                st.caption("Clique sur le lien pour l'ouvrir, ou copie-le :")
-                st.markdown(
-                    f'<a href="{escape(share_url, quote=True)}" '
-                    f'style="color: var(--am-yellow); font-weight: 700; word-break: break-all; '
-                    f'display:inline-block; padding:.3rem .5rem; border:1px solid rgba(255,225,0,.35); '
-                    f'border-radius:8px; text-decoration:none;" '
-                    f'title="Clique pour appliquer ce signet">'
-                    f'{escape(share_url[:80])}…</a>',
-                    unsafe_allow_html=True,
-                )
+                st.caption("Copie ce lien — il recharge ce signet sur n'importe quel appareil :")
+                st.code(share_url, language=None)
         if del_col.button("🗑️ Supprimer", key="qr_bookmark_delete", type="primary", use_container_width=True):
             _save_qr_bookmarks([b for b in bookmarks if str(b.get("name")) != chosen])
             st.rerun()
@@ -8089,7 +8085,7 @@ def page_dashboard() -> None:
         else:
             st.markdown(
                 f'<div class="accent-callout"><strong>📌 SIGNET « {escape(_flash_text)} » CHARGÉ</strong> · '
-                "Ouvre « 🎯 Que regarder ? » pour le voir appliqué.</div>",
+                "Ouvre « 🎯 Que regarder ? » : les filtres du signet sont déjà appliqués.</div>",
                 unsafe_allow_html=True,
             )
 
@@ -8884,10 +8880,14 @@ if restored:
 try:
     _url_params = dict(st.query_params)
     if "signet" in _url_params:
-        # On NE change PAS la page active ici : le dashboard doit se charger
-        # d'abord (auto-chargement des données MDBList). La redirection vers
-        # « Que regarder ? » se fait APRÈS le chargement (cf. page_dashboard).
+        # Signet partagé : on pose le NOM (flash) ET les FILTRES (pending)
+        # au niveau module — AVANT toute création de widget. Ainsi, quand
+        # l'utilisateur va sur « Que regarder ? », les filtres sont déjà
+        # appliqués automatiquement (bug : ils étaient décodés trop tard).
         st.session_state["_qr_bookmark_flash"] = str(_url_params.get("signet") or "")
+        _signet_from_url = _params_to_bookmark()
+        if _signet_from_url:
+            st.session_state["_qr_bookmark_pending"] = _signet_from_url["filters"]
 except Exception:
     pass
 
