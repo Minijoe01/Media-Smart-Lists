@@ -3443,6 +3443,48 @@ GENRE_FR_TO_TMDB_TV = {
     "Divertissement": 10767, "Feuilleton": 10766,
 }
 
+# ── 🎬 Icônes des genres (V112) : chaque genre affiche son emoji dans les
+# listes déroulantes, comme les styles 🎭 et les presets 💡 le font déjà.
+# `format_func` ne touche QUE l'affichage : la VALEUR reste le nom exact du
+# genre → filtres, correspondances ET/OU, signets et recherche « hors de mes
+# listes » restent strictement inchangés (un ancien signet continue de
+# fonctionner). Plusieurs emojis sont « récupérés » des presets supprimés en
+# V111 (😱 frissons, ❤️ romance, 🚀 SF, 👨‍👩‍👧 famille, 🎞️ documentaires).
+GENRE_EMOJI: dict[str, str] = {
+    # Genres cinéma TMDB.
+    "Action": "💥", "Aventure": "🗺️", "Animation": "🎨", "Comédie": "😂",
+    "Crime": "🕵️", "Documentaire": "🎞️", "Drame": "🎭", "Familial": "👨‍👩‍👧",
+    "Fantastique": "🧚", "Histoire": "📜", "Horreur": "😱", "Musique": "🎵",
+    "Comédie musicale": "🎶", "Mystère": "🔍", "Romance": "❤️",
+    "Science-fiction": "🚀", "Téléfilm": "📺", "Thriller": "😰",
+    "Guerre": "⚔️", "Western": "🤠",
+    # Genres spécifiques TV.
+    "Enfants": "🧒", "Actualités": "📰", "Téléréalité": "🤳",
+    "Feuilleton": "🧼", "Divertissement": "🎤", "Guerre & Politique": "🏛️",
+    "Action & Aventure": "🎢", "Science-fiction & Fantastique": "🪐",
+    "Policier": "👮",
+    # Genres atypiques / moins courants (TMDB & variants).
+    "Biographie": "👤", "Sport": "🏅", "Événement sportif": "🏟️",
+    "Super-héros": "🦸", "Court-métrage": "📽️", "Film noir": "🎩",
+    "Avant-garde": "🧪", "Émission culinaire": "🍳", "Jeu télévisé": "🎲",
+    "Esport": "🎮", "Religion": "🙏", "Médical": "🩺", "Judiciaire": "⚖️",
+    "Espionnage": "🕶️", "Histoire militaire": "🎖️",
+}
+_GENRE_EMOJI_CF = {k.casefold(): v for k, v in GENRE_EMOJI.items()}
+
+
+def _genre_display(name: str) -> str:
+    """Emoji + nom pour l'AFFICHAGE d'un genre (la valeur reste intacte).
+
+    Les options « Tous » / « Tous les genres » ne reçoivent pas d'icône ;
+    un genre inconnu du catalogue prend l'icône neutre 🎬.
+    """
+    name = str(name)
+    if name.startswith("Tous"):
+        return name
+    icon = _GENRE_EMOJI_CF.get(name.casefold(), "🎬")
+    return f"{icon} {name}"
+
 
 def _build_item_from_tmdb(tmdb_id: int, kind: str, payload: dict) -> dict:
     """Construit un item scoreable depuis une fiche TMDB complète."""
@@ -4638,7 +4680,9 @@ def render_watchlist_page() -> None:
     # ── 🗂️ Sélection : source, genres, type, acteurs, studios ──────────────
     with st.expander("🗂️ Sélection de contenu", expanded=True):
         source_col, type_col = st.columns(2)
-        selected_label = source_col.selectbox("Source", list(source_by_label), key="qr_source")
+        # V112 : icônes sur tout le bloc de sélection (demande utilisateur) —
+        # 👥/🎬/🏢 reprennent les pastilles des cartes de contenu.
+        selected_label = source_col.selectbox("📂 Source", list(source_by_label), key="qr_source")
         source = source_by_label[selected_label]
 
         genre_records = sections.get("genres") or []
@@ -4661,7 +4705,7 @@ def render_watchlist_page() -> None:
                             seen.add(name)
                             genre_by_title[str(name)] = str(name)
             genre_titles = sorted(seen, key=str.casefold)
-        selected_type = type_col.selectbox("Type", ["Tous", "Films", "Séries"], key="watchlist_type")
+        selected_type = type_col.selectbox("📽️ Type", ["Tous", "Films", "Séries"], key="watchlist_type")
         # Genres : le multiselect est juste au-dessus de son mode ET/OU (regroupé).
         # 🏷️ (V111) : icône ajoutée — le trio 🏷️ Genres → 🎭 Styles → 💡 Preset
         # est désormais homogène (seul Genres n'en avait pas).
@@ -4670,6 +4714,7 @@ def render_watchlist_page() -> None:
             genre_titles,
             key="qr_genres",
             placeholder="Choisis 1+ genres…",
+            format_func=_genre_display,  # emoji par genre, valeur intacte
         )
         # Genres que TMDB ne connaît pas (ex. Biographie, Sport) : la
         # recherche « hors de tes listes » se fait AUTOMATIQUEMENT sur le
@@ -4720,6 +4765,7 @@ def render_watchlist_page() -> None:
             genre_titles,
             key="qr_genres_exclude",
             placeholder="Aucun genre exclu",
+            format_func=_genre_display,  # même affichage que la liste d'inclusion
         )
         country_codes = sorted({
             str(m.get("country") or "").strip().lower()
@@ -4770,7 +4816,7 @@ def render_watchlist_page() -> None:
         actor_col, director_col, studio_col = st.columns(3)
         with actor_col:
             selected_actors = st.multiselect(
-                "Acteurs",
+                "👥 Acteurs",
                 all_actors,
                 key="qr_actors",
                 placeholder="Acteur…",
@@ -4785,13 +4831,13 @@ def render_watchlist_page() -> None:
                 horizontal=True,
             )
         selected_directors = director_col.multiselect(
-            "Réalisateur",
+            "🎬 Réalisateur",
             all_directors,
             key="qr_directors",
             placeholder="Réalisateur…",
         )
         selected_studios = studio_col.multiselect(
-            "Studios",
+            "🏢 Studios",
             all_studios,
             key="qr_studios",
             placeholder="Studio…",
@@ -5317,6 +5363,7 @@ def render_progress_page() -> None:
             "Genre",
             genre_options,
             key="progress_genre",
+            format_func=_genre_display,  # emoji par genre (V112)
         )
         sort_mode = sort_col.selectbox(
             "Trier par",
@@ -7226,7 +7273,8 @@ def render_basic_stats_page() -> None:
         {genre for raw in df["genre"].astype(str) for genre in raw.split(" · ") if genre != "Inconnu"},
         key=str.casefold,
     )
-    genre_choice = genre_col.selectbox("Genre", ["Tous"] + all_genres, key="stats_genre")
+    genre_choice = genre_col.selectbox("Genre", ["Tous"] + all_genres, key="stats_genre",
+                                       format_func=_genre_display)  # emoji par genre (V112)
 
     custom_start = custom_end = None
     if period == "Période personnalisée":
