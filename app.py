@@ -3209,8 +3209,14 @@ STYLE_CATALOG: dict[str, tuple[str, ...]] = {
     "Comédie - 🤪 Parodie / spoof": ("parody",),
     "Contes - 🧚 Il était une fois": ("fairy tale",),
     "Cuisine - 🍽️ Chef & gastronomie": ("cooking", "chef"),
+    "Catastrophe - 🌋 Toutes catastrophes": ("disaster", "natural disaster", "disaster movie", "shipwreck", "plane crash", "airplane accident", "tragedy"),
+    "Catastrophe - 🌪️ Catastrophe naturelle": ("natural disaster", "disaster movie"),
+    "Catastrophe - ✈️ Crash aérien": ("plane crash", "airplane accident"),
+    "Catastrophe - ⚓ Naufrage": ("shipwreck",),
+    "Catastrophe - 🏝️ Seul au monde": ("castaway", "stranded", "isolation"),
     "Divers - 📸 Mockumentaire": ("mockumentary",),
     "Divers - 🧸 Animation en volume": ("stop motion",),
+    "Humeur - 🔄 Plot twist": ("plot twist", "twist ending"),
     "Fêtes - 🌴 Spring break": ("spring break",),
     "Fêtes - 🎃 Halloween": ("halloween",),
     "Fêtes - 🎅 Noël": ("christmas",),
@@ -3394,6 +3400,19 @@ GENRE_TMDB_KEYWORD_ID = {
     "race against time": 4776,
     "perseverance": 216923,
     "high school": 6270,
+    # Catastrophe + plot twist (vérifiés).
+    "disaster": 10617,
+    "natural disaster": 5096,
+    "disaster movie": 189411,
+    "shipwreck": 2580,
+    "plane crash": 249530,
+    "airplane accident": 10812,
+    "castaway": 11085,
+    "stranded": 9743,
+    "isolation": 1533,
+    "tragedy": 10614,
+    "plot twist": 275311,
+    "twist ending": 326438,
 }
 # Équivalences DANS les listes uniquement : labels désignant les mêmes
 # contenus selon la source (MDBList/IMDb vs TMDB). Sport et Super-héros en
@@ -4333,7 +4352,21 @@ def _bookmarks_key() -> str:
 
 def _load_qr_bookmarks() -> list[dict]:
     """Signets : URL partagée → cache_resource (F5 + cross-device) → cookie."""
-    # 0) Cache persistant par utilisateur (survit au F5, partagé appareils).
+    # 0a) Import en BLOC : ?signets_all=<base64 JSON> → tous les signets d'un coup.
+    try:
+        _all_b64 = st.query_params.get("signets_all")
+        if _all_b64:
+            import base64 as _b64
+            _decoded = json.loads(_b64.b64decode(str(_all_b64)).decode("utf-8"))
+            if isinstance(_decoded, list):
+                _save_qr_bookmarks([b for b in _decoded if isinstance(b, dict) and b.get("name")])
+                st.session_state["_qr_bookmark_flash"] = f"{len(_decoded)} signet(s) importé(s)"
+                st.query_params.clear()
+                return st.session_state["_qr_bookmarks"]
+    except Exception:
+        pass
+
+    # 0b) Cache persistant par utilisateur (survit au F5, partagé appareils).
     store = _bookmarks_store()
     user_key = _bookmarks_key()
     if user_key in store and isinstance(store[user_key], list):
@@ -4342,9 +4375,6 @@ def _load_qr_bookmarks() -> list[dict]:
     # 1) Priorité : signet partagé dans l'URL → appliqué ET ajouté à la liste.
     from_url = _params_to_bookmark()
     if from_url:
-        # Navigation AUTOMATIQUE vers « Que regarder ? » (demande : « j'arrive
-        # au dashboard puis dois aller dans Que regarder » — pas intuitif).
-        st.session_state["page_active"] = "🎯 Que regarder ?"
         st.session_state["_qr_bookmark_flash"] = from_url["name"]
         st.session_state["_qr_bookmark_pending"] = from_url["filters"]
         existing = st.session_state.get("_qr_bookmarks")
@@ -4355,13 +4385,16 @@ def _load_qr_bookmarks() -> list[dict]:
                 existing.append(from_url)
             else:
                 existing = [from_url]
-            st.session_state["_qr_bookmarks"] = existing
+            # ⚠️ SAUVEGARDE dans le store persistant : sans ça, le signet
+            # importé par URL disparaissait au F5 (seul le session_state
+            # l'avait, pas le cache_resource).
+            _save_qr_bookmarks(existing)
         # Nettoie l'URL pour ne pas réappliquer le signet à chaque F5.
         try:
             st.query_params.clear()
         except Exception:
             pass
-        return existing or [from_url]
+        return st.session_state.get("_qr_bookmarks") or [from_url]
 
     # 2) Session en cours (déjà chargée).
     cached = st.session_state.get("_qr_bookmarks")
@@ -4486,21 +4519,34 @@ def _render_search_bookmarks() -> None:
                 base = "https://media-smart-lists.streamlit.app/"
             from urllib.parse import urlencode
             share_url = base + "?" + urlencode(params)
-            # Lien HTML stylé (link-pill) : le bouton st.button « 🔗 » ne
-            # prenait pas le thème CSS malgré type=primary — contournement
-            # complet par un lien HTML qui, lui, respecte toujours le style.
-            st.markdown(
-                f'<a class="link-pill" href="{escape(share_url, quote=True)}" '
-                f'style="display:inline-flex;align-items:center;justify-content:center;'
-                f'width:100%;min-height:2.4rem;font-weight:700;" '
-                f'title="Ouvre ce signet sur n\'importe quel appareil">🔗 Lien</a>',
-                unsafe_allow_html=True,
-            )
-            st.caption("Clique → ce signet s'applique ici. Copie l'URL pour un autre appareil.")
+            # Popover : clic → l'URL s'affiche dans une bulle stylée, copiable.
+            # (Le st.button refusait le thème CSS ; le popover s'affiche comme
+            # un bouton primary et s'ouvre en panneau sombre.)
+            with st.popover("🔗 Lien", use_container_width=True):
+                st.caption("Copie ce lien — il recharge ce signet sur n'importe quel appareil :")
+                st.code(share_url, language=None)
         if del_col.button("🗑️ Supprimer", key="qr_bookmark_delete", type="primary", use_container_width=True):
             _save_qr_bookmarks([b for b in bookmarks if str(b.get("name")) != chosen])
             st.rerun()
         st.caption(f"📌 {chosen} · {nb} filtre(s) mémorisé(s)")
+
+        # ── 📤 Partager TOUS les signets en un seul lien ─────────────────────
+        if len(bookmarks) > 1:
+            import base64 as _b64
+            with st.popover("📤 Partager tous mes signets", use_container_width=False):
+                st.caption(
+                    f"Un seul lien qui recharge tes {len(bookmarks)} signets sur "
+                    "n'importe quel appareil. Copie-le et garde-le précieusement."
+                )
+                all_payload = json.dumps(bookmarks, ensure_ascii=False)
+                all_b64 = _b64.b64encode(all_payload.encode("utf-8")).decode("ascii")
+                try:
+                    base = f"https://{(st.context.headers or {}).get('Host', 'media-smart-lists.streamlit.app')}/"
+                except Exception:
+                    base = "https://media-smart-lists.streamlit.app/"
+                all_url = f"{base}?signets_all={all_b64}"
+                st.code(all_url, language=None)
+                st.caption("⚠️ Le lien est long — c'est normal, il contient tous tes signets.")
 
 
 def render_watchlist_page() -> None:
@@ -8008,6 +8054,9 @@ def page_dashboard() -> None:
                     load_mdblist_dataset()
             except Exception:
                 pass
+            # Signet partagé : après le chargement, direction « Que regarder ? »
+            if st.session_state.get("_qr_bookmark_flash"):
+                st.session_state["page_active"] = "🎯 Que regarder ?"
             st.rerun()
         # L'auto-chargement a déjà été tenté (échec) : bouton manuel de secours.
         st.divider()
@@ -8020,6 +8069,14 @@ def page_dashboard() -> None:
             unsafe_allow_html=True,
         )
         return
+
+    # ── Signet partagé détecté dans l'URL → redirection après chargement ────
+    if st.session_state.get("_qr_bookmark_flash"):
+        st.markdown(
+            f'<div class="accent-callout"><strong>📌 SIGNET « {escape(str(st.session_state["_qr_bookmark_flash"]))} » DÉTECTÉ</strong> · '
+            "Tes données chargent, puis tu seras emmené sur « Que regarder ? »…</div>",
+            unsafe_allow_html=True,
+        )
 
     # ── Données ZIP Trakt affichées ──────────────────────────────────────────
     if source == "trakt_zip":
@@ -8812,7 +8869,9 @@ if restored:
 try:
     _url_params = dict(st.query_params)
     if "signet" in _url_params:
-        st.session_state["page_active"] = "🎯 Que regarder ?"
+        # On NE change PAS la page active ici : le dashboard doit se charger
+        # d'abord (auto-chargement des données MDBList). La redirection vers
+        # « Que regarder ? » se fait APRÈS le chargement (cf. page_dashboard).
         st.session_state["_qr_bookmark_flash"] = str(_url_params.get("signet") or "")
 except Exception:
     pass
