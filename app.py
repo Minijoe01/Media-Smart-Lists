@@ -3202,10 +3202,11 @@ STYLE_CATALOG: dict[str, tuple[str, ...]] = {
     "Aventure - 🌋 Survie": ("survival",),
     "Aventure - 🏔️ Montagne / alpinisme": ("mountaineering",),
     "Aventure - 💎 Chasse au trésor": ("treasure hunt",),
+    "Aventure - 🛡️ Peplum": ("peplum",),
     "Business - 📈 Requins de la finance": ("wall street",),
     "Comédie - 😊 Feel-good": ("feelgood",),
     "Comédie - 🤡 Comédie noire": ("dark comedy",),
-    "Comédie - 🤪 Parodie / spoof": ("parody",),
+    "Comédie - 🤪 Parodie / spoof": ("parody", "spoof"),
     "Contes - 🧚 Il était une fois": ("fairy tale",),
     "Cuisine - 🍽️ Chef & gastronomie": ("cooking", "chef"),
     "Catastrophe - 🌋 Toutes catastrophes": ("disaster", "natural disaster", "disaster movie", "shipwreck", "plane crash", "airplane accident", "tragedy"),
@@ -3213,7 +3214,10 @@ STYLE_CATALOG: dict[str, tuple[str, ...]] = {
     "Catastrophe - ✈️ Crash aérien": ("plane crash", "airplane accident"),
     "Catastrophe - ⚓ Naufrage": ("shipwreck",),
     "Catastrophe - 🏝️ Seul au monde": ("castaway", "stranded", "isolation"),
-    "Divers - 📸 Mockumentaire": ("mockumentary",),
+    "Divers - 📸 Mockumentaire": (
+        "mockumentary", "pseudo-documentary", "pseudo documentary",
+        "fake documentary", "false documentary", "faux documentary",
+    ),
     "Divers - 🧸 Animation en volume": ("stop motion",),
     "Humeur - 🔄 Plot twist": ("plot twist", "twist ending"),
     "Fêtes - 🌴 Spring break": ("spring break",),
@@ -3332,6 +3336,19 @@ GENRE_TMDB_KEYWORD_ID = {
     "dystopia": 4565,
     "feelgood": 275276,
     "satire": 8201,
+    # V113 — peplum & faux documentaires (IDs vérifiés sur les pages
+    # publiques TMDB : peplum=187305 porte Troie/Hercule/Astérix/Caligula ;
+    # spoof=11931 ; Naked Gun porte parody 9755 + satire 8201 +
+    # slapstick comedy 9253 ; les variantes « pseudo/fake/faux
+    # documentary » couvrent Blair Witch, Cloverfield, Paranormal
+    # Activity… le mot-clé « pseudo-documentary » est très peuplé).
+    "peplum": 187305,
+    "spoof": 11931,
+    "pseudo-documentary": 276164,
+    "pseudo documentary": 377754,
+    "fake documentary": 160517,
+    "false documentary": 317691,
+    "faux documentary": 365784,
     "based on true story": 9672,
     "revenge": 9748,
     "space opera": 161176,
