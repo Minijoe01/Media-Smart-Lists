@@ -555,6 +555,14 @@ def build_profile(dataset: dict[str, Any], now: datetime | None = None) -> dict[
             genre: sum(values) / len(values)
             for genre, values in genre_rating_values.items() if values
         },
+        # V114 — compteurs de notes PAR GENRE : nécessaires au malus
+        # « ratages » PROPORTIONNEL (3 navets sur 200 comédies notées ne
+        # pénalisent plus le genre — l'ancien test sur la somme seule le
+        # faisait et pénalisait de fait les genres les plus regardés).
+        "genre_rating_counts": {
+            genre: len(values)
+            for genre, values in genre_rating_values.items()
+        },
         "genre_disappointments": dict(disappointments),
         "favorite_decades": _normalize(dict(decade_weights)),
         "country_affinity": _normalize(dict(country_weights)),
@@ -695,10 +703,27 @@ def score_item(
         elif own_average <= 5:
             adjust(-6, "👎 Tu notes ce genre bas", f"Ta moyenne personnelle dans ces genres est de {own_average:.1f}/10", warning=True)
 
-    disappointments = profile.get("genre_disappointments", {})
-    miss_count = max((int(disappointments.get(genre, 0)) for genre in genres), default=0)
-    if miss_count >= 2:
-        adjust(-5, "👎 Tes ratages ici", f"Tu as déjà donné 3/10 ou moins à {miss_count} contenu(s) de ce genre", warning=True)
+    # V114 — « Tes ratages ici » devient PROPORTIONNEL (demande utilisateur) :
+    # un grand fan de comédie qui a noté 3 navets sur 200 comédies ne doit
+    # plus être pénalisé sur TOUTES les comédies. L'ancien test (≥ 2 ratages,
+    # en somme) frappait de fait les genres les plus regardés. Désormais le
+    # malus ne tombe que si les très mauvaises notes (≤ 3/10) sont FRÉQUENTES :
+    # au moins 2 ET au moins 25 % des contenus que tu as notés dans ce genre.
+    disappointments = profile.get("genre_disappointments") or {}
+    rating_counts = profile.get("genre_rating_counts") or {}
+    for genre in genres:
+        miss_count = int(disappointments.get(genre, 0) or 0)
+        if miss_count < 2:
+            continue
+        total_rated = int(rating_counts.get(genre, 0) or 0)
+        if total_rated <= 0 or (miss_count / total_rated) < 0.25:
+            continue
+        share = int(round(100 * miss_count / total_rated))
+        adjust(-5, "👎 Tes ratages ici",
+               f"{miss_count} très mauvaise(s) note(s) (≤ 3/10) sur {total_rated} notés "
+               f"dans ce genre ({share} %) — ça semble vraiment t'avoir déçu",
+               warning=True)
+        break  # un seul malus par contenu, même si plusieurs genres déçoivent
 
     if note is not None:
         if note >= 5.5:

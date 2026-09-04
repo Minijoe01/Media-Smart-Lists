@@ -3202,11 +3202,22 @@ STYLE_CATALOG: dict[str, tuple[str, ...]] = {
     "Aventure - 🌋 Survie": ("survival",),
     "Aventure - 🏔️ Montagne / alpinisme": ("mountaineering",),
     "Aventure - 💎 Chasse au trésor": ("treasure hunt",),
-    "Aventure - 🛡️ Peplum": ("peplum",),
+    # V114 — peplum + « sword and sandal » (le terme ANGLAIS du peplum) :
+    # Gladiator II porte sword and sandal (317728), PAS « peplum » — sans
+    # lui, Gladiator I et II restaient invisibles.
+    "Aventure - 🛡️ Peplum": ("peplum", "sword and sandal"),
     "Business - 📈 Requins de la finance": ("wall street",),
     "Comédie - 😊 Feel-good": ("feelgood",),
     "Comédie - 🤡 Comédie noire": ("dark comedy",),
-    "Comédie - 🤪 Parodie / spoof": ("parody", "spoof"),
+    # V114 — trois mots-clés vérifiés : parody (Naked Gun, Hot Shots),
+    # spoof (synonyme anglais — Cunk on Earth le porte) et satirical
+    # (OSS 117 porte « satirical », PAS « parody »). American Pie, lui,
+    # n'en porte AUCUN : ce n'est pas une parodie → voir « 🌶️ Ado épicée ».
+    "Comédie - 🤪 Parodie / spoof": ("parody", "spoof", "satirical"),
+    # V114 — la « comédie ado épicée » à la American Pie (demande
+    # utilisateur) : teen comedy + sex comedy + teenage sexuality — les
+    # trois mots-clés sont sur la fiche TMDB d'American Pie (2105).
+    "Comédie - 🌶️ Ado épicée": ("teen comedy", "sex comedy", "teenage sexuality"),
     "Contes - 🧚 Il était une fois": ("fairy tale",),
     "Cuisine - 🍽️ Chef & gastronomie": ("cooking", "chef"),
     "Catastrophe - 🌋 Toutes catastrophes": ("disaster", "natural disaster", "disaster movie", "shipwreck", "plane crash", "airplane accident", "tragedy"),
@@ -3214,10 +3225,13 @@ STYLE_CATALOG: dict[str, tuple[str, ...]] = {
     "Catastrophe - ✈️ Crash aérien": ("plane crash", "airplane accident"),
     "Catastrophe - ⚓ Naufrage": ("shipwreck",),
     "Catastrophe - 🏝️ Seul au monde": ("castaway", "stranded", "isolation"),
-    "Divers - 📸 Mockumentaire": (
-        "mockumentary", "pseudo-documentary", "pseudo documentary",
-        "fake documentary", "false documentary", "faux documentary",
-    ),
+    # V114 — RETOUR AU MOT-CLÉ UNIQUE « mockumentary » : les variantes
+    # ajoutées en V113 (pseudo/fake/faux documentary) désignent en réalité
+    # le found footage HORREUR sur TMDB (Blair Witch, Cloverfield,
+    # Paranormal Activity les portent) — pas des mockumentaires
+    # (correction utilisateur). Vérifié : The Office, The Paper, Cunk on
+    # Earth et Death to 2020 portent TOUS « mockumentary » (11800).
+    "Divers - 📸 Mockumentaire": ("mockumentary",),
     "Divers - 🧸 Animation en volume": ("stop motion",),
     "Humeur - 🔄 Plot twist": ("plot twist", "twist ending"),
     "Fêtes - 🌴 Spring break": ("spring break",),
@@ -3336,19 +3350,24 @@ GENRE_TMDB_KEYWORD_ID = {
     "dystopia": 4565,
     "feelgood": 275276,
     "satire": 8201,
-    # V113 — peplum & faux documentaires (IDs vérifiés sur les pages
-    # publiques TMDB : peplum=187305 porte Troie/Hercule/Astérix/Caligula ;
-    # spoof=11931 ; Naked Gun porte parody 9755 + satire 8201 +
-    # slapstick comedy 9253 ; les variantes « pseudo/fake/faux
-    # documentary » couvrent Blair Witch, Cloverfield, Paranormal
-    # Activity… le mot-clé « pseudo-documentary » est très peuplé).
+    # V114 — peplum anglais, parodie française, comédie ado (IDs vérifiés
+    # sur les pages publiques TMDB) :
+    # · sword and sandal = 317728 → porté par Gladiator II (558449),
+    #   le terme anglais du peplum ;
+    # · satirical = 225012 → porté par OSS 117 : Le Caire (15152), qui ne
+    #   porte NI « parody » NI « spoof » ;
+    # · teen comedy 155722 / sex comedy 170827 / teenage sexuality 156777 →
+    #   les trois sont sur la fiche d'American Pie (2105).
+    # (Les variantes « pseudo/fake/faux documentary » de la V113 sont
+    # retirées : elles désignent le found footage horreur — Blair Witch,
+    # Paranormal Activity — pas le mockumentaire.)
     "peplum": 187305,
+    "sword and sandal": 317728,
     "spoof": 11931,
-    "pseudo-documentary": 276164,
-    "pseudo documentary": 377754,
-    "fake documentary": 160517,
-    "false documentary": 317691,
-    "faux documentary": 365784,
+    "satirical": 225012,
+    "teen comedy": 155722,
+    "sex comedy": 170827,
+    "teenage sexuality": 156777,
     "based on true story": 9672,
     "revenge": 9748,
     "space opera": 161176,

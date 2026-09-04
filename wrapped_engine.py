@@ -212,6 +212,47 @@ def format_duree_fr(minutes: int) -> str:
     return " ".join(parts)
 
 
+def _annee_str(series_annee: "pd.Series") -> "pd.Series":
+    """Colonne année en texte sûr pour regrouper ('1995', '?')."""
+    return series_annee.apply(lambda v: str(int(v)) if pd.notna(v) else "?")
+
+
+def _nb_contenus_distincts(part: "pd.DataFrame") -> int:
+    """Contenus DISTINCTS = couples (titre, année) — V115.
+
+    Compter les titres uniques fusionnait deux films homonymes : Mortal
+    Kombat 1995 + Mortal Kombat 2024 = « 1 film » vu (et 2 visionnages
+    sur la même ligne du top). La paire titre+année les sépare.
+    """
+    if part is None or part.empty:
+        return 0
+    key = part["titre"].astype(str) + "||" + _annee_str(part["annee"])
+    return int(key.nunique())
+
+
+def _top_contenus(part: "pd.DataFrame", n: int = 5) -> list[tuple[str, int]]:
+    """Top contenus V115 : regroupés par titre ET année de sortie.
+
+    Deux films homonymes (ex. Mortal Kombat 1995 / 2024) ne sont plus
+    fusionnés (signalé utilisateur). L'année n'est AFFICHÉE que si le
+    titre revient sur plusieurs années différentes — les autres libellés
+    restent strictement inchangés (aucun « (2021) » parasite sur tous
+    les tops).
+    """
+    if part is None or part.empty:
+        return []
+    df = part.copy()
+    df["annee_s"] = _annee_str(df["annee"])
+    tailles = df.groupby(["titre", "annee_s"]).size().sort_values(ascending=False)
+    annees_par_titre = df.groupby("titre")["annee_s"].nunique()
+    out: list[tuple[str, int]] = []
+    for (titre, annee_s), taille in tailles.head(n).items():
+        ambigu = int(annees_par_titre.get(titre, 1)) > 1
+        label = f"{titre} ({annee_s})" if ambigu and annee_s != "?" else str(titre)
+        out.append((label, int(taille)))
+    return out
+
+
 def compute_wrapped(dataset: dict[str, Any], year: int, timezone_name: str = "Europe/Paris") -> dict[str, Any]:
     """Calcule tous les indicateurs annuels pour une année donnée."""
     rows = normalize_history(dataset, timezone_name=timezone_name)
@@ -229,9 +270,11 @@ def compute_wrapped(dataset: dict[str, Any], year: int, timezone_name: str = "Eu
     total_h = float(df_y["duree_h"].sum())
     films_df = df_y[df_y["type"] == "Film"]
     eps_df = df_y[df_y["type"] == "Épisode"]
-    nb_films = int(films_df["titre"].nunique())
+    # V115 : films/séries distincts comptés par (titre, année) — deux films
+    # homonymes sont bien DEUX contenus différents.
+    nb_films = _nb_contenus_distincts(films_df)
     nb_eps = int(len(eps_df))
-    nb_series = int(eps_df["titre"].nunique())
+    nb_series = _nb_contenus_distincts(eps_df)
     notes = df_y.loc[df_y["note"] > 0, "note"]
     note_moy = float(notes.mean()) if not notes.empty else 0.0
 
@@ -240,15 +283,9 @@ def compute_wrapped(dataset: dict[str, Any], year: int, timezone_name: str = "Eu
     nb_peak = int(par_jour.max()) if not par_jour.empty else 0
     mois_peak = int(df_y.groupby("mois_vue").size().idxmax()) if not df_y.empty else 0
 
-    top_films = []
-    if not films_df.empty:
-        agg = films_df.groupby("titre").agg(n=("duree_h", "size")).sort_values("n", ascending=False).head(5)
-        top_films = [(t, int(row["n"])) for t, row in agg.iterrows()]
-
-    top_series = []
-    if not eps_df.empty:
-        agg = eps_df.groupby("titre").agg(eps=("duree_h", "size")).sort_values("eps", ascending=False).head(5)
-        top_series = [(t, int(row["eps"])) for t, row in agg.iterrows()]
+    # V115 : tops par (titre, année) — plus de fusion Mortal Kombat 1995/2024.
+    top_films = _top_contenus(films_df)
+    top_series = _top_contenus(eps_df)
 
     genres_n: dict[str, int] = {}
     for raw in df_y["genre"].fillna("").astype(str).str.split(" · "):
