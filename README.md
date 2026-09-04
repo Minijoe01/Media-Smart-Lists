@@ -148,8 +148,8 @@ Au premier chargement, l'app affiche tes listes **immédiatement** (données MDB
 <p align="center"><img src="docs/En_cours.png" alt="Progression des séries" width="820"></p>
 <p align="center"><img src="docs/Nettoyage.png" alt="Détection des doublons, des contenus déjà vus et nettoyage de vos listes" width="820"></p>
 <p align="center"><img src="docs/Que_regarder.png" alt="Que regarder ?" width="820"></p>
-<p align="center"><img src="docs/statistiques1.png" alt="Vos statistiques" width="820"></p>
-<p align="center"><img src="docs/statistiques2.png" alt="Vos statistiques" width="820"></p>
+<p align="center"><img src="docs/Statistiques1.png" alt="Vos statistiques" width="820"></p>
+<p align="center"><img src="docs/Statistiques2.png" alt="Vos statistiques" width="820"></p>
 
 ## 🚀 Utiliser l'app
 
