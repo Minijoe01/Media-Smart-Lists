@@ -2383,6 +2383,40 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
         )
         if names:
             media["genres"] = names
+    # V116 — Pays d'origine, note/votes communautaires et statut (uniquement
+    # si absents) : les imports ZIP Trakt SANS connexion MDBList n'en avaient
+    # AUCUN → filtre 🌍 Pays vide et scores sans bonus/malus de note. Ces
+    # champs sont déjà dans la réponse TMDB (aucun appel supplémentaire).
+    if not media.get("country"):
+        raw_country = ""
+        prod_countries = payload.get("production_countries") or []
+        if isinstance(prod_countries, list) and prod_countries:
+            first = prod_countries[0]
+            raw_country = (first.get("iso_3166_1") or "") if isinstance(first, dict) else ""
+        if not raw_country:
+            origin = payload.get("origin_country") or []
+            if isinstance(origin, list) and origin:
+                raw_country = str(origin[0] or "")
+        if raw_country:
+            media["country"] = str(raw_country).strip().lower()
+    try:
+        vote_average = float(payload.get("vote_average") or 0)
+    except (TypeError, ValueError):
+        vote_average = 0.0
+    try:
+        vote_count = int(payload.get("vote_count") or 0)
+    except (TypeError, ValueError):
+        vote_count = 0
+    if vote_average > 0 and not media.get("score"):
+        # « score » est sur 100 chez nous (_community_note divise par 10) :
+        # TMDB vote_average 8.2 → score 82.
+        media["score"] = round(vote_average * 10)
+    if vote_count > 0 and not (media.get("ratings") or []):
+        media["ratings"] = [{"source": "TMDB", "value": vote_average, "votes": vote_count}]
+    if not media.get("status"):
+        status = str(payload.get("status") or "").strip()
+        if status:
+            media["status"] = status
     # Studios (production_companies + networks).
     studios: list[dict] = []
     seen_studios: set[str] = set()
@@ -3098,10 +3132,22 @@ def _render_taste_profile(profile: dict) -> None:
             st.markdown("**🏢 Tes studios récurrents**")
             st.markdown(_render_studio_chips(studio_stats), unsafe_allow_html=True)
         if not people_stats and not studio_stats:
-            st.caption(
-                "🏢🎭 Studios et acteurs seront détectés automatiquement dès que la clé "
-                "TMDB_API_KEY sera renseignée dans les Secrets Streamlit."
-            )
+            if _tmdb_api_key():
+                # V116 : la clé EST configurée mais les données n'ont (pas
+                # encore) d'acteurs/studios — l'ancien message désignait la
+                # clé à tort (rapporté par un utilisateur : import ZIP Trakt
+                # sans connexion MDBList, enrichissement non encore passé).
+                st.caption(
+                    "🏢🎭 Acteurs et studios sont complétés par l'enrichissement TMDB en "
+                    "arrière-plan : après un chargement, laisse tourner 1 à 2 minutes puis "
+                    "reviens (ils restent ensuite en mémoire 30 jours). Pour un import ZIP "
+                    "Trakt, l'enrichissement démarre automatiquement à l'import."
+                )
+            else:
+                st.caption(
+                    "🏢🎭 Studios et acteurs seront détectés automatiquement dès que la clé "
+                    "TMDB_API_KEY sera renseignée dans les Secrets Streamlit."
+                )
 
 
 COUNTRY_FR = {
@@ -8099,6 +8145,40 @@ def _render_zip_import_screen() -> None:
                         ok_enrich, enrich_msg = _enrich_zip_dataset()
                     if not ok_enrich:
                         enrich_msg = f" (enrichissement : {enrich_msg})"
+                # V116 — ENRICHISSEMENT TMDB EN ARRIÈRE-PLAN POUR LES ZIP AUSSI.
+                # Avant : sans connexion MDBList, l'import restait « nu » (un
+                # export Trakt ne contient que titres/ids/dates) → TOUS les
+                # filtres de « Que regarder ? » restaient vides (genres, pays,
+                # acteurs, réalisateurs, studios) et la page profil affichait
+                # un message trompeur sur la clé TMDB (remonté par un
+                # utilisateur du forum). L'enrichissement TMDB est générique
+                # (il travaille par ID TMDB, et le ZIP en contient) : on lance
+                # le même thread en arrière-plan que pour MDBList. La clé de
+                # cache dérive du CONTENU du ZIP : un réimport du même fichier
+                # (F5, nouvel appareil) repart du dataset DÉJÀ enrichi.
+                tmdb_enrich_started = False
+                if _tmdb_api_key():
+                    import hashlib as _hashlib
+                    zip_key = "zip_" + _hashlib.sha256(raw_bytes).hexdigest()[:16]
+                    cached_zip = _ENRICH_STATE["datasets"].get(zip_key)
+                    if cached_zip:
+                        data = cached_zip
+                        st.session_state["_normalized_dataset"] = data
+                        st.session_state.pop("_source_genre_cache", None)
+                        enrich_msg += " · données déjà enrichies TMDB (mémoire du serveur) réutilisées"
+                    elif not _ENRICH_STATE["in_flight"].get(zip_key):
+                        import threading as _threading
+                        _ENRICH_STATE["in_flight"][zip_key] = True
+                        _threading.Thread(
+                            target=_enrich_in_background, args=(zip_key, data), daemon=True
+                        ).start()
+                        tmdb_enrich_started = True
+                if tmdb_enrich_started:
+                    enrich_msg += (
+                        " · 🎬 enrichissement TMDB lancé en arrière-plan : genres, acteurs, "
+                        "réalisateurs, studios, pays et mots-clés (styles) vont apparaître "
+                        "progressivement dans les filtres — compte 1 à 2 min."
+                    )
                 st.markdown(
                     f'<div class="accent-callout"><strong>✓ ZIP TRAKT IMPORTÉ</strong> · '
                     f'{counts["films_vus"]} film(s) vu(s) · {counts["episodes_vus"]} épisode(s) vu(s) · '
