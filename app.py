@@ -2417,6 +2417,16 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
         status = str(payload.get("status") or "").strip()
         if status:
             media["status"] = status
+    # V119 — total d'épisodes d'une série (payload TV « number_of_episodes ») :
+    # indispensable au % de progression des séries en cours pour les imports
+    # ZIP Trakt (l'export ne le contient pas — il restait à 0, donc 0 %).
+    if not media.get("total_episodes"):
+        try:
+            total_eps = int(payload.get("number_of_episodes") or 0)
+        except (TypeError, ValueError):
+            total_eps = 0
+        if total_eps > 0:
+            media["total_episodes"] = total_eps
     # V117 — poster (chemin TMDB) si absent : les imports ZIP Trakt sans
     # connexion MDBList n'en avaient AUCUN → cartes sans affiche dans les
     # listes, alors que « Hors de mes listes » (construit côté TMDB) en
@@ -2606,6 +2616,58 @@ def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(executor.map(work, targets))
+
+    # ── V119 — POST-PASSE « SÉRIES EN COURS » (Up Next / progress) ────────
+    # Ces lignes sont des COPIES construites au chargement (build_progress
+    # fusionne historique + upnext) : l'enrichissement ci-dessus ne les
+    # touchait pas → pour un import ZIP Trakt, les cartes « En cours de
+    # lecture » restaient sans poster NI % de progression (remarqué par
+    # l'utilisateur). On complète depuis les médias déjà enrichis — même
+    # identifiant TMDB, donc AUCUN appel réseau supplémentaire.
+    try:
+        enriched_by_tmdb: dict[int, dict] = {}
+        for m, _k in all_media:
+            tid = _media_tmdb_id(m)
+            if tid:
+                enriched_by_tmdb.setdefault(tid, m)
+        for row in (data.get("progress") or []):
+            if not isinstance(row, dict):
+                continue
+            show = row.get("show") if isinstance(row.get("show"), dict) else None
+            if not show:
+                continue
+            show_ids = show.get("ids") if isinstance(show.get("ids"), dict) else {}
+            try:
+                show_tid = int(show_ids.get("tmdb") or 0)
+            except (TypeError, ValueError):
+                show_tid = 0
+            source_media = enriched_by_tmdb.get(show_tid) if show_tid else None
+            if not source_media:
+                continue
+            if not show.get("poster") and source_media.get("poster"):
+                show["poster"] = source_media["poster"]
+            if not show.get("genres") and source_media.get("genres"):
+                show["genres"] = source_media["genres"]
+            if not show.get("status") and source_media.get("status"):
+                show["status"] = source_media["status"]
+            if not row.get("total_episodes") and source_media.get("total_episodes"):
+                total = int(source_media["total_episodes"])
+                watched = int(row.get("watched_episodes") or 0)
+                remaining = max(total - watched, 0)
+                row["total_episodes"] = total
+                row["remaining_episodes"] = remaining
+                row["percent"] = round(watched / total * 100, 1) if total else 0.0
+                runtime = int(row.get("runtime") or 0)
+                if runtime:
+                    row["remaining_minutes"] = remaining * runtime
+                    row["watched_minutes"] = watched * runtime
+                # Synchronise aussi le bloc « progress » interne (utilisé par
+                # certains tris/exports).
+                progress_block = row.get("progress") if isinstance(row.get("progress"), dict) else {}
+                if progress_block is not None:
+                    progress_block.setdefault("total_episode_count", total)
+    except Exception:
+        pass
 
 
 @st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : cache serveur partagé (PC + GSM)
@@ -2846,12 +2908,16 @@ def render_dataset_overview() -> None:
 
     # Bandeau de métriques moderne (skin V53) : cartes k/v/d avec icône,
     # fondu en cascade et surbrillance au survol (0 appel API).
+    # V119 — libellé adapté au fournisseur : un utilisateur ZIP Trakt n'a
+    # jamais mis les pieds sur MDBList (remarque d'un testeur externe).
+    _is_zip = str((_dataset() or {}).get("source") or "") == "trakt_zip"
     cards: list[dict[str, Any]] = [
         {"emoji": "🎬", "k": "Films vus", "v": len(watched.get("movies") or []), "d": "au compteur"},
         {"emoji": "📺", "k": "Séries vues", "v": _distinct_series_count(watched), "d": "séries distinctes"},
         {"emoji": "🎞️", "k": "Épisodes vus", "v": len(watched.get("episodes") or []), "d": "au compteur"},
         {"emoji": "⭐", "k": "Watchlist", "v": watchlist_total, "d": "contenus dans ma watchlist"},
-        {"emoji": "🗂️", "k": "Listes personnelles", "v": len(lists), "d": "créées sur MDBList"},
+        {"emoji": "🗂️", "k": "Listes personnelles", "v": len(lists),
+         "d": "tes listes Trakt (import ZIP)" if _is_zip else "créées sur MDBList"},
         {"emoji": "📦", "k": "Contenus en listes", "v": list_contents, "d": "au total des listes"},
         {"emoji": "💬", "k": "Notes", "v": sum(len(ratings.get(key) or []) for key in ("movies", "shows", "seasons", "episodes")),
          "d": "films, séries, épisodes"},
@@ -2900,23 +2966,19 @@ def render_dataset_overview() -> None:
         if total_titles:
             full = with_actors == total_titles and with_studios == total_titles
             if enriching:
-                # V118 — PLUS DE st.rerun() ICI : placé au milieu du tableau
-                # de bord, il TRONQUAIT tout ce qui suit (les widgets locaux
-                # qui marchent SANS TMDB disparaissaient pendant le chargement
-                # — rapporté par l'utilisateur). On affiche juste la barre ;
-                # l'actualisation automatique se fait en FIN de page.
+                # V119 — UNE SEULE BARRE (en fin de page) : deux barres
+                # s'affichaient (milieu + fin) et c'était perturbant (rapporté
+                # par l'utilisateur). Ici, juste la mention — les widgets
+                # locaux ci-dessous fonctionnent déjà.
                 active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
                 done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
                 total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
-                if total > 0:
-                    st.progress(min(done / total, 1.0))
-                    st.caption(
-                        f"⏳ Chargement TMDB : **{done}/{total}** titre(s) ({int(done * 100 / total)} %) · "
-                        "les widgets ci-dessous fonctionnent déjà ; acteurs, studios et mots-clés "
-                        "arriveront à la fin du chargement."
-                    )
-                else:
-                    st.caption("⏳ Chargement TMDB en cours… les widgets ci-dessous fonctionnent déjà.")
+                pct = f" ({int(done * 100 / total)} %)" if total else ""
+                st.caption(
+                    f"⏳ Chargement TMDB en cours{pct} · les widgets ci-dessous fonctionnent déjà ; "
+                    "acteurs, studios et mots-clés arriveront à la fin du chargement "
+                    "(barre de progression en bas de page)."
+                )
             else:
                 st.caption(
                     f"🎭 Acteurs TMDB : {with_actors}/{total_titles} titre(s) · "
@@ -4626,6 +4688,119 @@ def _save_qr_bookmarks(bookmarks: list[dict]) -> None:
         pass
 
 
+def _sanitize_bookmark_filters(pending: dict) -> tuple[dict, list[str]]:
+    """V119 — ne garde d'un signet que les valeurs VALIDES pour CET utilisateur.
+
+    Un signet partagé par un AUTRE compte peut référencer des choses qui
+    n'existent pas chez toi : sa source (« Watchlist Trakt (import ZIP) »
+    d'un autre), ses genres, ses acteurs… Streamlit ignore silencieusement
+    ces valeurs (pas de crash — testé), mais le signet semblait « ne rien
+    faire » (rapporté par un testeur : « signet chargé mais je ne vois pas
+    les filtres »). On valide donc contre les options réelles et on
+    RETOURNE la liste des éléments ignorés, affichée dans la bannière.
+    """
+    skipped: list[str] = []
+    out: dict = {}
+    data = _dataset() or {}
+    sources = data.get("sources") or []
+    source_labels = {source_display_label(s) for s in sources} if sources else None
+
+    fixed_options: dict[str, set] = {
+        "watchlist_type": {"Tous", "Films", "Séries"},
+        "qr_genre_mode": {"Au moins un (OU)", "Tous (ET)"},
+        "qr_cast_mode": {"Au moins un (OU)", "Tous (ET)"},
+        "qr_duration_min": {"Aucune", "≥ 1h", "≥ 1h30", "≥ 2h", "≥ 2h30", "≥ 3h"},
+        "qr_time": {"Aucune limite", "Moins d'1h30", "Moins de 2h", "Moins de 3h",
+                    "Soirée (< 10h)", "Week-end (< 24h)"},
+        "qr_status": {"Tous les statuts", "Séries terminées", "Séries en cours", "Séries annulées"},
+        "qr_note_min": {0.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0},
+        "qr_preset": set(PRESET_NAMES),
+    }
+
+    def valid_multiselect(values, universe, label):
+        if not isinstance(values, list):
+            return values, []
+        kept, dropped = [], []
+        for v in values:
+            (kept if (universe is None or v in universe) else dropped).append(v)
+        return kept, ([f"{label} ignoré(s) : {', '.join(map(str, dropped))}"] if dropped else [])
+
+    # Univers dynamiques depuis les données de l'utilisateur (0 appel API).
+    # On prend l'UNION de tout ce qui peut alimenter les listes déroulantes :
+    # médias de l'historique/watchlist/listes (_all_media) ET items des
+    # sources (le sélecteur « Source » de « Que regarder ? » puise dedans,
+    # parfois via des objets distincts) — plus permissif que strict : une
+    # valeur légitime ne doit jamais être écartée.
+    all_media = list(_all_media(data)) if data else []
+    for src in (data.get("sources") or []):
+        if not isinstance(src, dict):
+            continue
+        for item in (src.get("movies") or []) + (src.get("shows") or []):
+            if isinstance(item, dict):
+                all_media.append((item, str(item.get("mediatype") or "")))
+    genres_universe = {str(g) for m, _ in all_media for g in (m.get("genres") or [])}
+    for item in ((data.get("sections") or {}).get("genres") or []):
+        if isinstance(item, dict) and item.get("title"):
+            genres_universe.add(str(item["title"]))
+    actors_universe = {str(a.get("name")) for m, _ in all_media for a in (m.get("actors") or []) if isinstance(a, dict)}
+    directors_universe = {str(d.get("name")) for m, _ in all_media for d in (m.get("directors") or []) if isinstance(d, dict)}
+    studios_universe = {str(s.get("name")) for m, _ in all_media for s in (m.get("studios") or []) if isinstance(s, dict)}
+    countries_universe = {_country_display(str(m.get("country")).strip().lower())
+                          for m, _ in all_media if m.get("country")}
+    styles_universe = set(STYLE_CATALOG.keys())
+
+    for key, value in pending.items():
+        if key == "qr_year_range":
+            if isinstance(value, list):
+                value = tuple(value)  # JSON : liste → tuple
+            out[key] = value
+            continue
+        if key in fixed_options:
+            if value in fixed_options[key]:
+                out[key] = value
+            elif value not in (None, "", [], "Aucun preset"):
+                skipped.append(f"{key} ignoré (valeur inconnue : {value})")
+            continue
+        if key == "qr_source" and source_labels is not None:
+            if value in source_labels:
+                out[key] = value
+            else:
+                skipped.append(f"source ignorée : « {value} » (n'existe pas chez toi)")
+            continue
+        if key in ("qr_genres", "qr_genres_exclude"):
+            kept, notes = valid_multiselect(value, genres_universe, "Genre(s)")
+            out[key] = kept
+            skipped.extend(notes)
+            continue
+        if key == "qr_actors":
+            kept, notes = valid_multiselect(value, actors_universe, "Acteur(s)")
+            out[key] = kept
+            skipped.extend(notes)
+            continue
+        if key == "qr_directors":
+            kept, notes = valid_multiselect(value, directors_universe, "Réalisateur(s)")
+            out[key] = kept
+            skipped.extend(notes)
+            continue
+        if key == "qr_studios":
+            kept, notes = valid_multiselect(value, studios_universe, "Studio(s)")
+            out[key] = kept
+            skipped.extend(notes)
+            continue
+        if key == "qr_styles":
+            kept, notes = valid_multiselect(value, styles_universe, "Style(s)")
+            out[key] = kept
+            skipped.extend(notes)
+            continue
+        if key in ("qr_countries_include", "qr_countries_exclude"):
+            kept, notes = valid_multiselect(value, countries_universe, "Pays")
+            out[key] = kept
+            skipped.extend(notes)
+            continue
+        out[key] = value  # qr_search, qr_sort… : texte libre ou repli inoffensif
+    return out, skipped
+
+
 def _apply_pending_bookmark() -> None:
     """Applique un signet en attente — AVANT la création des widgets.
 
@@ -4634,23 +4809,23 @@ def _apply_pending_bookmark() -> None:
     signalé). Le clic sur 📌 pose donc une clé `_qr_bookmark_pending` et
     déclenche un rerun ; au run suivant, cette fonction applique les valeurs
     au tout début de la page — avant tout widget.
+
+    V119 — les valeurs sont d'abord SÉCURISÉES (voir `_sanitize_bookmark_filters`) :
+    un signet venu d'un autre compte (source, genres, acteurs… inconnus chez
+    toi) n'applique que ce qui existe, et la bannière liste ce qui a été
+    ignoré — au lieu de sembler « ne rien faire ».
     """
     pending = st.session_state.pop("_qr_bookmark_pending", None)
     if not isinstance(pending, dict):
         return
-    for key, value in pending.items():
-        if key == "qr_year_range" and isinstance(value, list):
-            value = tuple(value)  # JSON : liste → tuple
-        if key == "qr_preset" and value not in PRESET_NAMES:
-            # V111 : les presets doublons (genre/style) ont été supprimés —
-            # un signet ancien (bouton 📌 ou lien 🔗) qui les référence est
-            # ignoré proprement pour ce champ : le reste du signet
-            # s'applique, sans crash ni choix disparu dans le selectbox.
-            continue
+    sanitized, skipped = _sanitize_bookmark_filters(pending)
+    for key, value in sanitized.items():
         try:
             st.session_state[key] = value
         except Exception:
             pass
+    if skipped:
+        st.session_state["_qr_bookmark_skipped"] = skipped[:4]
 
 
 def _render_search_bookmarks() -> None:
@@ -4782,10 +4957,21 @@ def render_watchlist_page() -> None:
     _apply_pending_bookmark()
     # Flash de confirmation après un signet chargé (URL ou bouton).
     _flash = st.session_state.pop("_qr_bookmark_flash", None)
+    _skipped = st.session_state.pop("_qr_bookmark_skipped", None)
     if _flash:
+        _skipped_html = ""
+        if _skipped:
+            # V119 — un signet partagé par un autre compte peut référencer
+            # des choses inexistantes chez toi : on le DIT au lieu de laisser
+            # croire que le signet « ne fait rien ».
+            _skipped_html = (
+                '<br>⚠️ Élément(s) ignoré(s) car absents de TES données : '
+                + " · ".join(escape(str(s)) for s in _skipped)
+            )
         st.markdown(
             f'<div class="accent-callout"><strong>📌 SIGNET « {escape(str(_flash))} » APPLIQUÉ</strong> · '
-            "Tes filtres sont en place — les résultats se mettent à jour.</div>",
+            "Tes filtres sont en place — les résultats se mettent à jour."
+            f"{_skipped_html}</div>",
             unsafe_allow_html=True,
         )
     sections = _sections()
@@ -5297,6 +5483,13 @@ def render_watchlist_page() -> None:
     roulette_col, discovery_col, perfect_col = st.columns(3)
     with roulette_col:
         if st.button("🎲 Roulette — choisir pour moi", type="primary", key="roulette_classic"):
+            # V119 — la roulette est un AUTRE mode d'exploration : les
+            # résultats « hors de mes listes » d'une recherche précédente
+            # restaient affichés dessous et donnaient l'impression d'une
+            # « liste qui grossit » (rapporté par un utilisateur). On les
+            # retire au clic.
+            st.session_state.pop("_outside_results", None)
+            st.session_state.pop("_outside_sig", None)
             pool = [row for row in filtered if row["score"] >= 70 and not row.get("not_for_me")]
             if not pool:
                 pool = sorted(
@@ -5311,6 +5504,9 @@ def render_watchlist_page() -> None:
                 )[0]
     with discovery_col:
         if st.button("🧭 Roulette découverte", type="primary", key="roulette_discovery"):
+            # V119 — même logique que la roulette classique (cf. ci-dessus).
+            st.session_state.pop("_outside_results", None)
+            st.session_state.pop("_outside_sig", None)
             discovery = [
                 row for row in filtered
                 if not row.get("not_for_me")
@@ -5343,6 +5539,9 @@ def render_watchlist_page() -> None:
         _perfect_results = None
     with perfect_col:
         if _tmdb_api_key() and st.button("🎯 Hors de mes listes", type="primary", key="perfect_reco_btn"):
+            # V119 — symétrique des roulettes : changer de mode d'exploration
+            # retire la carte « Le hasard a choisi » d'un tirage précédent.
+            st.session_state.pop("_roulette_result", None)
             with st.spinner("🔍 Grand bassin TMDB, tous tes critères en ET (≈ 10 s la 1re fois)…"):
                 _perfect_results = _perfect_recommendation(
                     profile, _dataset(), selected_type, selected_genres, note_min, _tmdb_api_key(),
