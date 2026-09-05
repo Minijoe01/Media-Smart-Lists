@@ -2900,27 +2900,31 @@ def render_dataset_overview() -> None:
         if total_titles:
             full = with_actors == total_titles and with_studios == total_titles
             if enriching:
+                # V118 — PLUS DE st.rerun() ICI : placé au milieu du tableau
+                # de bord, il TRONQUAIT tout ce qui suit (les widgets locaux
+                # qui marchent SANS TMDB disparaissaient pendant le chargement
+                # — rapporté par l'utilisateur). On affiche juste la barre ;
+                # l'actualisation automatique se fait en FIN de page.
                 active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
                 done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
                 total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
-                st.markdown(
-                    '<div class="accent-callout"><strong>⏳ CHARGEMENT TMDB EN COURS</strong> · '
-                    'Genres, acteurs, studios et mots-clés arrivent au fil de l\'eau — '
-                    'cette page s\'actualise toute seule.</div>',
-                    unsafe_allow_html=True,
-                )
                 if total > 0:
                     st.progress(min(done / total, 1.0))
-                    st.caption(f"🎬 **{done}/{total}** titre(s) traités ({int(done * 100 / total)} %)")
-                time.sleep(4)
-                st.rerun()
-            st.caption(
-                f"🎭 Acteurs TMDB : {with_actors}/{total_titles} titre(s) · "
-                f"🏢 Studios : {with_studios}/{total_titles} titre(s) · "
-                f"🏷️ Mots-clés : {with_keywords}/{total_titles} titre(s)"
-                + (" ✅ couverture complète de ton historique et de tes listes" if full else
-                   " — les titres manquants n'ont pas de fiche TMDB ou d'identifiant TMDb")
-            )
+                    st.caption(
+                        f"⏳ Chargement TMDB : **{done}/{total}** titre(s) ({int(done * 100 / total)} %) · "
+                        "les widgets ci-dessous fonctionnent déjà ; acteurs, studios et mots-clés "
+                        "arriveront à la fin du chargement."
+                    )
+                else:
+                    st.caption("⏳ Chargement TMDB en cours… les widgets ci-dessous fonctionnent déjà.")
+            else:
+                st.caption(
+                    f"🎭 Acteurs TMDB : {with_actors}/{total_titles} titre(s) · "
+                    f"🏢 Studios : {with_studios}/{total_titles} titre(s) · "
+                    f"🏷️ Mots-clés : {with_keywords}/{total_titles} titre(s)"
+                    + (" ✅ couverture complète de ton historique et de tes listes" if full else
+                       " — les titres manquants n'ont pas de fiche TMDB ou d'identifiant TMDb")
+                )
     except Exception:
         pass
 
@@ -5502,33 +5506,82 @@ def render_progress_page() -> None:
     # l'arrivée si les données datent de plus de 5 minutes (1 appel ciblé,
     # plafonné par l'âge du cache — fini le clic manuel systématique).
     st.markdown("### 🔴 Lecture en cours maintenant")
-    live_cache = st.session_state.get(NOW_PLAYING_CACHE_KEY)
-    live_age = time.time() - float((live_cache or {}).get("fetched_at") or 0)
-    if mdb_oauth.is_connected() and (not isinstance(live_cache, dict) or live_age >= NOW_PLAYING_AUTO_SECONDS):
-        with st.spinner("Vérification de la lecture en cours…"):
-            _refresh_now_playing()
-    refresh_col, auto_col = st.columns([0.58, 0.42])
-    with refresh_col:
-        if st.button(
-            "Actualiser la lecture en cours · 1 appel",
-            type="primary",
-            key="refresh_now_playing",
-        ):
+    if mdb_oauth.is_connected():
+        live_cache = st.session_state.get(NOW_PLAYING_CACHE_KEY)
+        live_age = time.time() - float((live_cache or {}).get("fetched_at") or 0)
+        if not isinstance(live_cache, dict) or live_age >= NOW_PLAYING_AUTO_SECONDS:
             with st.spinner("Vérification de la lecture en cours…"):
-                ok, message = _refresh_now_playing()
-            if not ok:
-                st.caption(f"⚠️ {message}")
-    with auto_col:
-        st.toggle(
-            "Auto toutes les 5 minutes",
-            value=False,
-            key="ghost_live_auto",
-            help=(
-                "Option désactivée par défaut. Tant que cette page reste ouverte, "
-                "elle coûte au maximum environ 12 appels MDBList par heure."
-            ),
+                _refresh_now_playing()
+        refresh_col, auto_col = st.columns([0.58, 0.42])
+        with refresh_col:
+            if st.button(
+                "Actualiser la lecture en cours · 1 appel",
+                type="primary",
+                key="refresh_now_playing",
+            ):
+                with st.spinner("Vérification de la lecture en cours…"):
+                    ok, message = _refresh_now_playing()
+                if not ok:
+                    st.caption(f"⚠️ {message}")
+        with auto_col:
+            st.toggle(
+                "Auto toutes les 5 minutes",
+                value=False,
+                key="ghost_live_auto",
+                help=(
+                    "Option désactivée par défaut. Tant que cette page reste ouverte, "
+                    "elle coûte au maximum environ 12 appels MDBList par heure."
+                ),
+            )
+        _now_playing_fragment()
+    else:
+        # V118 — REPLI sans connexion MDBList (import ZIP Trakt) : l'API
+        # « lecture en cours » n'existe pas côté Trakt (un export ZIP est un
+        # INSTANTANÉ) — les contenus actifs n'apparaissaient donc NULLE PART
+        # en « En cours » (rapporté par l'utilisateur). On affiche les points
+        # de reprise ACTIFS (non en pause) du dernier état connu, avec la
+        # durée complétée depuis les données TMDB du dataset (« reste X min »).
+        playback_items = sections.get("playback") or []
+        fallback_rows = normalize_now_playing(
+            playback_items, fetched_at=time.time(), now_timestamp=time.time()
         )
-    _now_playing_fragment()
+        fallback_rows = [r for r in fallback_rows if not r.get("paused_at")]
+        media_runtime_by_tmdb: dict[int, int] = {}
+        for m, _k in _all_media(_dataset()):
+            tid = _media_tmdb_id(m)
+            rt = int(m.get("runtime") or 0)
+            if tid and rt:
+                media_runtime_by_tmdb.setdefault(tid, rt)
+        for r in fallback_rows:
+            if not r.get("runtime"):
+                try:
+                    tid = int((r.get("ids") or {}).get("tmdb") or 0)
+                except (TypeError, ValueError):
+                    tid = 0
+                rt = media_runtime_by_tmdb.get(tid)
+                if rt:
+                    r["runtime"] = rt
+                    if r.get("progress"):
+                        r["remaining_minutes"] = int(round(rt * max(100 - r["progress"], 0) / 100))
+        fallback_rows.sort(key=lambda r: r.get("updated_timestamp") or 0, reverse=True)
+        fallback_rows = fallback_rows[:6]
+        fallback_rows = enrich_playback_posters(fallback_rows, _dataset())
+        fallback_rows = _apply_playback_poster_cache(fallback_rows)
+        if fallback_rows:
+            _render_live_now_playing_rows(
+                fallback_rows,
+                time.time(),
+                note=(
+                    "📄 Dernier état connu au moment de l'export Trakt (sans connexion "
+                    "MDBList, l'app ne peut pas interroger la lecture en direct). Les "
+                    "contenus en pause sont sur la page 👻 Progression Fantôme."
+                ),
+            )
+        else:
+            st.caption(
+                "Aucune lecture active dans l'état connu. Connecte MDBList pour suivre "
+                "la lecture en direct."
+            )
 
     st.markdown("### Où en suis-je dans mes séries ?")
     if not progress_rows:
@@ -5759,7 +5812,7 @@ def _refresh_now_playing() -> tuple[bool, str]:
     return True, "Lecture en cours actualisée."
 
 
-def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
+def _render_live_now_playing_rows(rows: list[dict], fetched_at: float, note: str | None = None) -> None:
     if not rows:
         st.markdown(
             '<div class="accent-callout"><strong>AUCUNE LECTURE ACTIVE</strong> · '
@@ -5813,7 +5866,9 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float) -> None:
         )
     checked = datetime.fromtimestamp(float(fetched_at)).strftime("%H:%M:%S")
     st.caption(
-        f"Dernier contrôle réseau : {checked} · progression ensuite estimée localement chaque minute."
+        note
+        if note is not None
+        else f"Dernier contrôle réseau : {checked} · progression ensuite estimée localement chaque minute."
     )
 
 
@@ -8383,6 +8438,18 @@ def page_dashboard() -> None:
             )
         render_dataset_overview()
         render_dashboard_widgets()
+        # V118 — même actualisation de fin de page que la branche MDBList :
+        # pendant l'enrichissement TMDB du ZIP (V116), la barre progresse
+        # toute seule SANS tronquer les widgets ci-dessus.
+        if any(_ENRICH_STATE["in_flight"].values()):
+            active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
+            done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
+            total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
+            if total > 0:
+                st.progress(min(done / total, 1.0))
+                st.caption(f"⏳ Chargement TMDB : {done}/{total} titre(s) ({int(done * 100 / total)} %) — cette page se rafraîchit toute seule.")
+            time.sleep(4)
+            st.rerun()
         return
 
     # ── Données MDBList affichées ────────────────────────────────────────────
@@ -8432,6 +8499,21 @@ def page_dashboard() -> None:
                 _clear_mdblist_caches()
                 load_mdblist_dataset()
             st.rerun()
+
+    # ── V118 — ACTUALISATION AUTOMATIQUE EN TOUTE FIN DE PAGE (et seulement
+    # ici !) pendant l'enrichissement TMDB : tous les widgets ci-dessus sont
+    # déjà affichés (aucune troncature — le rerun de la V117, placé au milieu
+    # de la page, faisait disparaître les widgets locaux pendant le chargement).
+    # La barre du haut progresse ainsi toute seule, sans toucher à rien.
+    if any(_ENRICH_STATE["in_flight"].values()):
+        active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
+        done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
+        total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
+        if total > 0:
+            st.progress(min(done / total, 1.0))
+            st.caption(f"⏳ Chargement TMDB : {done}/{total} titre(s) ({int(done * 100 / total)} %) — cette page se rafraîchit toute seule.")
+        time.sleep(4)
+        st.rerun()
 
 
 def render_migration_page() -> None:
