@@ -107,6 +107,14 @@ def normalize_playback(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             if item.get("progress") is not None
             else item.get("progress_at_update")
         )
+        # V117 — garde anti-fraction : certains flux renvoient la progression
+        # en FRACTION (0,5 = moitié) et d'autres en pourcentage (50). Une
+        # valeur 0 < p ≤ 1 est lue comme une fraction (0,5 → 50 %) — un vrai
+        # « 1 % » est indiscernable de 0 % à l'affichage, la confusion est
+        # sans conséquence, alors que l'inverse affichait « 0 % » en plein
+        # milieu d'un film (rapporté par l'utilisateur).
+        if 0 < progress <= 1.0:
+            progress = progress * 100
         progress = max(0.0, min(progress, 100.0))
         runtime = _int(
             item.get("runtime")
@@ -120,6 +128,8 @@ def normalize_playback(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             or item.get("started_at")
         )
         updated_ts = _timestamp(item.get("updated_at_ts")) or _timestamp(updated_at)
+        started_at = item.get("started_at")
+        started_ts = _timestamp(started_at)
         season, number = _episode_numbers(episode)
         episode_title = str(episode.get("title") or episode.get("name") or "")
         episode_label = ""
@@ -148,6 +158,8 @@ def normalize_playback(items: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
                 "remaining_minutes": remaining,
                 "updated_at": updated_at,
                 "updated_timestamp": updated_ts,
+                "started_at": started_at,
+                "started_timestamp": started_ts,
                 "expires_at": item.get("expires_at"),
                 "paused_at": item.get("paused_at"),
                 "is_manual": bool(item.get("is_manual")),
@@ -177,6 +189,19 @@ def normalize_now_playing(
         runtime = int(value.get("runtime") or 0)
         initial = float(value.get("progress") or 0)
         if runtime > 0 and not value.get("paused_at"):
+            # V117 — quand le scrobbler ne rapporte PAS la progression en
+            # continu (ex. Kodi sans « interval » : l'événement de démarrage
+            # envoie progress=0 et l'entrée now-playing reste à 0 % alors
+            # que le film avance), on estime depuis l'heure de DÉBUT de la
+            # lecture. On ne le fait que si aucune progression n'est
+            # rapportée (initial ≤ 0) : une valeur rapportée reste la
+            # référence (reprise après pause, check-in manuel…).
+            if initial <= 0:
+                started_ts = value.get("started_timestamp")
+                if started_ts and started_ts <= now_timestamp:
+                    minutes_since_start = max(now_timestamp - started_ts, 0) / 60
+                    initial = min(minutes_since_start / runtime * 100, 100.0)
+                    value["progress_estimated_from_start"] = True
             estimated = min(initial + elapsed_minutes / runtime * 100, 100.0)
             value["progress"] = round(estimated, 1)
             value["remaining_minutes"] = int(round(runtime * max(100 - estimated, 0) / 100))

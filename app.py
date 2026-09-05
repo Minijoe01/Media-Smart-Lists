@@ -2417,6 +2417,14 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
         status = str(payload.get("status") or "").strip()
         if status:
             media["status"] = status
+    # V117 — poster (chemin TMDB) si absent : les imports ZIP Trakt sans
+    # connexion MDBList n'en avaient AUCUN → cartes sans affiche dans les
+    # listes, alors que « Hors de mes listes » (construit côté TMDB) en
+    # avait (rapporté par l'utilisateur). `_poster_url` construit l'URL.
+    if not media.get("poster"):
+        poster_path = str(payload.get("poster_path") or "").strip()
+        if poster_path:
+            media["poster"] = poster_path
     # Studios (production_companies + networks).
     studios: list[dict] = []
     seen_studios: set[str] = set()
@@ -2505,7 +2513,7 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
         media["collection"] = {"id": btc["id"], "name": str(btc.get("name") or "").strip()}
 
 
-def _enrich_tmdb_metadata(data: dict) -> None:
+def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
     """Complète genres, studios et acteurs via l'API TMDB (0 appel MDBList).
 
     Couverture COMPLÈTE de l'historique :
@@ -2519,6 +2527,10 @@ def _enrich_tmdb_metadata(data: dict) -> None:
     (`_fetch_tmdb_item`). Un rechargement ne refait donc QUE les contenus
     NOUVEAUX (ajoutés à une liste, vus depuis le dernier passage) → fini les
     40 s à chaque fois : seuls les changements récents sont interrogés.
+
+    V117 — `progress` (optionnel) : dict partagé {done, total} mis à jour au
+    fil de l'eau (st.cache_resource → visible des reruns) pour la barre de
+    progression de « Que regarder ? » et du tableau de bord.
     """
     key = _tmdb_api_key()
     if not key:
@@ -2545,19 +2557,24 @@ def _enrich_tmdb_metadata(data: dict) -> None:
         if len(targets) >= budget:
             break
 
+    if progress is not None:
+        progress["done"] = 0
+        progress["total"] = len(targets)
+
     def work(item: tuple[dict, str]) -> None:
         m, k = item
-        tmdb = _media_tmdb_id(m)
-        if not tmdb:
-            return
         try:
-            payload = _fetch_tmdb_item(k, tmdb, key)
-        except Exception:
-            # Échec transitoire (réseau, 5xx) : NON mis en cache → l'item sera
-            # réessayé au prochain enrichissement, sans rien « figer ».
-            return
-        if payload:
-            _apply_tmdb_payload(m, payload)
+            tmdb = _media_tmdb_id(m)
+            if not tmdb:
+                return
+            try:
+                payload = _fetch_tmdb_item(k, tmdb, key)
+            except Exception:
+                # Échec transitoire (réseau, 5xx) : NON mis en cache → l'item sera
+                # réessayé au prochain enrichissement, sans rien « figer ».
+                return
+            if payload:
+                _apply_tmdb_payload(m, payload)
             # MOTS-CLÉS TMDB (sport, superhero, biography…) : stockés sur le
             # média → le filtre des listes les utilise pour les genres sans
             # équivalent TMDB (ex. « Sport » trouve The Last Dance dans tes
@@ -2580,6 +2597,12 @@ def _enrich_tmdb_metadata(data: dict) -> None:
                     m["keywords"] = names
                 if kw_ids:
                     m["keyword_ids"] = kw_ids
+        finally:
+            # V117 — compteur de progression (barre en direct) : incrémenté
+            # QUEL QUE SOIT le destin de l'item (réussi, sans fiche, erreur
+            # réseau) — sinon la barre resterait bloquée sous le total.
+            if progress is not None:
+                progress["done"] = int(progress.get("done") or 0) + 1
 
     with ThreadPoolExecutor(max_workers=20) as executor:
         list(executor.map(work, targets))
@@ -2610,8 +2633,15 @@ def _enrichment_state() -> dict:
     aussitôt posés (d'où « aucun message d'attente » et l'actualisation
     manuelle nécessaire). st.cache_resource conserve l'objet pour toute la
     vie du processus, partagé entre sessions.
+
+    V117 — « progress » : {clé: {"done": int, "total": int, "error": str|None}}
+    alimenté par le thread d'enrichissement → BARRE DE PROGRESSION en direct
+    sur « Que regarder ? » et le tableau de bord (demande utilisateur : l'ancien
+    compteur « 129/1038 » manquait de clarté et un enrichissement bloqué était
+    invisible). « error » enregistre une panne réseau du thread (avant : mort
+    silencieuse → il fallait re-cliquer « charger les données » sans savoir).
     """
-    return {"datasets": {}, "in_flight": {}}
+    return {"datasets": {}, "in_flight": {}, "progress": {}}
 
 
 _ENRICH_STATE = _enrichment_state()
@@ -2625,12 +2655,19 @@ def _enrich_in_background(cache_key: str, data: dict) -> None:
     terminé, le dataset enrichi est mémorisé pour les rechargements (F5) tant
     que le conteneur vit. (Le drapeau d'état est posé par l'APPELANT avant
     le lancement du thread.)
+
+    V117 — progression en direct ({done, total}) + ERREUR ENREGISTRÉE : le
+    thread mourait silencieusement en cas de panne réseau prolongée → la
+    page semblait « ne plus charger » et il fallait re-cliquer sans savoir
+    pourquoi (rapporté par l'utilisateur). Désormais l'erreur s'affiche.
     """
+    progress = {"done": 0, "total": 0, "error": None}
+    _ENRICH_STATE["progress"][cache_key] = progress
     try:
-        _enrich_tmdb_metadata(data)
+        _enrich_tmdb_metadata(data, progress=progress)
         _ENRICH_STATE["datasets"][cache_key] = data
-    except Exception:
-        pass
+    except Exception as exc:  # panne réseau prolongée, TMDB indisponible…
+        progress["error"] = str(exc) or exc.__class__.__name__
     finally:
         _ENRICH_STATE["in_flight"][cache_key] = False
 
@@ -2850,7 +2887,11 @@ def render_dataset_overview() -> None:
     # ── Couverture TMDB : certitude visible que les acteurs/studios sont
     # bien présents pour TOUT l'historique + les listes. X/Y = couverture
     # complète si X == Y (sinon, TMDB n'avait pas la fiche, ou pas d'id TMDb).
+    # V117 — BARRE DE PROGRESSION en direct pendant l'enrichissement (fini
+    # le compteur « 129/1038 » difficile à lire — demande utilisateur), avec
+    # actualisation automatique de la page tant que le chargement tourne.
     try:
+        enriching = any(_ENRICH_STATE["in_flight"].values())
         all_media = _all_media(_dataset())
         total_titles = len(all_media)
         with_actors = sum(1 for m, _ in all_media if m.get("actors"))
@@ -2858,13 +2899,27 @@ def render_dataset_overview() -> None:
         with_keywords = sum(1 for m, _ in all_media if m.get("keywords"))
         if total_titles:
             full = with_actors == total_titles and with_studios == total_titles
+            if enriching:
+                active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
+                done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
+                total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
+                st.markdown(
+                    '<div class="accent-callout"><strong>⏳ CHARGEMENT TMDB EN COURS</strong> · '
+                    'Genres, acteurs, studios et mots-clés arrivent au fil de l\'eau — '
+                    'cette page s\'actualise toute seule.</div>',
+                    unsafe_allow_html=True,
+                )
+                if total > 0:
+                    st.progress(min(done / total, 1.0))
+                    st.caption(f"🎬 **{done}/{total}** titre(s) traités ({int(done * 100 / total)} %)")
+                time.sleep(4)
+                st.rerun()
             st.caption(
                 f"🎭 Acteurs TMDB : {with_actors}/{total_titles} titre(s) · "
                 f"🏢 Studios : {with_studios}/{total_titles} titre(s) · "
                 f"🏷️ Mots-clés : {with_keywords}/{total_titles} titre(s)"
                 + (" ✅ couverture complète de ton historique et de tes listes" if full else
                    " — les titres manquants n'ont pas de fiche TMDB ou d'identifiant TMDb")
-                + (" · ⏳ enrichissement en cours" if any(_ENRICH_STATE["in_flight"].values()) else "")
             )
     except Exception:
         pass
@@ -4688,19 +4743,35 @@ def render_watchlist_page() -> None:
     # studios → scores et tri). Pendant l'enrichissement en arrière-plan, on
     # affiche un écran d'attente auto-actualisé au lieu de listes mal triées
     # (les autres pages fonctionnent, elles, avec les données MDBList).
+    # V117 — BARRE DE PROGRESSION en direct (fait/total) qui se rafraîchit
+    # seule, et PLUS DE PLAFOND de 100 s : avant, la page s'affichait à moitié
+    # enrichie après ~25 essais → genres incomplets et scores faux (rapporté
+    # par l'utilisateur). On attend maintenant TANT QUE le thread tourne, en
+    # montrant où il en est (et l'erreur s'il est mort).
     if any(_ENRICH_STATE["in_flight"].values()):
+        active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
+        done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
+        total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
+        errors = [((_ENRICH_STATE["progress"].get(k) or {}).get("error")) for k in active]
+        errors = [e for e in errors if e]
         st.markdown(
             '<div class="accent-callout"><strong>⏳ CHARGEMENT DES DONNÉES TMDB EN COURS</strong> · '
-            'Cette page trie et note tes contenus grâce aux genres, acteurs et studios TMDB '
-            '(≈ 1 min après un redémarrage). Elle va s\'actualiser toute seule — ou reviens '
-            'dans un instant. Les autres pages sont déjà utilisables.</div>',
+            'Cette page trie et note tes contenus grâce aux genres, acteurs et studios TMDB. '
+            'Elle s\'actualise toute seule — inutile de rafraîchir.</div>',
             unsafe_allow_html=True,
         )
-        count = int(st.session_state.get("_qr_tmdb_wait") or 0) + 1
-        st.session_state["_qr_tmdb_wait"] = count
-        if count <= 25:  # ~100 s d'attente active maximum, puis on affiche
-            time.sleep(4)
-            st.rerun()
+        if total > 0:
+            st.progress(min(done / total, 1.0))
+            st.caption(
+                f"🎬 Enrichissement TMDB : **{done}/{total}** titre(s) traités "
+                f"({int(done * 100 / total)} %) — genres, acteurs, studios, pays, mots-clés."
+            )
+        else:
+            st.caption("🎬 Enrichissement TMDB : préparation de la liste des titres…")
+        if errors:
+            st.caption("⚠️ " + " · ".join(errors[:2]))
+        time.sleep(2.5)
+        st.rerun()
     else:
         st.session_state["_qr_tmdb_wait"] = 0
     # Signet en attente : appliqué ICI, avant la création de tout widget.
@@ -5424,6 +5495,41 @@ def render_progress_page() -> None:
         unsafe_allow_html=True,
     )
 
+    # ── V117 — « 🔴 Lecture en cours maintenant » déménage ICI (elle vivait
+    # sur la page Fantôme, contresens : un contenu EN COURS de visionnage
+    # n'a rien d'un fantôme — rapporté par l'utilisateur). La page Fantôme
+    # redevient purement « reprises en pause ». Actualisation silencieuse à
+    # l'arrivée si les données datent de plus de 5 minutes (1 appel ciblé,
+    # plafonné par l'âge du cache — fini le clic manuel systématique).
+    st.markdown("### 🔴 Lecture en cours maintenant")
+    live_cache = st.session_state.get(NOW_PLAYING_CACHE_KEY)
+    live_age = time.time() - float((live_cache or {}).get("fetched_at") or 0)
+    if mdb_oauth.is_connected() and (not isinstance(live_cache, dict) or live_age >= NOW_PLAYING_AUTO_SECONDS):
+        with st.spinner("Vérification de la lecture en cours…"):
+            _refresh_now_playing()
+    refresh_col, auto_col = st.columns([0.58, 0.42])
+    with refresh_col:
+        if st.button(
+            "Actualiser la lecture en cours · 1 appel",
+            type="primary",
+            key="refresh_now_playing",
+        ):
+            with st.spinner("Vérification de la lecture en cours…"):
+                ok, message = _refresh_now_playing()
+            if not ok:
+                st.caption(f"⚠️ {message}")
+    with auto_col:
+        st.toggle(
+            "Auto toutes les 5 minutes",
+            value=False,
+            key="ghost_live_auto",
+            help=(
+                "Option désactivée par défaut. Tant que cette page reste ouverte, "
+                "elle coûte au maximum environ 12 appels MDBList par heure."
+            ),
+        )
+    _now_playing_fragment()
+
     st.markdown("### Où en suis-je dans mes séries ?")
     if not progress_rows:
         st.caption("Aucune série Up Next disponible.")
@@ -5748,36 +5854,14 @@ def render_ghost_page() -> None:
         )
         return
 
-    st.markdown("### 🔴 Lecture en cours maintenant")
-    refresh_col, auto_col = st.columns([0.58, 0.42])
-    with refresh_col:
-        if st.button(
-            "Actualiser la lecture en cours · 1 appel",
-            type="primary",
-            key="refresh_now_playing",
-        ):
-            with st.spinner("Vérification de la lecture en cours…"):
-                ok, message = _refresh_now_playing()
-            if not ok:
-                st.caption(f"⚠️ {message}")
-    with auto_col:
-        st.toggle(
-            "Auto toutes les 5 minutes",
-            value=False,
-            key="ghost_live_auto",
-            help=(
-                "Option désactivée par défaut. Tant que cette page reste ouverte, "
-                "elle coûte au maximum environ 12 appels MDBList par heure."
-            ),
-        )
-    if st.session_state.get("ghost_live_auto"):
-        st.caption("Actualisation automatique active · environ 12 appels/heure maximum sur cette page.")
-    else:
-        st.caption("Actualisation manuelle · votre quota reste inchangé tant que vous n’actualisez pas.")
-    _now_playing_fragment()
-
-    st.divider()
-    st.markdown("### ⏸️ Reprises mises en pause")
+    st.markdown(
+        '<div class="accent-callout"><strong>REPRISES EN PAUSE</strong> · '
+        'Ici, uniquement les contenus MIS EN PAUSE ou arrêtés en cours de route, avec leur point de '
+        'reprise (que tu peux supprimer). Ce qui est en cours de lecture MAINTENANT se trouve sur la '
+        'page « ▶️ En cours de lecture ». Les filtres et calculs utilisent les données déjà chargées '
+        'et préservent votre quota. Aucune progression n’est modifiée.</div>',
+        unsafe_allow_html=True,
+    )
     playback_items = (_sections().get("playback") or [])
     rows = enrich_playback_posters(normalize_playback(playback_items), dataset)
     rows = _apply_playback_poster_cache(rows)
@@ -5789,13 +5873,6 @@ def render_ghost_page() -> None:
             {"emoji": "📺", "k": "Épisodes", "v": sum(row.get("type") == "Épisode" for row in rows), "d": "reprises"},
             {"emoji": "⏱️", "k": "Temps restant connu", "v": _format_minutes(known_remaining) if known_remaining else "—", "d": "à terminer"},
         ]),
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="accent-callout"><strong>REPRISES DISPONIBLES</strong> · '
-        'Les filtres et calculs utilisent les données déjà chargées et préservent votre quota. '
-        'Aucune progression n’est modifiée.</div>',
         unsafe_allow_html=True,
     )
 
