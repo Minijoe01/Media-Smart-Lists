@@ -1,0 +1,84 @@
+==========================================================
+INSTALLATION — Media Smart Lists V119
+⚠️ 3 FICHIERS + 1 FICHIER À ÉDITER SUR GITHUB
+    · app.py                → upload à la racine
+    · test_core.py          → upload DANS LE DOSSIER tests/
+    · ci.yml                → voir procédure spéciale ci-dessous
+==========================================================
+
+1) 📊 UNE SEULE BARRE DE PROGRESSION (ton retour)
+   Tu avais raison : deux barres s'affichaient (milieu de
+   page + fin). Désormais : une MENTION discrète au milieu
+   (« les widgets fonctionnent déjà, barre en bas de page »)
+   et UNE SEULE BARRE, en bas, auto-actualisée.
+
+2) ▶️ SÉRIES EN COURS AVEC TRAKT (ta clarification)
+   Compris — il s'agissait des SÉRIES Up Next : sans MDBList,
+   l'export Trakt ne dit ni le total d'épisodes (donc pas de
+   %), ni le poster. Corrigé :
+   · l'enrichissement TMDB récupère le TOTAL D'ÉPISODES de
+     chaque série (number_of_episodes) ;
+   · une passe complète les lignes « En cours de lecture »
+     depuis les données déjà enrichies : poster, genres,
+     statut, total d'épisodes → % de progression et « temps
+     restant » recalculés. Aucun appel réseau en plus.
+
+3) 🎰 ROULETTE APRÈS « HORS DE MES LISTES » (ton testeur)
+   Bug confirmé et corrigé : les résultats hors-listes
+   restaient affichés sous la nouvelle sélection de la
+   roulette (l'impression d'une « liste qui grossit »).
+   Désormais, cliquer une roulette retire les résultats
+   hors-listes, et cliquer « Hors de mes listes » retire la
+   carte « Le hasard a choisi » — chaque bouton est un mode
+   d'exploration propre.
+
+4) 🔗 SIGNET PARTAGÉ ENTRE COMPTES (ton testeur)
+   Diagnostic : Streamlit ignore SILENCIEusement les valeurs
+   inconnues (testé : pas de crash). Le signet « test3 » ne
+   contenait en réalité QUE des valeurs par défaut + la
+   SOURCE de son créateur (« Watchlist Trakt (import ZIP) »)
+   — qui n'existe pas chez ton testeur → rien de visible.
+   Corrigé côté UX : les valeurs sont validées contre TES
+   données ; la bannière affiche désormais ce qui a été
+   ignoré et pourquoi : « ⚠️ source ignorée : "Watchlist
+   Trakt (import ZIP)" (n'existe pas chez toi) ». Les
+   filtres universels (genres, styles, période, note…)
+   traversent les comptes sans souci.
+
+5) 🗂️ « LISTES PERSONNELLES — CRÉÉES SUR MDBLIST » (ton testeur)
+   Le libellé s'adapte maintenant au fournisseur : « tes
+   listes Trakt (import ZIP) » pour un import ZIP.
+
+6) 🔧 GITHUB ACTIONS (tes erreurs de commit)
+   Deux problèmes distincts :
+   a) L'ERREUR (exit code 1) : l'étape « Tests unitaires »
+      fait tourner tests/test_core.py — or celui du repo
+      date d'avant la V111 et réclame les presets supprimés
+      (« Polars & thrillers », « Romance »…) → échec garanti
+      à chaque commit depuis 5 jours. Le test_core.py joints
+      (23 tests, à jour V118) répare ça.
+   b) L'AVERTISSEMENT (Node.js 20 déprécié) : actions/
+      checkout@v4 et setup-python@v5 ciblent Node 20. Le
+      ci.yml corrigé passe à checkout@v5 + setup-python@v6
+      (Node 24).
+
+==========================================================
+PROCÉDURE SPÉCIALE POUR ci.yml (pas un upload normal !)
+==========================================================
+Le fichier vit dans le dossier caché .github/workflows/ du
+repo. Le plus simple : ÉDITION DIRECTE sur GitHub.
+1. Ouvre : github.com/Minijoe01/Media-Smart-Lists/blob/main/
+   .github/workflows/ci.yml
+2. Clique le crayon ✏️ « Edit this file »
+3. Remplace TOUT le contenu par celui du fichier ci.yml de
+   cette livraison (ouvre-le dans le bloc-notes, copie tout)
+4. « Commit changes » — le workflow se relance : il doit
+   passer au vert au prochain commit ✅
+
+Et pour test_core.py : va dans le dossier « tests » du repo →
+Add file → Upload files → dépose test_core.py (remplace).
+
+app.py : upload à la racine comme d'habitude.
+
+Après ces 3 gestes + Reboot/Clear cache Streamlit, le prochain
+commit GitHub affichera un CI vert (✔ 23 tests OK).
