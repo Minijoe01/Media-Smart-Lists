@@ -150,7 +150,42 @@ class TestStats(unittest.TestCase):
 
 
 class TestRecommendationPresets(unittest.TestCase):
-    """Presets « Que regarder ? » — nouveaux presets de la V57."""
+    """Presets « Que regarder ? » — nettoyage V111.
+
+    Un preset doit COMBINER plusieurs critères (durée, type, note, profil…).
+    Les entrées qui ne dupliquaient qu'un genre ou un style ont été
+    supprimées : Envie de rire, Envie de frissons, Adrénaline, Polars &
+    thrillers, Science-fiction, Romance, Documentaires, Soirée en famille.
+    « Cinéma du monde » reste (pays ≠ USA + note = vraie combinaison).
+    """
+
+    def test_cleanup_v111(self):
+        from recommendation_engine import PRESET_NAMES, preset_matches
+
+        profile = {"genre_affinity": {}}
+        # Les doublons genre/style sont bien partis…
+        for gone in (
+            "😄 Envie de rire", "😱 Envie de frissons", "💥 Adrénaline",
+            "🕵️ Polars & thrillers", "🚀 Science-fiction", "❤️ Romance",
+            "🎞️ Documentaires", "👨‍👩‍👧 Soirée en famille",
+        ):
+            self.assertNotIn(gone, PRESET_NAMES)
+        # …les vraies combinaisons restent (chouchous + combos demandées).
+        for kept in (
+            "🌟 Acteur incontournable", "🏢 Studio préféré",
+            "🎥 Réalisateur incontournable", "📚 Suite d'une saga entamée",
+            "🌍 Cinéma du monde", "🧭 Hors de ta zone de confort",
+            "🍿 Soirée cinéma — grand film bien noté",
+        ):
+            self.assertIn(kept, PRESET_NAMES)
+        # Chaque preset restant a bien une branche de matching (l'appel ne
+        # doit jamais retomber sur le « return True » par défaut) : on le
+        # vérifie avec une ligne vide qui ne matche RIEN.
+        empty_row = {"type": "Film", "runtime": 0, "note": 0.0, "year": 0}
+        for name in PRESET_NAMES:
+            if name != "Aucun preset":
+                self.assertFalse(preset_matches(name, empty_row, profile),
+                                 f"preset sans effet (matche tout) : {name}")
 
     def test_new_presets(self):
         from recommendation_engine import PRESET_NAMES, preset_matches
@@ -159,10 +194,6 @@ class TestRecommendationPresets(unittest.TestCase):
         self.assertIn("🎬 Film marathon — 2h30 et plus", PRESET_NAMES)
         self.assertIn("🌙 Séries à épisodes courts (≤ 30 min)", PRESET_NAMES)
         self.assertIn("♾️ Séries interminables (100+ épisodes)", PRESET_NAMES)
-        self.assertIn("🕵️ Polars & thrillers", PRESET_NAMES)
-        self.assertIn("🚀 Science-fiction", PRESET_NAMES)
-        self.assertIn("❤️ Romance", PRESET_NAMES)
-        self.assertIn("🎞️ Documentaires", PRESET_NAMES)
 
         film_long = {"type": "Film", "runtime": 175, "note": 7.0, "genres": ["Action"]}
         self.assertTrue(preset_matches("🎬 Film marathon — 2h30 et plus", film_long, profile))
@@ -175,8 +206,143 @@ class TestRecommendationPresets(unittest.TestCase):
         serie_longue = {"type": "Série", "runtime": 45, "genres": [], "total_episodes": 120}
         self.assertTrue(preset_matches("♾️ Séries interminables (100+ épisodes)", serie_longue, profile))
 
-        polar = {"type": "Film", "runtime": 100, "genres": ["Crime"]}
-        self.assertTrue(preset_matches("🕵️ Polars & thrillers", polar, profile))
+
+class TestScoringRatagesProportion(unittest.TestCase):
+    """V114 — malus « Tes ratages ici » PROPORTIONNEL (plus de somme).
+
+    Un grand fan d'un genre (3 navets sur 200 notés) ne doit plus être
+    pénalisé ; le malus ne tombe que si les notes ≤ 3/10 sont fréquentes
+    (≥ 2 ET ≥ 25 % des contenus notés du genre).
+    """
+
+    @staticmethod
+    def _item():
+        return {"kind": "movie", "type": "Film", "title": "Test", "year": 2020,
+                "ids": {"tmdb": 1}, "genres": ["Comédie"], "runtime": 100}
+
+    @staticmethod
+    def _malus(disappointments, counts):
+        from recommendation_engine import score_item
+        profile = {"genre_affinity": {}, "personal_genre_ratings": {},
+                   "genre_disappointments": disappointments,
+                   "genre_rating_counts": counts}
+        row = score_item(TestScoringRatagesProportion._item(), profile, source_name="t")
+        return any("ratage" in str(s.get("label", "")).lower() for s in row["signals"])
+
+    def test_fan_de_genre_pas_penalise(self):
+        # 3 ratages sur 200 comédies notées (1,5 %) → AUCUN malus.
+        self.assertFalse(self._malus({"Comédie": 3}, {"Comédie": 200}))
+
+    def test_genre_vraiment_decu_penalise(self):
+        # 40 % de très mauvaises notes → malus.
+        self.assertTrue(self._malus({"Comédie": 4}, {"Comédie": 10}))
+        self.assertTrue(self._malus({"Comédie": 2}, {"Comédie": 5}))
+
+    def test_sous_le_seuil_pas_de_malus(self):
+        # 15-20 % de ratages → toléré.
+        self.assertFalse(self._malus({"Comédie": 3}, {"Comédie": 20}))
+        self.assertFalse(self._malus({"Comédie": 2}, {"Comédie": 10}))
+
+    def test_profil_ancien_sans_compteurs(self):
+        # Un profil sans « genre_rating_counts » (ancien cache) ne crash pas.
+        self.assertFalse(self._malus({"Comédie": 3}, None))
+
+
+class TestWrappedFilmsHomonymes(unittest.TestCase):
+    """V115 — Mortal Kombat 1995 et 2024 : deux films DIFFÉRENTS.
+
+    Signalé utilisateur : le Wrapped fusionnait les films homonymes (top
+    « Mortal Kombat · 2 visionnages » mélangeant 1995 et 2024) et
+    sous-comptait les films (titre unique). Désormais : comptage et tops
+    par couple (titre, année) ; l'année n'est affichée que si le titre
+    est ambigu.
+    """
+
+    def test_films_homonymes_separe(self):
+        from wrapped_engine import compute_wrapped
+
+        def movie(title, year, watched_at):
+            return {"movie": {"title": title, "year": year, "ids": {"tmdb": 1},
+                              "runtime": 110},
+                    "last_watched_at": watched_at, "plays": 1}
+
+        now = "2026-01-15T20:00:00+00:00"
+        watched = {
+            "movies": [
+                movie("Mortal Kombat", 1995, now),
+                movie("Mortal Kombat", 2024, now),
+                movie("Film A", 2010, now),
+                movie("Film A", 2010, "2026-02-15T20:00:00+00:00"),
+                movie("Film sans année", None, now),
+            ],
+            "episodes": [], "shows": [],
+        }
+        d = compute_wrapped({"sections": {"watched": watched}}, 2026)
+        self.assertEqual(d["films"], 4)  # MK95 + MK24 + Film A + Film sans année
+        labels = [t for t, _ in d["top_films"]]
+        self.assertIn("Mortal Kombat (1995)", labels)
+        self.assertIn("Mortal Kombat (2024)", labels)
+        self.assertNotIn("Mortal Kombat", labels)  # jamais sans année si ambigu
+        self.assertIn(("Film A", 2), d["top_films"])  # même film : fusionné
+        self.assertIn("Film sans année", labels)      # sans année : titre seul
+
+
+class TestNowPlayingProgress(unittest.TestCase):
+    """V117 — progression « lecture en cours » : fraction 0-1 reconnue,
+    estimation depuis l'heure de DÉBUT quand le scrobbler ne rapporte pas
+    la progression en continu (Kodi sans interval → progress=0 en plein
+    milieu d'un film, rapporté par l'utilisateur)."""
+
+    def test_estimation_depuis_debut(self):
+        from datetime import datetime, timedelta, timezone
+        from playback_engine import normalize_now_playing
+
+        now = datetime(2026, 9, 5, 21, 0, 0, tzinfo=timezone.utc)
+        started = (now - timedelta(minutes=55)).isoformat()
+        items = [{
+            "type": "movie",
+            "movie": {"title": "Film", "year": 2024, "ids": {"tmdb": 1}, "runtime": 110},
+            "progress": 0,
+            "started_at": started,
+        }]
+        row = normalize_now_playing(items, fetched_at=now.timestamp(),
+                                    now_timestamp=now.timestamp())[0]
+        self.assertTrue(49 <= row["progress"] <= 51)
+        self.assertTrue(row.get("progress_estimated_from_start"))
+
+    def test_fraction_reconnue(self):
+        from datetime import datetime, timezone
+        from playback_engine import normalize_now_playing, normalize_playback
+
+        items = [{
+            "type": "movie",
+            "movie": {"title": "F", "year": 2020, "ids": {"tmdb": 2}, "runtime": 100},
+            "progress": 0.5,
+        }]
+        self.assertEqual(normalize_playback(items)[0]["progress"], 50.0)
+        now = datetime(2026, 9, 5, tzinfo=timezone.utc)
+        row = normalize_now_playing(items, fetched_at=now.timestamp(),
+                                    now_timestamp=now.timestamp())[0]
+        self.assertAlmostEqual(row["progress"], 50.0, delta=1)
+
+    def test_vraie_progression_et_pause(self):
+        from datetime import datetime, timedelta, timezone
+        from playback_engine import normalize_now_playing
+
+        now = datetime(2026, 9, 5, 21, 0, 0, tzinfo=timezone.utc)
+        started = (now - timedelta(minutes=55)).isoformat()
+        base = {"type": "movie",
+                "movie": {"title": "F", "year": 2020, "ids": {"tmdb": 3}, "runtime": 100}}
+        # Progression réelle rapportée : elle prime sur l'estimation.
+        items = [dict(base, progress=40, started_at=started)]
+        row = normalize_now_playing(items, fetched_at=now.timestamp(),
+                                    now_timestamp=now.timestamp())[0]
+        self.assertTrue(39 <= row["progress"] <= 41)
+        # En pause : aucune estimation, la valeur rapportée reste intacte.
+        items = [dict(base, progress=63, paused_at=started)]
+        row = normalize_now_playing(items, fetched_at=now.timestamp(),
+                                    now_timestamp=now.timestamp())[0]
+        self.assertEqual(row["progress"], 63.0)
 
 
 class TestDashboardWidgets(unittest.TestCase):
