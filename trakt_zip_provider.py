@@ -252,10 +252,29 @@ def _parse_watched(source: TraktZip) -> dict[str, Any]:
 
 
 def _parse_ratings(source: TraktZip) -> dict[str, Any]:
+    """Note l'export Trakt : les fichiers de notes sont répartis PAR TYPE et
+    PAGINÉS (ratings-movies-1.json, ratings-shows-1.json, ratings-seasons-1.json,
+    ratings-episodes-1.json…) — parfois simplement ratings-1.json selon les
+    époques d'export. L'ancien motif unique « ratings-N » ratait la
+    répartition par type : TOUTES les notes étaient silencieusement ignorées
+    (V121 — « Note moyenne » vide pour deux utilisateurs, pourtant certains
+    d'avoir noté sur Trakt)."""
     movies: list[dict[str, Any]] = []
     shows: list[dict[str, Any]] = []
     episodes: list[dict[str, Any]] = []
-    for filename, rows in source.load_matching(r"ratings-\d+\.json"):
+    ratings_files: list[tuple[str, Any]] = []
+    seen_files: set[str] = set()
+    # Tous les motifs connus, sans doublon (ratings.json, ratings-1.json,
+    # ratings-movies.json, ratings-movies-1.json, ratings-seasons-2.json…).
+    for pattern in (
+        r"ratings(?:-[a-z]+)?(?:-\d+)?\.json",
+        r"ratings-\d+\.json",
+    ):
+        for filename, rows in source.load_matching(pattern):
+            if filename not in seen_files:
+                seen_files.add(filename)
+                ratings_files.append((filename, rows))
+    for filename, rows in ratings_files:
         if not isinstance(rows, list):
             continue
         for row in rows:

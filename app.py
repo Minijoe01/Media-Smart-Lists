@@ -4929,6 +4929,43 @@ def _render_search_bookmarks() -> None:
                 st.caption("⚠️ Le lien est long — c'est normal, il contient tous tes signets.")
 
 
+@st.fragment(run_every=2.5)
+def _qr_tmdb_wait_fragment() -> None:
+    """Écran d'attente TMDB de « Que regarder ? » — V121.
+
+    Fragment auto-actualisé : SEULE cette zone se rafraîchit (plus de
+    rerun complet de la page → fini le clignotement). Quand l'enrichissement
+    se termine, UN rerun complet de l'app est déclenché pour afficher la
+    page enrichie.
+    """
+    active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
+    if not active:
+        if st.session_state.pop("_qr_wait_needs_app_rerun", False):
+            st.rerun(scope="app")  # un seul rerun complet, à la fin
+        return
+    st.session_state["_qr_wait_needs_app_rerun"] = True
+    done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
+    total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
+    errors = [((_ENRICH_STATE["progress"].get(k) or {}).get("error")) for k in active]
+    errors = [e for e in errors if e]
+    st.markdown(
+        '<div class="accent-callout"><strong>⏳ CHARGEMENT DES DONNÉES TMDB EN COURS</strong> · '
+        'Cette page trie et note tes contenus grâce aux genres, acteurs et studios TMDB. '
+        'Elle s\'actualise toute seule — inutile de rafraîchir.</div>',
+        unsafe_allow_html=True,
+    )
+    if total > 0:
+        st.progress(min(done / total, 1.0))
+        st.caption(
+            f"🎬 Enrichissement TMDB : **{done}/{total}** titre(s) traités "
+            f"({int(done * 100 / total)} %) — genres, acteurs, studios, pays, mots-clés."
+        )
+    else:
+        st.caption("🎬 Enrichissement TMDB : préparation de la liste des titres…")
+    if errors:
+        st.caption("⚠️ " + " · ".join(errors[:2]))
+
+
 def render_watchlist_page() -> None:
     st.markdown('<div class="page-title">🎯 Que regarder ?</div>', unsafe_allow_html=True)
     # AUDIT : cette page dépend des données TMDB (genres complets, acteurs,
@@ -4941,29 +4978,13 @@ def render_watchlist_page() -> None:
     # par l'utilisateur). On attend maintenant TANT QUE le thread tourne, en
     # montrant où il en est (et l'erreur s'il est mort).
     if any(_ENRICH_STATE["in_flight"].values()):
-        active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
-        done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
-        total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
-        errors = [((_ENRICH_STATE["progress"].get(k) or {}).get("error")) for k in active]
-        errors = [e for e in errors if e]
-        st.markdown(
-            '<div class="accent-callout"><strong>⏳ CHARGEMENT DES DONNÉES TMDB EN COURS</strong> · '
-            'Cette page trie et note tes contenus grâce aux genres, acteurs et studios TMDB. '
-            'Elle s\'actualise toute seule — inutile de rafraîchir.</div>',
-            unsafe_allow_html=True,
-        )
-        if total > 0:
-            st.progress(min(done / total, 1.0))
-            st.caption(
-                f"🎬 Enrichissement TMDB : **{done}/{total}** titre(s) traités "
-                f"({int(done * 100 / total)} %) — genres, acteurs, studios, pays, mots-clés."
-            )
-        else:
-            st.caption("🎬 Enrichissement TMDB : préparation de la liste des titres…")
-        if errors:
-            st.caption("⚠️ " + " · ".join(errors[:2]))
-        time.sleep(2.5)
-        st.rerun()
+        # V121 — FRAGMENT auto-actualisé (toutes les 2,5 s) : l'ancienne
+        # boucle « sleep + st.rerun() » relançait TOUTE la page à chaque
+        # tick → « vue fantôme » clignotante de la page précédente pendant
+        # le chargement (rapporté par l'utilisateur). Un fragment ne
+        # rafraîchit que LUI : la page reste immobile et propre.
+        _qr_tmdb_wait_fragment()
+        return
     else:
         st.session_state["_qr_tmdb_wait"] = 0
     # Signet en attente : appliqué ICI, avant la création de tout widget.
@@ -5544,11 +5565,30 @@ def render_watchlist_page() -> None:
                 # affichée comme si la découverte n'avait rien changé.
                 st.session_state.pop("_roulette_result", None)
                 st.session_state.pop("_roulette_mode", None)
-                st.session_state["_roulette_empty"] = (
-                    "Aucune découverte possible avec ces filtres (la découverte "
-                    "pioche hors de tes genres habituels) — élargis tes critères "
-                    "ou ta période."
+                # V121 — message DIAGNOSTIQUÉ : si les genres choisis font
+                # partie des habitudes de l'utilisateur (affinité ≥ 30), la
+                # découverte ne peut PAR CONSTRUCTION rien trouver (elle
+                # cherche hors de la zone de confort). Ex. réel : un grand
+                # fan de comédie filtre sur « Comédie » → 0 découverte.
+                affinities = profile.get("genre_affinity") or {}
+                habitual = sorted(
+                    (str(g) for g in (selected_genres or []) if affinities.get(str(g), 0) >= 30),
+                    key=str.casefold,
                 )
+                if habitual:
+                    genres_txt = ", ".join(habitual[:3]) + ("…" if len(habitual) > 3 else "")
+                    st.session_state["_roulette_empty"] = (
+                        f"Tu regardes souvent {genres_txt} — or la découverte pioche justement "
+                        "HORS de tes genres habituels : filtrer sur un de tes genres favoris "
+                        "l'empêche de trouver quoi que ce soit. Retire le filtre de genre, ou "
+                        "essaie la 🎲 roulette classique (elle, elle tire dans tes filtres)."
+                    )
+                else:
+                    st.session_state["_roulette_empty"] = (
+                        "Aucune découverte possible avec ces filtres (la découverte exige une "
+                        "note communautaire ≥ 7.5 et des genres peu habituels chez toi) — "
+                        "élargis tes critères ou ta période."
+                    )
 
     # ── Signature des filtres : les résultats « hors de mes listes » sont
     # mémorisés en session pour survivre aux clics (bouton ➕ « ajouter à ma
@@ -7202,6 +7242,155 @@ def _calendar_day_title(day: date | None) -> str:
     return f"{names[day.weekday()]} {day.strftime('%d/%m/%Y')}"
 
 
+def _render_calendar_body(rows: list[dict], checked_caption: str,
+                          enrich_diag: dict | None = None,
+                          calendar_error: str | None = None) -> None:
+    """Corps du calendrier : cartes + légende + diag + filtres + affichage.
+
+    V121 — mutualisé entre la vue LOCALE (0 appel, affichée immédiatement)
+    et la vue complète issue du cache (MDBList + compléments groupés).
+    """
+    dated = [row for row in rows if row.get("datetime")]
+    st.markdown(
+        _metric_cards([
+            {"emoji": "🗓️", "k": "Événements", "v": len(rows), "d": "sur l'horizon choisi"},
+            {"emoji": "🎬", "k": "Films", "v": sum(row.get("type") == "Film" for row in rows), "d": "sorties"},
+            {"emoji": "📺", "k": "Épisodes", "v": sum(row.get("type") == "Épisode" for row in rows), "d": "diffusions"},
+            {"emoji": "⏭️", "k": "Prochaine date", "v": min(row["datetime"] for row in dated).strftime("%d/%m") if dated else "—", "d": "premier événement"},
+        ]),
+        unsafe_allow_html=True,
+    )
+    st.caption(checked_caption)
+    if isinstance(enrich_diag, dict) and enrich_diag:
+        with st.expander("🔍 Pourquoi ce calendrier contient-il ce qu'il contient ?"):
+            st.caption(
+                "Détail de l'enrichissement : les contenus de vos listes sont interrogés par lots "
+                "pour trouver leurs dates de sortie à venir."
+            )
+            if calendar_error:
+                st.markdown(f"⚠️ **Calendrier officiel MDBList** : {escape(str(calendar_error))}")
+            if enrich_diag.get("erreurs"):
+                for error in enrich_diag["erreurs"]:
+                    st.markdown(f"⚠️ {escape(str(error))}")
+            rows_diag = [
+                ("Contenus scannés dans vos données", enrich_diag.get("contenus_scannés")),
+                ("Identifiants TMDb trouvés", enrich_diag.get("ids_tmdb")),
+                ("Identifiants IMDb trouvés", enrich_diag.get("ids_imdb")),
+                ("Fiches reçues de MDBList", enrich_diag.get("items_reçus")),
+                ("Dates à venir dans l'horizon", enrich_diag.get("événements_candidats")),
+            ]
+            for label, value in rows_diag:
+                st.markdown(f"**{label}** : {value if value is not None else '—'}")
+            st.caption(
+                "Une série en pause dont la date de reprise n'est pas encore annoncée publiquement "
+                "n'apparaît pas : la date n'existe nulle part. Elle apparaîtra dès sa publication."
+            )
+        filter_col, timing_col, sort_col, limit_col = st.columns([0.18, 0.27, 0.37, 0.18])
+        type_filter = filter_col.selectbox("Type", CALENDAR_TYPE_OPTIONS, key="calendar_type")
+        timing_filter = timing_col.selectbox("Période", CALENDAR_TIMING_OPTIONS, key="calendar_timing")
+        sort_mode = sort_col.selectbox("Trier par", CALENDAR_SORT_OPTIONS, key="calendar_sort")
+        display_choice = limit_col.selectbox("Afficher", [50, 100, "Tout"], key="calendar_limit")
+        search = st.text_input("Recherche", key="calendar_search", placeholder="Film, série ou épisode…")
+        visible = filter_calendar_events(rows, type_filter, timing_filter, search, sort_mode)
+
+        missing_with_tmdb = [
+            row for row in visible
+            if not row.get("poster") and isinstance(row.get("ids"), dict) and row["ids"].get("tmdb") is not None
+        ]
+        if missing_with_tmdb:
+            if st.button(
+                f"Compléter {min(len(missing_with_tmdb), 200)} poster(s) · 1 appel groupé",
+                type="primary",
+                key="complete_calendar_posters",
+            ):
+                with st.spinner("Récupération groupée des posters…"):
+                    ok, message = _refresh_missing_playback_posters(visible)
+                st.caption(("✓ " if ok else "⚠️ ") + message)
+                if ok:
+                    visible = _apply_playback_poster_cache(visible)
+
+        st.markdown(f"### Votre calendrier ({len(visible)})")
+        display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
+        remaining = display_limit
+        for day, group in group_calendar_by_day(visible):
+            if remaining <= 0:
+                break
+            shown = group[:remaining]
+            if not shown:
+                continue
+            st.markdown(f"#### {_calendar_day_title(day)} ({len(group)})")
+            columns = st.columns(2)
+            for index, row in enumerate(shown):
+                with columns[index % 2]:
+                    poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
+                    image_html = _poster_html(poster, row.get("type") or "")
+                    title = escape(str(row.get("title") or "Titre inconnu"))
+                    year = f" ({int(row['year'])})" if row.get("year") else ""
+                    episode = escape(str(row.get("episode_label") or ""))
+                    event_datetime = row.get("datetime")
+                    time_text = event_datetime.strftime("%H:%M") if event_datetime and any((event_datetime.hour, event_datetime.minute)) else ""
+                    meta = []
+                    if row.get("genres"):
+                        meta.append("🎭 " + " · ".join(row["genres"]))
+                    if row.get("source") and row.get("source") != "Calendrier MDBList":
+                        meta.append(str(row["source"]))
+                    info_parts = []
+                    if episode:
+                        info_parts.append(f"▶️ {episode}")
+                    if meta:
+                        info_parts.append(escape(" · ".join(meta)))
+                    inline_time = f'<span class="mc-inline-pct" data-tooltip="Horaire de diffusion">🕒 {escape(time_text)}</span>' if time_text else ''
+                    info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
+                    row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+                    links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), suffix=inline_time)
+                    head = (
+                        f'<div class="mc-head">'
+                        f'{_type_chip(str(row.get("type") or ""))}'
+                        f'<strong>{title}{year}</strong>'
+                        f'{_public_note_html(row)}'
+                        f'</div>'
+                    )
+                    time_pct = (
+                        f'<div class="media-list-pct" data-tooltip="Horaire de diffusion">{escape(time_text)}'
+                        f'<span class="sub">horaire</span></div>'
+                        if time_text else ""
+                    )
+                    st.markdown(
+                        f'<div class="media-list-card poster-card">{image_html}'
+                        f'<div class="media-list-content" style="width:100%;">'
+                        f'{head}'
+                        f'{info_html}{links_html}'
+                        f'</div>{time_pct}</div>',
+                        unsafe_allow_html=True,
+                    )
+            remaining -= len(shown)
+
+        rendered = min(len(visible), display_limit)
+        if not visible:
+            st.caption("Aucune sortie ne correspond à ces filtres.")
+        elif len(visible) > rendered:
+            st.caption(f"{len(visible) - rendered} événement(s) supplémentaire(s) masqué(s).")
+
+        csv_col, ics_col = st.columns(2)
+        with csv_col:
+            st.download_button(
+                "⬇️ Télécharger le calendrier CSV",
+                data="\ufeff" + calendar_rows_to_csv(visible),
+                file_name="media-smart-lists-calendrier.csv",
+                mime="text/csv",
+                type="primary",
+                key="download_calendar_csv",
+            )
+        with ics_col:
+            st.download_button(
+                "📲 Ajouter à mon agenda (.ics)",
+                data=rows_to_ics(visible),
+                file_name="media-smart-lists-calendrier.ics",
+                mime="text/calendar",
+                type="primary",
+                key="download_calendar_ics",
+            )
+
 def render_calendar_page() -> None:
     st.markdown('<div class="page-title">📅 Calendrier des sorties</div>', unsafe_allow_html=True)
     if not mdb_oauth.is_connected() and not _dataset():
@@ -7261,26 +7450,45 @@ def render_calendar_page() -> None:
             cache_matches = bool(ok)
 
     if not cache_matches or not isinstance(cache, dict):
-        st.markdown(
-            '<div class="accent-callout"><strong>CALENDRIER À CHARGER</strong> · '
-            'Choisissez votre horizon puis utilisez le bouton ci-dessus. Le résultat sera mémorisé pour la session.</div>',
-            unsafe_allow_html=True,
-        )
+        # V121 — ÉVÉNEMENTS LOCAUX AFFICHÉS IMMÉDIATEMENT (0 appel API).
+        # Avant : la page n'affichait RIEN tant qu'on ne cliquait pas sur
+        # « Charger mon calendrier » — alors que la part LOCALE (sorties à
+        # venir de tes listes, dates TMDB récupérées par l'enrichissement)
+        # ne coûte aucun appel. Le bouton reste pour la couche MDBList
+        # (calendrier officiel + personnes favorites) et les compléments
+        # groupés (rapporté par l'utilisateur : « le calendrier n'arrive
+        # que quand je clique sur actualiser »).
+        try:
+            start_date = datetime.now(PARIS_TZ).date()
+            end_date = start_date + timedelta(days=max(1, min(int(horizon), 545)))
+            local_events = build_local_calendar_events(_dataset(), start_date, end_date)
+        except Exception:
+            local_events = []
+        rows = normalize_calendar_events(local_events or [], now=datetime.now(PARIS_TZ))
+        rows = enrich_playback_posters(rows, _dataset())
+        rows = _apply_playback_poster_cache(rows)
+        if rows:
+            st.markdown(
+                '<div class="accent-callout"><strong>🗓️ CALENDRIER LOCAL (0 APPEL)</strong> · '
+                'Les sorties à venir de TES listes, issues des dates déjà chargées (remplies par '
+                'l\'enrichissement TMDB pour un import ZIP). Utilise le bouton ci-dessus pour ajouter '
+                'le calendrier officiel MDBList et les personnes favorites.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="accent-callout"><strong>AUCUNE SORTIE À VENIR DANS TES DONNÉES</strong> · '
+                'Aucune date future trouvée dans tes listes pour cet horizon. Après un import ZIP Trakt, '
+                'les dates arrivent avec l\'enrichissement TMDB (1-2 min). Le bouton ci-dessus interroge '
+                'en plus le calendrier officiel MDBList et complète les dates manquantes.</div>',
+                unsafe_allow_html=True,
+            )
+        _render_calendar_body(rows, checked_caption="📅 Vue locale — sans appel réseau")
         return
 
     rows = normalize_calendar_events(cache.get("events") or [], now=datetime.now(PARIS_TZ))
     rows = enrich_playback_posters(rows, _dataset())
     rows = _apply_playback_poster_cache(rows)
-    dated = [row for row in rows if row.get("datetime")]
-    st.markdown(
-        _metric_cards([
-            {"emoji": "🗓️", "k": "Événements", "v": len(rows), "d": "sur l'horizon choisi"},
-            {"emoji": "🎬", "k": "Films", "v": sum(row.get("type") == "Film" for row in rows), "d": "sorties"},
-            {"emoji": "📺", "k": "Épisodes", "v": sum(row.get("type") == "Épisode" for row in rows), "d": "diffusions"},
-            {"emoji": "⏭️", "k": "Prochaine date", "v": min(row["datetime"] for row in dated).strftime("%d/%m") if dated else "—", "d": "premier événement"},
-        ]),
-        unsafe_allow_html=True,
-    )
     checked = datetime.fromtimestamp(float(cache.get("fetched_at") or time.time()), PARIS_TZ).strftime("%d/%m à %H:%M")
     counts = cache.get("event_counts") or {}
     extra = []
@@ -7291,151 +7499,22 @@ def render_calendar_page() -> None:
     extra_text = (" · " + " · ".join(extra)) if extra else ""
     if cache.get("mode") == "local":
         erreur_texte = f" — {cache['calendar_error']}" if cache.get("calendar_error") else ""
-        st.caption(
+        checked_caption = (
             f"Calendrier de secours construit le {checked} depuis les dates déjà disponibles "
             f"(Up Next et vos listes) sur tout l'horizon choisi{extra_text}. "
             f"Le service calendrier MDBList n'a pas répondu{erreur_texte}, mais les filtres et exports restent utilisables."
         )
     else:
-        st.caption(
+        checked_caption = (
             f"Calendrier MDBList actualisé le {checked}{extra_text} · "
             "les filtres ci-dessous préservent votre quota."
         )
-
-    enrich_diag = cache.get("enrich_diag") or {}
-    if isinstance(enrich_diag, dict) and enrich_diag:
-        with st.expander("🔍 Pourquoi ce calendrier contient-il ce qu'il contient ?"):
-            st.caption(
-                "Détail de l'enrichissement : les contenus de vos listes sont interrogés par lots "
-                "pour trouver leurs dates de sortie à venir."
-            )
-            if cache.get("calendar_error"):
-                st.markdown(
-                    f"⚠️ **Calendrier officiel MDBList** : {escape(str(cache['calendar_error']))}"
-                )
-            if enrich_diag.get("erreurs"):
-                for error in enrich_diag["erreurs"]:
-                    st.markdown(f"⚠️ {escape(str(error))}")
-            rows_diag = [
-                ("Contenus scannés dans vos données", enrich_diag.get("contenus_scannés")),
-                ("Identifiants TMDb trouvés", enrich_diag.get("ids_tmdb")),
-                ("Identifiants IMDb trouvés", enrich_diag.get("ids_imdb")),
-                ("Fiches reçues de MDBList", enrich_diag.get("items_reçus")),
-                ("Dates à venir dans l'horizon", enrich_diag.get("événements_candidats")),
-            ]
-            for label, value in rows_diag:
-                st.markdown(f"**{label}** : {value if value is not None else '—'}")
-            st.caption(
-                "Une série en pause dont la date de reprise n'est pas encore annoncée publiquement "
-                "n'apparaît pas : la date n'existe nulle part. Elle apparaîtra dès sa publication."
-            )
-
-    filter_col, timing_col, sort_col, limit_col = st.columns([0.18, 0.27, 0.37, 0.18])
-    type_filter = filter_col.selectbox("Type", CALENDAR_TYPE_OPTIONS, key="calendar_type")
-    timing_filter = timing_col.selectbox("Période", CALENDAR_TIMING_OPTIONS, key="calendar_timing")
-    sort_mode = sort_col.selectbox("Trier par", CALENDAR_SORT_OPTIONS, key="calendar_sort")
-    display_choice = limit_col.selectbox("Afficher", [50, 100, "Tout"], key="calendar_limit")
-    search = st.text_input("Recherche", key="calendar_search", placeholder="Film, série ou épisode…")
-    visible = filter_calendar_events(rows, type_filter, timing_filter, search, sort_mode)
-
-    missing_with_tmdb = [
-        row for row in visible
-        if not row.get("poster") and isinstance(row.get("ids"), dict) and row["ids"].get("tmdb") is not None
-    ]
-    if missing_with_tmdb:
-        if st.button(
-            f"Compléter {min(len(missing_with_tmdb), 200)} poster(s) · 1 appel groupé",
-            type="primary",
-            key="complete_calendar_posters",
-        ):
-            with st.spinner("Récupération groupée des posters…"):
-                ok, message = _refresh_missing_playback_posters(visible)
-            st.caption(("✓ " if ok else "⚠️ ") + message)
-            if ok:
-                visible = _apply_playback_poster_cache(visible)
-
-    st.markdown(f"### Votre calendrier ({len(visible)})")
-    display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
-    remaining = display_limit
-    for day, group in group_calendar_by_day(visible):
-        if remaining <= 0:
-            break
-        shown = group[:remaining]
-        if not shown:
-            continue
-        st.markdown(f"#### {_calendar_day_title(day)} ({len(group)})")
-        columns = st.columns(2)
-        for index, row in enumerate(shown):
-            with columns[index % 2]:
-                poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
-                image_html = _poster_html(poster, row.get("type") or "")
-                title = escape(str(row.get("title") or "Titre inconnu"))
-                year = f" ({int(row['year'])})" if row.get("year") else ""
-                episode = escape(str(row.get("episode_label") or ""))
-                event_datetime = row.get("datetime")
-                time_text = event_datetime.strftime("%H:%M") if event_datetime and any((event_datetime.hour, event_datetime.minute)) else ""
-                meta = []
-                if row.get("genres"):
-                    meta.append("🎭 " + " · ".join(row["genres"]))
-                if row.get("source") and row.get("source") != "Calendrier MDBList":
-                    meta.append(str(row["source"]))
-                info_parts = []
-                if episode:
-                    info_parts.append(f"▶️ {episode}")
-                if meta:
-                    info_parts.append(escape(" · ".join(meta)))
-                inline_time = f'<span class="mc-inline-pct" data-tooltip="Horaire de diffusion">🕒 {escape(time_text)}</span>' if time_text else ''
-                info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
-                row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
-                links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), suffix=inline_time)
-                head = (
-                    f'<div class="mc-head">'
-                    f'{_type_chip(str(row.get("type") or ""))}'
-                    f'<strong>{title}{year}</strong>'
-                    f'{_public_note_html(row)}'
-                    f'</div>'
-                )
-                time_pct = (
-                    f'<div class="media-list-pct" data-tooltip="Horaire de diffusion">{escape(time_text)}'
-                    f'<span class="sub">horaire</span></div>'
-                    if time_text else ""
-                )
-                st.markdown(
-                    f'<div class="media-list-card poster-card">{image_html}'
-                    f'<div class="media-list-content" style="width:100%;">'
-                    f'{head}'
-                    f'{info_html}{links_html}'
-                    f'</div>{time_pct}</div>',
-                    unsafe_allow_html=True,
-                )
-        remaining -= len(shown)
-
-    rendered = min(len(visible), display_limit)
-    if not visible:
-        st.caption("Aucune sortie ne correspond à ces filtres.")
-    elif len(visible) > rendered:
-        st.caption(f"{len(visible) - rendered} événement(s) supplémentaire(s) masqué(s).")
-
-    csv_col, ics_col = st.columns(2)
-    with csv_col:
-        st.download_button(
-            "⬇️ Télécharger le calendrier CSV",
-            data="\ufeff" + calendar_rows_to_csv(visible),
-            file_name="media-smart-lists-calendrier.csv",
-            mime="text/csv",
-            type="primary",
-            key="download_calendar_csv",
-        )
-    with ics_col:
-        st.download_button(
-            "📲 Ajouter à mon agenda (.ics)",
-            data=rows_to_ics(visible),
-            file_name="media-smart-lists-calendrier.ics",
-            mime="text/calendar",
-            type="primary",
-            key="download_calendar_ics",
-        )
-
+    _render_calendar_body(
+        rows,
+        checked_caption=checked_caption,
+        enrich_diag=cache.get("enrich_diag") or None,
+        calendar_error=cache.get("calendar_error"),
+    )
 
 def render_detailed_stats_page(filtered: "pd.DataFrame", period_label: str) -> None:
     """Statistiques détaillées — reçoit le DataFrame DÉJÀ filtré par les
@@ -8573,6 +8652,31 @@ def _render_zip_import_screen() -> None:
         st.rerun()
 
 
+@st.fragment(run_every=4)
+def _dashboard_tmdb_progress_fragment() -> None:
+    """Barre TMDB de fin de tableau de bord — V121.
+
+    Fragment auto-actualisé : SEULE la barre se rafraîchit toutes les 4 s.
+    L'ancienne boucle « sleep + st.rerun » relançait la page entière, ce qui
+    produisait une « vue fantôme » clignotante (contenu des autres pages en
+    rémanence) pendant tout le chargement TMDB. À la fin de l'enrichissement,
+    UN rerun complet rafraîchit les widgets.
+    """
+    active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
+    if not active:
+        if st.session_state.pop("_dash_wait_needs_app_rerun", False):
+            st.rerun(scope="app")
+        return
+    st.session_state["_dash_wait_needs_app_rerun"] = True
+    done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
+    total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
+    if total > 0:
+        st.progress(min(done / total, 1.0))
+        st.caption(f"⏳ Chargement TMDB : {done}/{total} titre(s) ({int(done * 100 / total)} %) — cette barre se rafraîchit toute seule.")
+    else:
+        st.caption("⏳ Chargement TMDB en cours…" )
+
+
 def page_dashboard() -> None:
     st.markdown('<div class="page-title">🏠 Tableau de bord</div>', unsafe_allow_html=True)
 
@@ -8685,18 +8789,8 @@ def page_dashboard() -> None:
             )
         render_dataset_overview()
         render_dashboard_widgets()
-        # V118 — même actualisation de fin de page que la branche MDBList :
-        # pendant l'enrichissement TMDB du ZIP (V116), la barre progresse
-        # toute seule SANS tronquer les widgets ci-dessus.
-        if any(_ENRICH_STATE["in_flight"].values()):
-            active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
-            done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
-            total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
-            if total > 0:
-                st.progress(min(done / total, 1.0))
-                st.caption(f"⏳ Chargement TMDB : {done}/{total} titre(s) ({int(done * 100 / total)} %) — cette page se rafraîchit toute seule.")
-            time.sleep(4)
-            st.rerun()
+        # V121 — fragment (cf. branche MDBList) : plus de rerun complet.
+        _dashboard_tmdb_progress_fragment()
         return
 
     # ── Données MDBList affichées ────────────────────────────────────────────
@@ -8747,20 +8841,10 @@ def page_dashboard() -> None:
                 load_mdblist_dataset()
             st.rerun()
 
-    # ── V118 — ACTUALISATION AUTOMATIQUE EN TOUTE FIN DE PAGE (et seulement
-    # ici !) pendant l'enrichissement TMDB : tous les widgets ci-dessus sont
-    # déjà affichés (aucune troncature — le rerun de la V117, placé au milieu
-    # de la page, faisait disparaître les widgets locaux pendant le chargement).
-    # La barre du haut progresse ainsi toute seule, sans toucher à rien.
-    if any(_ENRICH_STATE["in_flight"].values()):
-        active = [k for k, v in _ENRICH_STATE["in_flight"].items() if v]
-        done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
-        total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
-        if total > 0:
-            st.progress(min(done / total, 1.0))
-            st.caption(f"⏳ Chargement TMDB : {done}/{total} titre(s) ({int(done * 100 / total)} %) — cette page se rafraîchit toute seule.")
-        time.sleep(4)
-        st.rerun()
+    # ── V121 — FRAGMENT de fin de page : seule la barre se rafraîchit
+    # (l'ancien « sleep + st.rerun » relançait toute la page toutes les 4 s →
+    # rémanence/clignotement des autres pages, rapporté par l'utilisateur).
+    _dashboard_tmdb_progress_fragment()
 
 
 def render_migration_page() -> None:
