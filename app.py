@@ -7285,111 +7285,111 @@ def _render_calendar_body(rows: list[dict], checked_caption: str,
                 "Une série en pause dont la date de reprise n'est pas encore annoncée publiquement "
                 "n'apparaît pas : la date n'existe nulle part. Elle apparaîtra dès sa publication."
             )
-        filter_col, timing_col, sort_col, limit_col = st.columns([0.18, 0.27, 0.37, 0.18])
-        type_filter = filter_col.selectbox("Type", CALENDAR_TYPE_OPTIONS, key="calendar_type")
-        timing_filter = timing_col.selectbox("Période", CALENDAR_TIMING_OPTIONS, key="calendar_timing")
-        sort_mode = sort_col.selectbox("Trier par", CALENDAR_SORT_OPTIONS, key="calendar_sort")
-        display_choice = limit_col.selectbox("Afficher", [50, 100, "Tout"], key="calendar_limit")
-        search = st.text_input("Recherche", key="calendar_search", placeholder="Film, série ou épisode…")
-        visible = filter_calendar_events(rows, type_filter, timing_filter, search, sort_mode)
+    filter_col, timing_col, sort_col, limit_col = st.columns([0.18, 0.27, 0.37, 0.18])
+    type_filter = filter_col.selectbox("Type", CALENDAR_TYPE_OPTIONS, key="calendar_type")
+    timing_filter = timing_col.selectbox("Période", CALENDAR_TIMING_OPTIONS, key="calendar_timing")
+    sort_mode = sort_col.selectbox("Trier par", CALENDAR_SORT_OPTIONS, key="calendar_sort")
+    display_choice = limit_col.selectbox("Afficher", [50, 100, "Tout"], key="calendar_limit")
+    search = st.text_input("Recherche", key="calendar_search", placeholder="Film, série ou épisode…")
+    visible = filter_calendar_events(rows, type_filter, timing_filter, search, sort_mode)
 
-        missing_with_tmdb = [
-            row for row in visible
-            if not row.get("poster") and isinstance(row.get("ids"), dict) and row["ids"].get("tmdb") is not None
-        ]
-        if missing_with_tmdb:
-            if st.button(
-                f"Compléter {min(len(missing_with_tmdb), 200)} poster(s) · 1 appel groupé",
-                type="primary",
-                key="complete_calendar_posters",
-            ):
-                with st.spinner("Récupération groupée des posters…"):
-                    ok, message = _refresh_missing_playback_posters(visible)
-                st.caption(("✓ " if ok else "⚠️ ") + message)
-                if ok:
-                    visible = _apply_playback_poster_cache(visible)
+    missing_with_tmdb = [
+        row for row in visible
+        if not row.get("poster") and isinstance(row.get("ids"), dict) and row["ids"].get("tmdb") is not None
+    ]
+    if missing_with_tmdb:
+        if st.button(
+            f"Compléter {min(len(missing_with_tmdb), 200)} poster(s) · 1 appel groupé",
+            type="primary",
+            key="complete_calendar_posters",
+        ):
+            with st.spinner("Récupération groupée des posters…"):
+                ok, message = _refresh_missing_playback_posters(visible)
+            st.caption(("✓ " if ok else "⚠️ ") + message)
+            if ok:
+                visible = _apply_playback_poster_cache(visible)
 
-        st.markdown(f"### Votre calendrier ({len(visible)})")
-        display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
-        remaining = display_limit
-        for day, group in group_calendar_by_day(visible):
-            if remaining <= 0:
-                break
-            shown = group[:remaining]
-            if not shown:
-                continue
-            st.markdown(f"#### {_calendar_day_title(day)} ({len(group)})")
-            columns = st.columns(2)
-            for index, row in enumerate(shown):
-                with columns[index % 2]:
-                    poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
-                    image_html = _poster_html(poster, row.get("type") or "")
-                    title = escape(str(row.get("title") or "Titre inconnu"))
-                    year = f" ({int(row['year'])})" if row.get("year") else ""
-                    episode = escape(str(row.get("episode_label") or ""))
-                    event_datetime = row.get("datetime")
-                    time_text = event_datetime.strftime("%H:%M") if event_datetime and any((event_datetime.hour, event_datetime.minute)) else ""
-                    meta = []
-                    if row.get("genres"):
-                        meta.append("🎭 " + " · ".join(row["genres"]))
-                    if row.get("source") and row.get("source") != "Calendrier MDBList":
-                        meta.append(str(row["source"]))
-                    info_parts = []
-                    if episode:
-                        info_parts.append(f"▶️ {episode}")
-                    if meta:
-                        info_parts.append(escape(" · ".join(meta)))
-                    inline_time = f'<span class="mc-inline-pct" data-tooltip="Horaire de diffusion">🕒 {escape(time_text)}</span>' if time_text else ''
-                    info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
-                    row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
-                    links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), suffix=inline_time)
-                    head = (
-                        f'<div class="mc-head">'
-                        f'{_type_chip(str(row.get("type") or ""))}'
-                        f'<strong>{title}{year}</strong>'
-                        f'{_public_note_html(row)}'
-                        f'</div>'
-                    )
-                    time_pct = (
-                        f'<div class="media-list-pct" data-tooltip="Horaire de diffusion">{escape(time_text)}'
-                        f'<span class="sub">horaire</span></div>'
-                        if time_text else ""
-                    )
-                    st.markdown(
-                        f'<div class="media-list-card poster-card">{image_html}'
-                        f'<div class="media-list-content" style="width:100%;">'
-                        f'{head}'
-                        f'{info_html}{links_html}'
-                        f'</div>{time_pct}</div>',
-                        unsafe_allow_html=True,
-                    )
-            remaining -= len(shown)
+    st.markdown(f"### Votre calendrier ({len(visible)})")
+    display_limit = len(visible) if display_choice == "Tout" else int(display_choice)
+    remaining = display_limit
+    for day, group in group_calendar_by_day(visible):
+        if remaining <= 0:
+            break
+        shown = group[:remaining]
+        if not shown:
+            continue
+        st.markdown(f"#### {_calendar_day_title(day)} ({len(group)})")
+        columns = st.columns(2)
+        for index, row in enumerate(shown):
+            with columns[index % 2]:
+                poster = escape(_poster_url({"poster": row.get("poster")}), quote=True)
+                image_html = _poster_html(poster, row.get("type") or "")
+                title = escape(str(row.get("title") or "Titre inconnu"))
+                year = f" ({int(row['year'])})" if row.get("year") else ""
+                episode = escape(str(row.get("episode_label") or ""))
+                event_datetime = row.get("datetime")
+                time_text = event_datetime.strftime("%H:%M") if event_datetime and any((event_datetime.hour, event_datetime.minute)) else ""
+                meta = []
+                if row.get("genres"):
+                    meta.append("🎭 " + " · ".join(row["genres"]))
+                if row.get("source") and row.get("source") != "Calendrier MDBList":
+                    meta.append(str(row["source"]))
+                info_parts = []
+                if episode:
+                    info_parts.append(f"▶️ {episode}")
+                if meta:
+                    info_parts.append(escape(" · ".join(meta)))
+                inline_time = f'<span class="mc-inline-pct" data-tooltip="Horaire de diffusion">🕒 {escape(time_text)}</span>' if time_text else ''
+                info_html = f'<small>{"<br>".join(info_parts)}</small>' if info_parts else ""
+                row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+                links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), suffix=inline_time)
+                head = (
+                    f'<div class="mc-head">'
+                    f'{_type_chip(str(row.get("type") or ""))}'
+                    f'<strong>{title}{year}</strong>'
+                    f'{_public_note_html(row)}'
+                    f'</div>'
+                )
+                time_pct = (
+                    f'<div class="media-list-pct" data-tooltip="Horaire de diffusion">{escape(time_text)}'
+                    f'<span class="sub">horaire</span></div>'
+                    if time_text else ""
+                )
+                st.markdown(
+                    f'<div class="media-list-card poster-card">{image_html}'
+                    f'<div class="media-list-content" style="width:100%;">'
+                    f'{head}'
+                    f'{info_html}{links_html}'
+                    f'</div>{time_pct}</div>',
+                    unsafe_allow_html=True,
+                )
+        remaining -= len(shown)
 
-        rendered = min(len(visible), display_limit)
-        if not visible:
-            st.caption("Aucune sortie ne correspond à ces filtres.")
-        elif len(visible) > rendered:
-            st.caption(f"{len(visible) - rendered} événement(s) supplémentaire(s) masqué(s).")
+    rendered = min(len(visible), display_limit)
+    if not visible:
+        st.caption("Aucune sortie ne correspond à ces filtres.")
+    elif len(visible) > rendered:
+        st.caption(f"{len(visible) - rendered} événement(s) supplémentaire(s) masqué(s).")
 
-        csv_col, ics_col = st.columns(2)
-        with csv_col:
-            st.download_button(
-                "⬇️ Télécharger le calendrier CSV",
-                data="\ufeff" + calendar_rows_to_csv(visible),
-                file_name="media-smart-lists-calendrier.csv",
-                mime="text/csv",
-                type="primary",
-                key="download_calendar_csv",
-            )
-        with ics_col:
-            st.download_button(
-                "📲 Ajouter à mon agenda (.ics)",
-                data=rows_to_ics(visible),
-                file_name="media-smart-lists-calendrier.ics",
-                mime="text/calendar",
-                type="primary",
-                key="download_calendar_ics",
-            )
+    csv_col, ics_col = st.columns(2)
+    with csv_col:
+        st.download_button(
+            "⬇️ Télécharger le calendrier CSV",
+            data="\ufeff" + calendar_rows_to_csv(visible),
+            file_name="media-smart-lists-calendrier.csv",
+            mime="text/csv",
+            type="primary",
+            key="download_calendar_csv",
+        )
+    with ics_col:
+        st.download_button(
+            "📲 Ajouter à mon agenda (.ics)",
+            data=rows_to_ics(visible),
+            file_name="media-smart-lists-calendrier.ics",
+            mime="text/calendar",
+            type="primary",
+            key="download_calendar_ics",
+        )
 
 def render_calendar_page() -> None:
     st.markdown('<div class="page-title">📅 Calendrier des sorties</div>', unsafe_allow_html=True)
