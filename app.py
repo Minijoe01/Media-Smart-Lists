@@ -2427,6 +2427,16 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
             total_eps = 0
         if total_eps > 0:
             media["total_episodes"] = total_eps
+    # V120 — date de sortie (films : release_date · séries : first_air_date) :
+    # sans elle, le « Calendrier des sorties » restait VIDE pour un import
+    # ZIP Trakt (aucune date dans l'export — rapporté par un testeur).
+    if not (media.get("release_date") or media.get("first_air_date")):
+        raw_date = str(payload.get("release_date") or payload.get("first_air_date") or "").strip()
+        if raw_date:
+            if payload.get("first_air_date"):
+                media["first_air_date"] = raw_date
+            else:
+                media["release_date"] = raw_date
     # V117 — poster (chemin TMDB) si absent : les imports ZIP Trakt sans
     # connexion MDBList n'en avaient AUCUN → cartes sans affiche dans les
     # listes, alors que « Hors de mes listes » (construit côté TMDB) en
@@ -2656,7 +2666,10 @@ def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
                 remaining = max(total - watched, 0)
                 row["total_episodes"] = total
                 row["remaining_episodes"] = remaining
-                row["percent"] = round(watched / total * 100, 1) if total else 0.0
+                # V120 — plafonné à 100 % : un compteur de visionnages
+                # supérieur au total (rewatches, décalage TMDB) affichait
+                # « 108 % » / « 112 % » (rapporté par un testeur).
+                row["percent"] = min(round(watched / total * 100, 1), 100.0) if total else 0.0
                 runtime = int(row.get("runtime") or 0)
                 if runtime:
                     row["remaining_minutes"] = remaining * runtime
@@ -5502,6 +5515,17 @@ def render_watchlist_page() -> None:
                     weights=[max(row["score"], 1) for row in pool],
                     k=1,
                 )[0]
+                st.session_state["_roulette_mode"] = "🎲 Roulette — choisir pour moi"
+            else:
+                # V120 — pool vide : avant, le clic ne faisait RIEN et la
+                # carte d'un tirage précédent restait « collée » (rapporté
+                # par un testeur : « quelque chose est resté collé »).
+                st.session_state.pop("_roulette_result", None)
+                st.session_state.pop("_roulette_mode", None)
+                st.session_state["_roulette_empty"] = (
+                    "Aucun contenu ne correspond à tes filtres — retire un critère "
+                    "pour permettre un tirage."
+                )
     with discovery_col:
         if st.button("🧭 Roulette découverte", type="primary", key="roulette_discovery"):
             # V119 — même logique que la roulette classique (cf. ci-dessus).
@@ -5514,6 +5538,17 @@ def render_watchlist_page() -> None:
             ]
             if discovery:
                 st.session_state["_roulette_result"] = random.choice(discovery)
+                st.session_state["_roulette_mode"] = "🧭 Roulette découverte — hors de ta zone de confort"
+            else:
+                # V120 — pool vide : la carte du tirage précédent restait
+                # affichée comme si la découverte n'avait rien changé.
+                st.session_state.pop("_roulette_result", None)
+                st.session_state.pop("_roulette_mode", None)
+                st.session_state["_roulette_empty"] = (
+                    "Aucune découverte possible avec ces filtres (la découverte "
+                    "pioche hors de tes genres habituels) — élargis tes critères "
+                    "ou ta période."
+                )
 
     # ── Signature des filtres : les résultats « hors de mes listes » sont
     # mémorisés en session pour survivre aux clics (bouton ➕ « ajouter à ma
@@ -5566,8 +5601,16 @@ def render_watchlist_page() -> None:
 
     roulette = st.session_state.get("_roulette_result")
     if roulette and any(row["key"] == roulette.get("key") for row in filtered):
-        st.markdown("### Le hasard a choisi")
+        _roulette_mode = st.session_state.pop("_roulette_mode", None) or "🎲 Roulette"
+        st.markdown(f"### Le hasard a choisi <span style='opacity:.65;font-size:.6em'>· {_roulette_mode}</span>", unsafe_allow_html=True)
         _render_recommendation_card(roulette, highlighted=True)
+    _roulette_empty = st.session_state.pop("_roulette_empty", None)
+    if _roulette_empty:
+        st.markdown(
+            '<div class="accent-callout"><strong>🎲 AUCUN TIRAGE POSSIBLE</strong> · '
+            + escape(str(_roulette_empty)) + "</div>",
+            unsafe_allow_html=True,
+        )
 
     if _perfect_results is not None:
         perfect_rows, near_rows, seen_rows = _perfect_results
@@ -7433,7 +7476,12 @@ def render_detailed_stats_page(filtered: "pd.DataFrame", period_label: str) -> N
             {"emoji": "🎞️", "k": "Épisodes", "v": nb_episodes, "d": "dans la sélection"},
             {"emoji": "🎬", "k": "Visionnages", "v": total_lectures, "d": "films + épisodes"},
             {"emoji": "⏱️", "k": "Temps visionné", "v": _format_minutes(total_minutes) if total_minutes else "—", "d": "sur la sélection"},
-            {"emoji": "🌡️", "k": "Note moyenne", "v": f"{note_moyenne:.1f}" if pd.notna(note_moyenne) else "—", "d": "sur 10"},
+            # V120 — quand il n'y a aucune note perso dans la sélection,
+            # on le DIT (un testeur lisait « rien n'est indiqué » sans
+            # comprendre pourquoi).
+            {"emoji": "🌡️", "k": "Note moyenne",
+             "v": f"{note_moyenne:.1f}" if pd.notna(note_moyenne) else "—",
+             "d": "sur 10" if pd.notna(note_moyenne) else "aucune note perso dans la sélection"},
             {"emoji": "🏃", "k": "Épisodes/semaine", "v": f"{eps_par_semaine:.1f}".replace(".", ",") if eps_par_semaine else "—", "d": "rythme de la sélection"},
             {"emoji": "📅", "k": "Moyenne / jour", "v": f"{total_lectures / nb_jours:.1f}", "d": "visionnages par jour"},
             {"emoji": "🗓️", "k": "Jours actifs", "v": jours_actifs, "d": "avec au moins 1 visionnage"},

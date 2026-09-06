@@ -418,6 +418,11 @@ def _build_upnext_from_watched(watched: dict[str, Any]) -> list[dict[str, Any]]:
     Sans accès aux métadonnées MDBList, le total d'épisodes est inconnu :
     on fournit quand même la série, le nombre d'épisodes vus et la date du
     dernier visionnage pour alimenter « En cours de lecture ».
+
+    V120 — le comptage compte les épisodes DISTINCTS (saison, numéro) :
+    l'historique événementiel contient les REWATCHS (une ligne par
+    visionnage) — l'ancien comptage par lignes dépassait le total réel
+    (progressions affichées à 108 % / 112 %, rapporté par un testeur).
     """
     episodes = watched.get("episodes") or []
     shows_by_key: dict[str, dict[str, Any]] = {}
@@ -435,9 +440,19 @@ def _build_upnext_from_watched(watched: dict[str, Any]) -> list[dict[str, Any]]:
         if not key:
             continue
         entry = shows_by_key.setdefault(
-            key, {"show": show, "count": 0, "last_watched_at": row.get("last_watched_at")}
+            key, {"show": show, "count": 0, "seen_eps": set(), "last_watched_at": row.get("last_watched_at")}
         )
-        entry["count"] += 1
+        # Épisode distinct (saison, numéro) : un rewatch ne compte pas
+        # deux fois ; une ligne sans saison/numéro compte une fois.
+        ep = row.get("episode") if isinstance(row.get("episode"), dict) else {}
+        try:
+            ep_id = (int(ep.get("season")), int(ep.get("number"))) if ep.get("season") is not None and ep.get("number") is not None else None
+        except (TypeError, ValueError):
+            ep_id = None
+        if ep_id is None or ep_id not in entry["seen_eps"]:
+            if ep_id is not None:
+                entry["seen_eps"].add(ep_id)
+            entry["count"] += 1
         current = row.get("last_watched_at")
         if current and (not entry["last_watched_at"] or str(current) > str(entry["last_watched_at"])):
             entry["last_watched_at"] = current

@@ -432,9 +432,13 @@ def evolution_options(df: pd.DataFrame) -> dict[str, Any] | None:
         }
         for genre in top5
     ]
+    # V120 — axisPointer en "line" (et non "shadow") : la bande grise de
+    # survol restait FIGÉE quand la souris quittait le graphe trop vite
+    # (bug connu d'ECharts dans les iframes — rapporté par un testeur qui
+    # voyait un « background gris impossible à enlever » sur une année).
     return {
         "backgroundColor": "transparent",
-        "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}, "valueFormatter": "{value} h"},
+        "tooltip": {"trigger": "axis", "axisPointer": {"type": "line"}, "valueFormatter": "{value} h"},
         "legend": {"bottom": 0, "textStyle": {"color": COL_MUTED}},
         "xAxis": {"type": "category", "data": [str(year) for year in years], "axisLabel": {"color": COL_MUTED}},
         "yAxis": {"type": "value", "name": "Heures", "axisLabel": {"color": COL_MUTED}, "splitLine": {"lineStyle": {"color": COL_SPLIT}}},
