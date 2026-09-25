@@ -1,0 +1,36 @@
+name: Keep-alive Streamlit
+
+# V123 — Empêche la mise en veille de l'app Streamlit (plan gratuit) :
+# une simple visite HTTP toutes les 12 h suffit (la veille se déclenche
+# après ~24 h d'inactivité). Bonus : l'app se réveille chaude — le
+# chargement MDBList et l'enrichissement TMDB tournent pendant le ping,
+# les visiteurs suivants arrivent sur une app prête.
+# Planification : 06:00 et 18:00 UTC = 08:00 et 20:00 heure de Paris.
+
+on:
+  schedule:
+    - cron: "0 6,18 * * *"
+  workflow_dispatch: {}   # permet aussi de le déclencher à la main (onglet Actions → Run workflow)
+
+jobs:
+  ping:
+    name: Visite de l'app (anti-veille)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping https://media-smart-lists.streamlit.app
+        run: |
+          URL="https://media-smart-lists.streamlit.app/"
+          echo "Visite de $URL …"
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 -L "$URL")
+          echo "Réponse HTTP : $code"
+          if [ "$code" != "200" ]; then
+            echo "⚠️ Pas de 200 au premier essai (l'app était peut-être en train de se réveiller) — nouvelle tentative dans 60 s."
+            sleep 60
+            code2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 90 -L "$URL")
+            echo "Réponse HTTP (2e essai) : $code2"
+            if [ "$code2" != "200" ]; then
+              echo "⚠️ L'app n'a toujours pas répondu 200 — vérifie https://media-smart-lists.streamlit.app/ (redémarrage Streamlit ? quota ?)"
+              exit 1
+            fi
+          fi
+          echo "✅ App réveillée — elle reste active pour les prochains visiteurs."
