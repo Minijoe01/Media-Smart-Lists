@@ -1,42 +1,93 @@
 name: Keep-alive Streamlit
 
-# V123.1 — Empêche la mise en veille de l'app Streamlit (plan gratuit) :
-# une simple visite HTTP toutes les 12 h suffit (la veille se déclenche
-# après ~24 h d'inactivité). Bonus : l'app se réveille chaude — le
-# chargement MDBList et l'enrichissement TMDB tournent pendant le ping,
-# les visiteurs suivants arrivent sur une app prête.
-# Planification : 06:00 et 18:00 UTC = 08:00 et 20:00 heure de Paris.
+# V123.2 — ANTI-VEILLE + RÉVEIL AUTOMATIQUE de l'app Streamlit (plan gratuit).
 #
-# ⚠️ LE COOKIE JAR (-c/-b) EST INDISPENSABLE : le réveil Streamlit passe
-# par une redirection 303 vers share.streamlit.io qui pose un cookie de
-# session avant de renvoyer vers l'app. Sans cookie, curl boucle (exit 47) ;
-# avec, la chaîne se résout en 3 redirections → HTTP 200.
+# Pourquoi cette version : une simple visite HTTP renvoie 200 même quand
+# l'app DORT (l'écran « Zzzz » est dessiné en JavaScript par-dessus
+# l'enveloppe standard, elle aussi servie en HTTP 200). Le workflow doit
+# donc demander le VRAI statut à l'API Streamlit et, si besoin, envoyer
+# la demande de réveil — exactement ce que fait le bouton
+# « Yes, get this app back up! ».
+#
+# Statuts de l'app (enum officielle Streamlit, décodée depuis le client) :
+#   0 UNKNOWN · 1 CREATING · 2 CREATED · 3 UPDATING · 4 INSTALLING
+#   5 RUNNING (en ligne) · 6 RESTARTING · 7 REBOOTING · 8 DELETING
+#   9 DELETED · 10 USER_ERROR · 11 PLATFORM_ERROR · 12 IS_SHUTDOWN (endormie)
+#   13 INSTALLER_ERROR · 14 USER_SCRIPT_ERROR
+#
+# Séquence (validée à la main contre l'app le 25/09/2026) :
+#   1. GET / avec cookies (chaîne d'auth 303 → share.streamlit.io → /-/login)
+#   2. GET /api/v2/app/status → statut réel + jeton x-csrf-token
+#   3. si statut ≠ 5 : POST /api/v2/app/resume avec le jeton → HTTP 204
+#   4. contrôle final
+#
+# Planification : 06:00 et 18:00 UTC = 08:00 et 20:00 heure de Paris.
 
 on:
   schedule:
     - cron: "0 6,18 * * *"
-  workflow_dispatch: {}   # permet aussi de le déclencher à la main (onglet Actions → Run workflow)
+  workflow_dispatch: {}   # test manuel : onglet Actions → Run workflow
 
 jobs:
   ping:
-    name: Visite de l'app (anti-veille)
+    name: Visite + réveil si besoin
     runs-on: ubuntu-latest
     steps:
-      - name: Ping https://media-smart-lists.streamlit.app
+      - name: Visite et réveil de https://media-smart-lists.streamlit.app
         run: |
           URL="https://media-smart-lists.streamlit.app/"
+          API="https://media-smart-lists.streamlit.app/api/v2"
           JAR="/tmp/wake_cookies.txt"
-          echo "Visite de $URL (avec cookies de réveil)…"
-          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 --max-redirs 20 -L -c "$JAR" -b "$JAR" "$URL")
-          echo "Réponse HTTP : $code"
-          if [ "$code" != "200" ]; then
-            echo "⚠️ Pas de 200 au premier essai (l'app était peut-être en train de se réveiller) — nouvelle tentative dans 90 s."
-            sleep 90
-            code2=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 --max-redirs 20 -L -c "$JAR" -b "$JAR" "$URL")
-            echo "Réponse HTTP (2e essai) : $code2"
-            if [ "$code2" != "200" ]; then
-              echo "⚠️ L'app n'a toujours pas répondu 200 — vérifie https://media-smart-lists.streamlit.app/ (redémarrage Streamlit ? quota ?)"
-              exit 1
-            fi
+
+          echo "── 1) Visite de l'app (chaîne d'authentification avec cookies)…"
+          page=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 --max-redirs 20 -L -c "$JAR" -b "$JAR" "$URL")
+          echo "   Page d'accueil : HTTP $page"
+          if [ "$page" != "200" ]; then
+            echo "⚠️ La page ne répond pas 200 — voir ${URL}"
+            exit 1
           fi
-          echo "✅ App réveillée — elle reste active pour les prochains visiteurs."
+
+          echo "── 2) Statut réel de l'app (API Streamlit)…"
+          HDR=$(mktemp)
+          st=$(curl -s -D "$HDR" -o /tmp/app_status.json --max-time 60 -c "$JAR" -b "$JAR" \
+                -H "Accept: application/json" -w "%{http_code}" "$API/app/status")
+          echo "   API statut : HTTP $st → $(cat /tmp/app_status.json 2>/dev/null | head -c 300)"
+          status=$(grep -o '"status":[0-9]*' /tmp/app_status.json 2>/dev/null | head -1 | grep -o '[0-9]*' || true)
+          token=$(grep -i '^x-csrf-token:' "$HDR" | sed 's/^[Xx]-[Cc][Ss][Rr][Ff]-[Tt]oken:[[:space:]]*//' | tr -d '\r')
+
+          if [ "$status" = "5" ]; then
+            echo "✅ App déjà en ligne (statut 5 = RUNNING) — visite enregistrée, rien à réveiller."
+            exit 0
+          fi
+          echo "   Statut $status ≠ RUNNING → réveil nécessaire."
+          if [ -z "$token" ]; then
+            echo "⚠️ Jeton CSRF introuvable — tentative de réveil sans jeton."
+          fi
+
+          echo "── 3) Réveil de l'app (POST resume — comme le bouton « Yes, get this app back up! »)…"
+          wake=$(curl -s -o /tmp/wake_resp.txt --max-time 120 -X POST -c "$JAR" -b "$JAR" \
+                -H "x-csrf-token: $token" \
+                -H "Accept: application/json" \
+                -H "Content-Type: application/json" \
+                -d '{}' "$API/app/resume" \
+                -w "%{http_code}")
+          echo "   Réveil : HTTP $wake $(cat /tmp/wake_resp.txt 2>/dev/null | head -c 200)"
+          case "$wake" in
+            200|202|204)
+              echo "✅ Réveil accepté — l'app démarre (chargement MDBList + enrichissement TMDB)."
+              ;;
+            *)
+              echo "⚠️ Réveil refusé (HTTP $wake) — vérifie ${URL} et le workflow."
+              exit 1
+              ;;
+          esac
+
+          echo "── 4) Contrôle final (30 s de marge pour le démarrage)…"
+          sleep 30
+          final=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 --max-redirs 20 -L -c "$JAR" -b "$JAR" "$URL")
+          echo "   Page : HTTP $final"
+          if [ "$final" = "200" ]; then
+            echo "✅ App réveillée et en ligne pour les prochains visiteurs."
+          else
+            echo "ℹ️ HTTP $final — l'app finit probablement de démarrer (le réveil a été accepté)."
+          fi
