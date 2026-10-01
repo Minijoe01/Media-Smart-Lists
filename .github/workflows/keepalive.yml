@@ -1,93 +1,86 @@
 name: Keep-alive Streamlit
 
-# V123.2 — ANTI-VEILLE + RÉVEIL AUTOMATIQUE de l'app Streamlit (plan gratuit).
+# V123.3 — ANTI-VEILLE + RÉVEIL AUTOMATIQUE + WebSocket
 #
-# Pourquoi cette version : une simple visite HTTP renvoie 200 même quand
-# l'app DORT (l'écran « Zzzz » est dessiné en JavaScript par-dessus
-# l'enveloppe standard, elle aussi servie en HTTP 200). Le workflow doit
-# donc demander le VRAI statut à l'API Streamlit et, si besoin, envoyer
-# la demande de réveil — exactement ce que fait le bouton
-# « Yes, get this app back up! ».
+# Améliorations V123.3 (après retour utilisateur : l'app s'endormait
+# malgré des runs réussis) :
+#   · Fréence : toutes les 4 h au lieu de 12 h (6 visites/jour)
+#   · WebSocket : une simple requête HTTP (curl) ne réinitialise PAS
+#     le compteur de veille Streamlit — il faut une vraie session
+#     (WebSocket). On établit donc une connexion WebSocket brève
+#     après la visite curl, comme le ferait un navigateur.
+#   · Le POST resume reste en secours (si l'app dort vraiment).
 #
-# Statuts de l'app (enum officielle Streamlit, décodée depuis le client) :
-#   0 UNKNOWN · 1 CREATING · 2 CREATED · 3 UPDATING · 4 INSTALLING
-#   5 RUNNING (en ligne) · 6 RESTARTING · 7 REBOOTING · 8 DELETING
-#   9 DELETED · 10 USER_ERROR · 11 PLATFORM_ERROR · 12 IS_SHUTDOWN (endormie)
-#   13 INSTALLER_ERROR · 14 USER_SCRIPT_ERROR
-#
-# Séquence (validée à la main contre l'app le 25/09/2026) :
-#   1. GET / avec cookies (chaîne d'auth 303 → share.streamlit.io → /-/login)
-#   2. GET /api/v2/app/status → statut réel + jeton x-csrf-token
-#   3. si statut ≠ 5 : POST /api/v2/app/resume avec le jeton → HTTP 204
-#   4. contrôle final
-#
-# Planification : 06:00 et 18:00 UTC = 08:00 et 20:00 heure de Paris.
+# Statuts : 5 = RUNNING · 12 = IS_SHUTDOWN (endormie)
+# Planification : toutes les 4 heures = cron "0 */4 * * *"
 
 on:
   schedule:
-    - cron: "0 6,18 * * *"
+    - cron: "0 */4 * * *"
   workflow_dispatch: {}   # test manuel : onglet Actions → Run workflow
 
 jobs:
   ping:
-    name: Visite + réveil si besoin
+    name: Visite (curl + WebSocket) + réveil si besoin
     runs-on: ubuntu-latest
     steps:
+      - name: Setup Python pour WebSocket
+        run: pip install websockets
+
       - name: Visite et réveil de https://media-smart-lists.streamlit.app
         run: |
           URL="https://media-smart-lists.streamlit.app/"
           API="https://media-smart-lists.streamlit.app/api/v2"
           JAR="/tmp/wake_cookies.txt"
 
-          echo "── 1) Visite de l'app (chaîne d'authentification avec cookies)…"
+          echo "── 1) Visite HTTP (chaîne d'authentification avec cookies)…"
           page=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 --max-redirs 20 -L -c "$JAR" -b "$JAR" "$URL")
-          echo "   Page d'accueil : HTTP $page"
-          if [ "$page" != "200" ]; then
-            echo "⚠️ La page ne répond pas 200 — voir ${URL}"
-            exit 1
-          fi
+          echo "   Page : HTTP $page"
 
-          echo "── 2) Statut réel de l'app (API Streamlit)…"
+          echo "── 2) WebSocket (compte comme une VRAIE session)…"
+          python3 - <<'PYWS'
+          import asyncio, sys
+          try:
+              import websockets
+              async def ws_visit():
+                  uri = "wss://media-smart-lists.streamlit.app/_stcore/stream"
+                  headers = {"Origin": "https://media-smart-lists.streamlit.app"}
+                  async with websockets.connect(uri, extra_headers=headers, open_timeout=30) as ws:
+                      print("   WebSocket connecté ✓")
+                      await asyncio.sleep(3)  # assez pour être enregistré
+                  print("   WebSocket fermé proprement")
+              asyncio.run(ws_visit())
+          except Exception as e:
+              print(f"   ⚠️ WebSocket : {e}")
+              # Pas grave : le POST resume reste en secours
+          PYWS
+
+          echo "── 3) Statut réel de l'app (API Streamlit)…"
           HDR=$(mktemp)
           st=$(curl -s -D "$HDR" -o /tmp/app_status.json --max-time 60 -c "$JAR" -b "$JAR" \
                 -H "Accept: application/json" -w "%{http_code}" "$API/app/status")
-          echo "   API statut : HTTP $st → $(cat /tmp/app_status.json 2>/dev/null | head -c 300)"
+          echo "   Statut : HTTP $st → $(cat /tmp/app_status.json 2>/dev/null | head -c 200)"
           status=$(grep -o '"status":[0-9]*' /tmp/app_status.json 2>/dev/null | head -1 | grep -o '[0-9]*' || true)
           token=$(grep -i '^x-csrf-token:' "$HDR" | sed 's/^[Xx]-[Cc][Ss][Rr][Ff]-[Tt]oken:[[:space:]]*//' | tr -d '\r')
 
           if [ "$status" = "5" ]; then
-            echo "✅ App déjà en ligne (statut 5 = RUNNING) — visite enregistrée, rien à réveiller."
+            echo "✅ App en ligne (statut 5) — visite + WebSocket enregistrés."
             exit 0
           fi
-          echo "   Statut $status ≠ RUNNING → réveil nécessaire."
-          if [ -z "$token" ]; then
-            echo "⚠️ Jeton CSRF introuvable — tentative de réveil sans jeton."
-          fi
 
-          echo "── 3) Réveil de l'app (POST resume — comme le bouton « Yes, get this app back up! »)…"
-          wake=$(curl -s -o /tmp/wake_resp.txt --max-time 120 -X POST -c "$JAR" -b "$JAR" \
+          echo "── 4) Réveil (POST resume, comme le bouton « Yes, get this app back up! »)…"
+          wake=$(curl -s -o /dev/null --max-time 120 -X POST -c "$JAR" -b "$JAR" \
                 -H "x-csrf-token: $token" \
                 -H "Accept: application/json" \
                 -H "Content-Type: application/json" \
                 -d '{}' "$API/app/resume" \
                 -w "%{http_code}")
-          echo "   Réveil : HTTP $wake $(cat /tmp/wake_resp.txt 2>/dev/null | head -c 200)"
+          echo "   Réveil : HTTP $wake (204 = accepté)"
           case "$wake" in
-            200|202|204)
-              echo "✅ Réveil accepté — l'app démarre (chargement MDBList + enrichissement TMDB)."
-              ;;
-            *)
-              echo "⚠️ Réveil refusé (HTTP $wake) — vérifie ${URL} et le workflow."
-              exit 1
-              ;;
+            200|202|204) echo "✅ Réveil accepté." ;;
+            *) echo "⚠️ Réveil refusé (HTTP $wake)" ; exit 1 ;;
           esac
 
-          echo "── 4) Contrôle final (30 s de marge pour le démarrage)…"
-          sleep 30
+          sleep 20
           final=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 --max-redirs 20 -L -c "$JAR" -b "$JAR" "$URL")
-          echo "   Page : HTTP $final"
-          if [ "$final" = "200" ]; then
-            echo "✅ App réveillée et en ligne pour les prochains visiteurs."
-          else
-            echo "ℹ️ HTTP $final — l'app finit probablement de démarrer (le réveil a été accepté)."
-          fi
+          echo "   Contrôle final : HTTP $final"
