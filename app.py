@@ -533,18 +533,62 @@ st.markdown(
        de l'app, clear logo TMDB en bas à gauche (style FlickTrove). */
     .cinema-banner {
         position: relative;
-        min-height: 150px;
+        min-height: 280px;
         border-radius: 14px;
         overflow: hidden;
-        margin-bottom: .8rem;
-        border: 1px solid var(--am-border);
-        background-color: #03211d;
+        margin: -0.4rem -0.4rem .8rem;  /* déborde sur le padding du dialog */
+        border: none;
+        background-color: #021a16;
+    }
+    .cinema-banner .cinema-bg {
+        position: absolute;
+        inset: 0;
         background-size: cover;
-        background-position: center 25%;
+        background-position: center 20%;
+        filter: saturate(1.15);
     }
-    @media (max-width: 640px) {
-        .cinema-banner { min-height: 200px; background-position: center; }
+    /* Couche blur : le même backdrop, flouté et étiré — effet FlickTrove */
+    .cinema-banner .cinema-bg-blur {
+        position: absolute;
+        inset: -40px;  /* déborde pour éviter les bords nets du blur */
+        background-size: cover;
+        background-position: center;
+        filter: blur(28px) saturate(1.3) brightness(.55);
+        z-index: 0;
     }
+    /* Image nette au centre, par-dessus le blur */
+    .cinema-banner .cinema-bg-sharp {
+        position: absolute;
+        inset: 0;
+        background-size: cover;
+        background-position: center 20%;
+        z-index: 1;
+        -webkit-mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
+        mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
+    }
+    .cinema-banner .cinema-bottom {
+        position: absolute;
+        left: 20px;
+        right: 20px;
+        bottom: 16px;
+        z-index: 2;
+        display: flex;
+        align-items: flex-end;
+        gap: 12px;
+    }
+    .cinema-banner img.cinema-logo {
+        max-height: 76px;
+        max-width: 65%;
+        filter: drop-shadow(0 4px 18px rgba(0, 0, 0, .9)) drop-shadow(0 0 30px rgba(0,0,0,.5));
+    }
+    .cinema-banner .cinema-title-fallback {
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #fff;
+        text-shadow: 0 3px 18px rgba(0, 0, 0, .95), 0 0 40px rgba(0,0,0,.6);
+        line-height: 1.15;
+    }
+    .cinema-banner .cinema-tag { margin-left: auto; flex-shrink: 0; }
     .cinema-banner::after {
         content: "";
         position: absolute;
@@ -3238,13 +3282,19 @@ def _render_cinema_detail_body(row: dict) -> None:
         banner_bg = f"https://image.tmdb.org/t/p/w780{escape(backdrop, quote=True)}"
         if logo:
             logo_html = (
-                f'<img class="cinema-logo" src="https://image.tmdb.org/t/p/w300{escape(logo, quote=True)}"'
+                f'<img class="cinema-logo" src="https://image.tmdb.org/t/p/w500{escape(logo, quote=True)}"'
                 f' alt="{title}" loading="lazy">'
             )
         else:
             logo_html = f'<span class="cinema-title-fallback">{title}</span>'
+        # V126 — effet FlickTrove : le backdrop est DOUBLÉ — une couche
+        # floutée/étirée qui remplit toute la bannière (couleurs dominantes),
+        # et une couche NETTE au centre qui fond vers le bas via un masque
+        # dégradé. Le clear logo trône en bas à gauche, plus grand.
         st.markdown(
-            f'<div class="cinema-banner" style="background-image:url({banner_bg});">'
+            f'<div class="cinema-banner">'
+            f'<div class="cinema-bg-blur" style="background-image:url({banner_bg});"></div>'
+            f'<div class="cinema-bg-sharp" style="background-image:url({banner_bg});"></div>'
             f'<div class="cinema-bottom">{logo_html}'
             f'<span class="cinema-tag"><span class="source-badge">{escape(str(row.get("type") or ""))}</span></span>'
             "</div></div>",
@@ -3438,11 +3488,14 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     )
     score_inline = f'<span class="score-badge gsm-only" data-tooltip="{escape(score_tip, quote=True)}">{score_val}/100</span>'
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
-    # V125 — retour au fond propre V122 (le backdrop était trop zoomé /
-    # étiré, qualité décevante — retour utilisateur). Le « waouh » vit
-    # dans la fiche cinéma (dialog), pas sur les cartes.
-    card_html = (
-        f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
+    # V126 — CARTES : AUCUN bouton visible. Le poster EST le bouton.
+    # Technique : un st.button invisible est rendu PUIS le poster est
+    # tiré dessus avec un margin-top négatif + pointer-events:none →
+    # l'utilisateur voit l'affiche, le clic passe au bouton dessous.
+    # Résultat : les cartes s'enchaînent comme en V122, sans élément
+    # intermédiaire (demande utilisateur : « je veux passer d'un contenu
+    # à l'autre »).
+    card_content_html = (
         f'{roulette_badge}{head}'
         f'<small>{" · ".join(metadata)}</small>{links_html}'
         f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">'
@@ -3451,22 +3504,26 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         f'<div class="progress-bar-container"><div class="progress-bar-fill" '
         f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
         + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
-        + f'</div>{score_col}</div>'
     )
-    # V125 — bouton en PIED DE CARTE (plus de colonnes latérales qui
-    # provoquaient des sauts sur GSM — retour utilisateur). Le bouton
-    # ressemble à un « footer » discret de la carte : même bord, même
-    # fond, texte léger « Voir la fiche cinéma ».
-    st.markdown(card_html, unsafe_allow_html=True)
     detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
-    if st.button(
-        "🎬 Voir la fiche cinéma",
-        key=detail_key,
-        help="Bannière, clear logo TMDB, détails et score expliqué",
-        use_container_width=True,
-        type="secondary",
-    ):
-        _open_cinema_detail(row)
+    # Colonne poster (bouton invisible + overlay) + colonne contenu
+    _p_col, _c_col = st.columns([0.13, 0.87])
+    with _p_col:
+        # Le bouton (invisible, recouvert par le poster)
+        if st.button("🎬", key=detail_key, help="Fiche cinéma : bannière, logo, détails",
+                     type="secondary", use_container_width=True):
+            _open_cinema_detail(row)
+        # Le poster recouvre le bouton (margin négatif + pointer-events none)
+        st.markdown(
+            f'<div style="margin-top:-42px;pointer-events:none;">{image_html}</div>',
+            unsafe_allow_html=True,
+        )
+    with _c_col:
+        st.markdown(
+            f'<div class="media-list-card poster-card"><div class="media-list-content" style="width:100%;">'
+            f'{card_content_html}</div>{score_col}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def _render_taste_profile(profile: dict) -> None:
