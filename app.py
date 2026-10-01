@@ -533,14 +533,17 @@ st.markdown(
        de l'app, clear logo TMDB en bas à gauche (style FlickTrove). */
     .cinema-banner {
         position: relative;
-        min-height: 224px;
+        min-height: 150px;
         border-radius: 14px;
         overflow: hidden;
         margin-bottom: .8rem;
         border: 1px solid var(--am-border);
         background-color: #03211d;
         background-size: cover;
-        background-position: center;
+        background-position: center 25%;
+    }
+    @media (max-width: 640px) {
+        .cinema-banner { min-height: 200px; background-position: center; }
     }
     .cinema-banner::after {
         content: "";
@@ -3284,7 +3287,7 @@ def _render_cinema_detail_body(row: dict) -> None:
     if row.get("studios"):
         meta_bits.append(f'<span class="mc-year" data-tooltip="Studios">🏢 {escape(", ".join(map(str, row["studios"][:2])))}</span>')
 
-    poster_col, info_col = st.columns([0.16, 0.84])
+    poster_col, info_col = st.columns([0.12, 0.88])
     with poster_col:
         if poster:
             st.markdown(
@@ -3297,8 +3300,8 @@ def _render_cinema_detail_body(row: dict) -> None:
         score_val = int(round(row.get("score", 0)))
         st.progress(max(0, min(score_val, 100)) / 100)
         st.caption(
-            f"**Score personnel : {score_val}/100** · friction {int(row.get('friction', 0))}/100 "
-            "(facilité de lancement). Calculé sur ton appareil, à partir de ton profil."
+            f"**Score : {score_val}/100** · friction {int(row.get('friction', 0))}/100 "
+            "(facilité de lancement)"
         )
 
     # ── Pourquoi ce score ? (transparence totale) ──
@@ -3310,11 +3313,12 @@ def _render_cinema_detail_body(row: dict) -> None:
     people = row.get("people") or []
     directors = row.get("directors") or []
     if people or directors:
-        st.markdown('<div class="cinema-section-title">Casting</div>', unsafe_allow_html=True)
-        if people:
-            st.caption("👥 " + escape(", ".join(map(str, people[:8]))))
+        cast_bits = []
         if directors:
-            st.caption("🎬 " + escape(", ".join(map(str, directors[:3]))))
+            cast_bits.append("🎬 " + escape(", ".join(map(str, directors[:2]))))
+        if people:
+            cast_bits.append("👥 " + escape(", ".join(map(str, people[:6]))))
+        st.caption(" · ".join(cast_bits))
 
     # ── Liens ──
     st.markdown('<div class="cinema-section-title">Où voir la fiche</div>', unsafe_allow_html=True)
@@ -3434,22 +3438,11 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     )
     score_inline = f'<span class="score-badge gsm-only" data-tooltip="{escape(score_tip, quote=True)}">{score_val}/100</span>'
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
-    # V124 — HABILLAGE CINÉMA : backdrop TMDB « deviné » en fond de carte.
-    # Voile carbone/vert très opaque à gauche (le texte vit là), plus
-    # transparent sur la frange droite : l'image se devine sans jamais
-    # prendre le devant (choix de lisibilité demandé par l'utilisateur).
-    backdrop_path = str(item.get("backdrop") or "").strip()
-    card_class = "media-list-card poster-card"
-    card_style = ""
-    if backdrop_path:
-        card_class += " cinema-backdrop"
-        card_style = (
-            ' style="background-image:linear-gradient(90deg,'
-            'rgba(3,29,25,.97) 0%, rgba(3,29,25,.90) 52%, rgba(3,29,25,.66) 100%),'
-            f'url(https://image.tmdb.org/t/p/w300{escape(backdrop_path, quote=True)});"'
-        )
+    # V125 — retour au fond propre V122 (le backdrop était trop zoomé /
+    # étiré, qualité décevante — retour utilisateur). Le « waouh » vit
+    # dans la fiche cinéma (dialog), pas sur les cartes.
     card_html = (
-        f'<div class="{card_class}"{card_style}>{image_html}<div class="media-list-content" style="width:100%;">'
+        f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
         f'<small>{" · ".join(metadata)}</small>{links_html}'
         f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">'
@@ -3460,14 +3453,19 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
         + f'</div>{score_col}</div>'
     )
-    # V124 — bouton 🎬 : fiche cinéma (dialog : bannière backdrop + clear
-    # logo TMDB + score expliqué + liens). À droite de la carte, dans une
-    # mini-colonne dédiée pour ne pas casser la mise en page.
-    card_col, detail_col = st.columns([0.965, 0.035], vertical_alignment="center")
-    with card_col:
-        st.markdown(card_html, unsafe_allow_html=True)
+    # V125 — bouton en PIED DE CARTE (plus de colonnes latérales qui
+    # provoquaient des sauts sur GSM — retour utilisateur). Le bouton
+    # ressemble à un « footer » discret de la carte : même bord, même
+    # fond, texte léger « Voir la fiche cinéma ».
+    st.markdown(card_html, unsafe_allow_html=True)
     detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
-    if detail_col.button("🎬", key=detail_key, help="Fiche cinéma : logo, bandeau, détails et score expliqué"):
+    if st.button(
+        "🎬 Voir la fiche cinéma",
+        key=detail_key,
+        help="Bannière, clear logo TMDB, détails et score expliqué",
+        use_container_width=True,
+        type="secondary",
+    ):
         _open_cinema_detail(row)
 
 
