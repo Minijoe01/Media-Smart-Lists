@@ -533,7 +533,7 @@ st.markdown(
        de l'app, clear logo TMDB en bas à gauche (style FlickTrove). */
     .cinema-banner {
         position: relative;
-        min-height: 200px;
+        min-height: 260px;  /* PC : plus haute → moins de troncature */
         border-radius: 12px;
         overflow: hidden;
         margin-bottom: .5rem;
@@ -541,7 +541,7 @@ st.markdown(
         background-color: #021a16;
     }
     @media (max-width: 640px) {
-        .cinema-banner { min-height: 180px; }
+        .cinema-banner { min-height: 180px; }  /* GSM : inchangé (parfait) */
     }
     /* V131 — Couche BLUR : l'image est ÉTIRÉE (100% 100%) et floutée
        largement — c'est ce qui donne les couleurs dominantes (FlickTrove) */
@@ -558,9 +558,8 @@ st.markdown(
     .cinema-banner .cinema-bg-sharp {
         position: absolute;
         inset: 0;
-        background-size: 100% auto;
-        background-position: center top;
-        background-repeat: no-repeat;
+        background-size: cover;  /* remplit la bannière SANS tronquer les visages */
+        background-position: center 20%;  /* montre le haut (visages) — comme V127 */
         z-index: 1;
         -webkit-mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 95%);
         mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 95%);
@@ -3310,10 +3309,14 @@ def _render_cinema_detail_body(row: dict) -> None:
         )
     if dominant_rgb:
         r, g, b = dominant_rgb
+        # V131.1 — opacités RENFORCÉES : la couleur doit être VISIBLE
+        # (l'ancienne .25 était trop discrète — retour utilisateur)
         bg_style = (
             f"background: linear-gradient(180deg, "
-            f"rgba({r},{g},{b},.25) 0%, rgba({r//2},{g//2},{b//2},.10) 35%, "
-            f"rgba(2,20,17,.82) 100%);"
+            f"rgba({r},{g},{b},.45) 0%, rgba({r},{g},{b},.25) 30%, "
+            f"rgba({r//2},{g//2},{b//2},.15) 55%, "
+            f"rgba(2,20,17,.85) 100%);"
+            f" border-left: 4px solid rgba({r},{g},{b},.70);"
             f" border-radius: 12px; padding: .5rem .7rem; margin: -.3rem -.5rem .3rem;"
         )
     else:
@@ -3347,7 +3350,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         st.markdown(f'<div style="{bg_style}"><h3>{title}</h3></div>', unsafe_allow_html=True)
 
     # ── Affiche à gauche + (chips + score + SYNOPSIS) à droite ──
-    poster_col, info_col = st.columns([0.12, 0.88])
+    poster_col, info_col = st.columns([0.15, 0.85])
     with poster_col:
         if poster:
             st.markdown(
