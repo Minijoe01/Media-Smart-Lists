@@ -620,6 +620,30 @@ st.markdown(
     }
     .cinema-banner .cinema-tag { margin-left: auto; flex-shrink: 0; }
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+    /* V127 — bouton « 🎬 Fiche » remonté DANS la tuile (aligné avec les
+       liens TMDB/MDBL). Le margin-top négatif le tire vers le haut pour
+       qu'il chevauche le bas de la carte précédente. */
+    .stButton > button[key*="cin_"] {
+        margin-top: -42px;
+        margin-bottom: 6px;
+        float: right;
+        background: rgba(0, 163, 146, .12);
+        border: 1px solid rgba(0, 224, 199, .30);
+        border-radius: 999px;
+        color: #00e0c7;
+        font-size: .74rem;
+        font-weight: 600;
+        padding: 2px 10px;
+        height: 26px;
+        min-height: 26px;
+        line-height: 1;
+        box-shadow: none;
+    }
+    .stButton > button[key*="cin_"]:hover {
+        background: rgba(0, 163, 146, .25);
+        border-color: rgba(0, 224, 199, .50);
+        color: #fff;
+    }
     .cinema-section-title {
         font-size: .8rem;
         font-weight: 800;
@@ -2481,29 +2505,40 @@ def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
 
 
 @st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours, comme les fiches
-def _fetch_tmdb_logo(kind: str, tmdb: int, key: str) -> str:
-    """Logo « clear » TMDB (PNG transparent) — V124, fiche cinéma.
+def _fetch_tmdb_details_fr(kind: str, tmdb: int, key: str) -> dict:
+    """Fiche TMDB en FRANÇAIS (synopsis + logo + images) — V127, fiche cinéma.
 
-    1 SEUL appel, déclenché uniquement au premier clic « 🎬 » sur un
-    contenu (puis mémorisé). Préférence de langue : fr > en > sans langue.
-    Retourne le file_path ('/abc.png') ou '' si aucun logo.
+    1 SEUL appel au premier clic « 🎬 » (puis mémorisé 30 jours), avec
+    language=fr-FR pour le synopsis ET append_to_response=images pour le
+    clear logo. Retourne le payload complet (ou {} si erreur).
     """
     try:
         response = requests.get(
-            f"https://api.themoviedb.org/3/{kind}/{tmdb}/images",
-            params={"api_key": key, "include_image_language": "fr,en,null"},
-            timeout=8,
+            f"https://api.themoviedb.org/3/{kind}/{tmdb}",
+            params={
+                "api_key": key,
+                "language": "fr-FR",
+                "append_to_response": "images",
+                "include_image_language": "fr,en,null",
+            },
+            timeout=10,
         )
         if response.status_code != 200:
-            return ""
-        logos = (response.json() or {}).get("logos") or []
+            return {}
+        return response.json() or {}
     except Exception:
-        return ""
+        return {}
+
+
+def _pick_logo_from_payload(payload: dict) -> str:
+    """Extrait le meilleur clear logo d'un payload TMDB (fr > en > null)."""
+    images = payload.get("images") if isinstance(payload.get("images"), dict) else {}
+    logos = images.get("logos") or []
     for lang in ("fr", "en", None):
         for logo in logos:
             if isinstance(logo, dict) and logo.get("iso_639_1") == lang and logo.get("file_path"):
                 return str(logo["file_path"])
-    for logo in logos:  # dernier recours : n'importe quel logo
+    for logo in logos:
         if isinstance(logo, dict) and logo.get("file_path"):
             return str(logo["file_path"])
     return ""
@@ -3255,12 +3290,11 @@ _CINEMA_STATUS_FR = {
 
 
 def _render_cinema_detail_body(row: dict) -> None:
-    """Corps de la fiche cinéma (rendu pur, testable sans dialog).
+    """Corps de la fiche cinéma — V127 compact, avec synopsis français.
 
-    V124 — inspiré de FlickTrove (demande utilisateur) : bannière avec le
-    backdrop TMDB + dégradé vers le fond de l'app et clear logo en bas à
-    gauche ; puis affiche, métadonnées, score TRANSPARENT (chaque pastille
-    explique son influence) et liens TMDB/MDBList.
+    Bannière plein écran : backdrop + blur (couleurs dominantes) + clear
+    logo en bas à gauche. Layout compact : poster + métadonnées + score
+    sur UNE ligne visuelle, synopsis, pastilles, liens.
     """
     item = row.get("item") or {}
     raw_title = _media_title(item)
@@ -3272,12 +3306,19 @@ def _render_cinema_detail_body(row: dict) -> None:
     except (TypeError, ValueError):
         tmdb_id = None
     api_key = _tmdb_api_key()
-    logo = ""
+
+    # 1 appel au 1er clic : synopsis FR + clear logo + images
+    fr_payload = {}
     if api_key and tmdb_id:
-        # 1 appel au PREMIER clic seulement, puis mémorisé 30 jours.
-        logo = _fetch_tmdb_logo("tv" if row.get("type") == "Série" else "movie", tmdb_id, api_key)
+        fr_payload = _fetch_tmdb_details_fr(
+            "tv" if row.get("type") == "Série" else "movie", tmdb_id, api_key
+        )
+    logo = _pick_logo_from_payload(fr_payload)
+    synopsis = str(fr_payload.get("overview") or "").strip()
+
     poster = escape(_poster_url(item), quote=True)
 
+    # ── Bannière (blur + net + logo) ──
     if backdrop:
         banner_bg = f"https://image.tmdb.org/t/p/w780{escape(backdrop, quote=True)}"
         if logo:
@@ -3287,10 +3328,6 @@ def _render_cinema_detail_body(row: dict) -> None:
             )
         else:
             logo_html = f'<span class="cinema-title-fallback">{title}</span>'
-        # V126 — effet FlickTrove : le backdrop est DOUBLÉ — une couche
-        # floutée/étirée qui remplit toute la bannière (couleurs dominantes),
-        # et une couche NETTE au centre qui fond vers le bas via un masque
-        # dégradé. Le clear logo trône en bas à gauche, plus grand.
         st.markdown(
             f'<div class="cinema-banner">'
             f'<div class="cinema-bg-blur" style="background-image:url({banner_bg});"></div>'
@@ -3301,65 +3338,67 @@ def _render_cinema_detail_body(row: dict) -> None:
             unsafe_allow_html=True,
         )
     else:
-        # Pas de backdrop (contenu non enrichi) : titre simple, pas de bannière.
         st.markdown(f"### {title}")
 
-    # ── Affiche + métadonnées ──
-    meta_bits = []
-    year = escape(_media_year(item))
-    if year:
-        meta_bits.append(f'<span class="mc-year" data-tooltip="Année de sortie">📅 {year}</span>')
-    if row.get("type") == "Série":
-        total_ep = int(row.get("total_episodes") or 0)
-        seasons = _media_seasons(item)
-        ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
-        serie_bits = []
-        if seasons:
-            serie_bits.append(f"{seasons} saison(s)")
-        if total_ep:
-            serie_bits.append(f"{total_ep} épisode(s)")
-        if ep_runtime:
-            serie_bits.append(f"~{ep_runtime} min/ép.")
-        if serie_bits:
-            meta_bits.append(f'<span class="mc-year" data-tooltip="Série">📺 {" · ".join(serie_bits)}</span>')
-    elif row.get("runtime"):
-        try:
-            meta_bits.append(f'<span class="mc-year" data-tooltip="Durée">⏱️ {_format_minutes(int(row["runtime"]))}</span>')
-        except (TypeError, ValueError):
-            pass
-    if row.get("note") is not None:
-        meta_bits.append(f'<span class="mc-note" data-tooltip="Note communauté (sur 10)">⭐ {row["note"]:.1f}</span>')
-    status_raw = str(row.get("status") or "").strip().lower()
-    if status_raw in _CINEMA_STATUS_FR:
-        meta_bits.append(f'<span class="mc-year">{_CINEMA_STATUS_FR[status_raw]}</span>')
-    if row.get("genres"):
-        meta_bits.append(f'<span class="mc-year" data-tooltip="Genres">🎭 {escape(", ".join(map(str, row["genres"][:4])))}</span>')
-    if row.get("studios"):
-        meta_bits.append(f'<span class="mc-year" data-tooltip="Studios">🏢 {escape(", ".join(map(str, row["studios"][:2])))}</span>')
-
-    poster_col, info_col = st.columns([0.12, 0.88])
+    # ── Ligne compacte : affiche + chips + score ──
+    poster_col, info_col = st.columns([0.10, 0.90])
     with poster_col:
         if poster:
             st.markdown(
-                f'<img src="{poster}" alt="{title}" style="width:100%;border-radius:10px;'
-                f'box-shadow:0 10px 26px rgba(0,0,0,.55);" loading="lazy">',
+                f'<img src="{poster}" alt="{title}" style="width:100%;border-radius:8px;'
+                f'box-shadow:0 8px 20px rgba(0,0,0,.5);object-fit:contain;" loading="lazy">',
                 unsafe_allow_html=True,
             )
     with info_col:
+        meta_bits = []
+        year = escape(_media_year(item))
+        if year:
+            meta_bits.append(f'<span class="mc-year">📅 {year}</span>')
+        if row.get("type") == "Série":
+            total_ep = int(row.get("total_episodes") or 0)
+            seasons = _media_seasons(item)
+            ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
+            bits = []
+            if seasons:
+                bits.append(f"{seasons} saison(s)")
+            if total_ep:
+                bits.append(f"{total_ep} ép.")
+            if ep_runtime:
+                bits.append(f"~{ep_runtime} min/ép.")
+            if bits:
+                meta_bits.append(f'<span class="mc-year">📺 {" · ".join(bits)}</span>')
+        elif row.get("runtime"):
+            try:
+                meta_bits.append(f'<span class="mc-year">⏱️ {_format_minutes(int(row["runtime"]))}</span>')
+            except (TypeError, ValueError):
+                pass
+        if row.get("note") is not None:
+            meta_bits.append(f'<span class="mc-note">⭐ {row["note"]:.1f}</span>')
+        status_raw = str(row.get("status") or "").strip().lower()
+        if status_raw in _CINEMA_STATUS_FR:
+            meta_bits.append(f'<span class="mc-year">{_CINEMA_STATUS_FR[status_raw]}</span>')
+        if row.get("genres"):
+            meta_bits.append(f'<span class="mc-year">🎭 {escape(", ".join(map(str, row["genres"][:4])))}</span>')
         st.markdown(f'<div class="cinema-chips">{"".join(meta_bits)}</div>', unsafe_allow_html=True)
         score_val = int(round(row.get("score", 0)))
         st.progress(max(0, min(score_val, 100)) / 100)
-        st.caption(
-            f"**Score : {score_val}/100** · friction {int(row.get('friction', 0))}/100 "
-            "(facilité de lancement)"
-        )
+        st.caption(f"**{score_val}/100** · friction {int(row.get('friction', 0))}/100")
 
-    # ── Pourquoi ce score ? (transparence totale) ──
+    # ── Synopsis français ──
+    if synopsis:
+        st.markdown(f'<div class="cinema-section-title">Synopsis</div>', unsafe_allow_html=True)
+        st.caption(synopsis)
+
+    # ── Pourquoi ce score ? ──
     signals = row.get("signals") or []
     if signals:
-        st.markdown('<div class="cinema-section-title">Pourquoi ce score ?</div>', unsafe_allow_html=True)
         pills = "".join(_signal_pill(signal) for signal in signals)
-        st.markdown(f'<div style="display:flex;flex-wrap:wrap;gap:.35rem;">{pills}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem;">{pills}</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── Casting (une ligne) ──
     people = row.get("people") or []
     directors = row.get("directors") or []
     if people or directors:
@@ -3371,14 +3410,12 @@ def _render_cinema_detail_body(row: dict) -> None:
         st.caption(" · ".join(cast_bits))
 
     # ── Liens ──
-    st.markdown('<div class="cinema-section-title">Où voir la fiche</div>', unsafe_allow_html=True)
     st.markdown(
         _content_links_html(ids, raw_title, is_show=(row.get("type") == "Série")),
         unsafe_allow_html=True,
     )
 
 
-@st.dialog("🎬 Fiche cinéma", width="large")
 def _cinema_detail_dialog() -> None:
     """Fenêtre modale : fiche cinéma du contenu choisi (V124)."""
     _render_cinema_detail_body(st.session_state.get("_cinema_detail_row") or {})
@@ -3488,14 +3525,12 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     )
     score_inline = f'<span class="score-badge gsm-only" data-tooltip="{escape(score_tip, quote=True)}">{score_val}/100</span>'
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
-    # V126 — CARTES : AUCUN bouton visible. Le poster EST le bouton.
-    # Technique : un st.button invisible est rendu PUIS le poster est
-    # tiré dessus avec un margin-top négatif + pointer-events:none →
-    # l'utilisateur voit l'affiche, le clic passe au bouton dessous.
-    # Résultat : les cartes s'enchaînent comme en V122, sans élément
-    # intermédiaire (demande utilisateur : « je veux passer d'un contenu
-    # à l'autre »).
-    card_content_html = (
+    # V127 — RETOUR V122 PUR : poster DANS la tuile, une seule carte
+    # markdown, rien entre les contenus. Un petit bouton « 🎬 Fiche »
+    # est rendu APRÈS la carte puis remonté DANS la tuile (margin
+    # négatif CSS) pour apparaître à côté des liens TMDB/MDBL.
+    card_html = (
+        f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
         f'<small>{" · ".join(metadata)}</small>{links_html}'
         f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">'
@@ -3504,26 +3539,17 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         f'<div class="progress-bar-container"><div class="progress-bar-fill" '
         f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
         + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
+        + f'</div>{score_col}</div>'
     )
+    st.markdown(card_html, unsafe_allow_html=True)
+    # V127 — bouton « 🎬 Fiche » : compact, pill, remonté dans la tuile
+    # via margin-top négatif pour s'aligner avec les liens TMDB/MDBL.
+    # Ce bouton est le SEUL moyen Streamlit d'ouvrir un dialog — il est
+    # rendu après la carte mais visuellement DANS la tuile.
     detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
-    # Colonne poster (bouton invisible + overlay) + colonne contenu
-    _p_col, _c_col = st.columns([0.13, 0.87])
-    with _p_col:
-        # Le bouton (invisible, recouvert par le poster)
-        if st.button("🎬", key=detail_key, help="Fiche cinéma : bannière, logo, détails",
-                     type="secondary", use_container_width=True):
-            _open_cinema_detail(row)
-        # Le poster recouvre le bouton (margin négatif + pointer-events none)
-        st.markdown(
-            f'<div style="margin-top:-42px;pointer-events:none;">{image_html}</div>',
-            unsafe_allow_html=True,
-        )
-    with _c_col:
-        st.markdown(
-            f'<div class="media-list-card poster-card"><div class="media-list-content" style="width:100%;">'
-            f'{card_content_html}</div>{score_col}</div>',
-            unsafe_allow_html=True,
-        )
+    if st.button("🎬 Fiche", key=detail_key, help="Bannière, logo, synopsis, score expliqué",
+                 type="secondary"):
+        _open_cinema_detail(row)
 
 
 def _render_taste_profile(profile: dict) -> None:
