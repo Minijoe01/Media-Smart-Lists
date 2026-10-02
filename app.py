@@ -533,63 +533,18 @@ st.markdown(
        de l'app, clear logo TMDB en bas à gauche (style FlickTrove). */
     .cinema-banner {
         position: relative;
-        min-height: 280px;
+        min-height: 150px;
         border-radius: 14px;
         overflow: hidden;
-        margin: -0.4rem -0.4rem .8rem;  /* déborde sur le padding du dialog */
-        border: none;
-        background-color: #021a16;
-    }
-    .cinema-banner .cinema-bg {
-        position: absolute;
-        inset: 0;
+        margin-bottom: .8rem;
+        border: 1px solid var(--am-border);
+        background-color: #03211d;
         background-size: cover;
-        background-position: center 20%;
-        filter: saturate(1.15);
+        background-position: center 25%;
     }
-    /* Couche blur : le même backdrop, flouté et étiré — effet FlickTrove */
-    .cinema-banner .cinema-bg-blur {
-        position: absolute;
-        inset: -60px;
-        background-size: 100% 100%;
-        background-position: center;
-        filter: blur(35px) saturate(1.4) brightness(.50);
-        z-index: 0;
+    @media (max-width: 640px) {
+        .cinema-banner { min-height: 200px; background-position: center; }
     }
-    /* Image nette au centre, par-dessus le blur */
-    .cinema-banner .cinema-bg-sharp {
-        position: absolute;
-        inset: 0;
-        background-size: 100% auto;
-        background-position: center top;
-        background-repeat: no-repeat;
-        z-index: 1;
-        -webkit-mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 95%);
-        mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 95%);
-    }
-    .cinema-banner .cinema-bottom {
-        position: absolute;
-        left: 20px;
-        right: 20px;
-        bottom: 16px;
-        z-index: 2;
-        display: flex;
-        align-items: flex-end;
-        gap: 12px;
-    }
-    .cinema-banner img.cinema-logo {
-        max-height: 90px;
-        max-width: 70%;
-        filter: drop-shadow(0 4px 20px rgba(0, 0, 0, .95)) drop-shadow(0 0 40px rgba(0,0,0,.6));
-    }
-    .cinema-banner .cinema-title-fallback {
-        font-size: 1.8rem;
-        font-weight: 800;
-        color: #fff;
-        text-shadow: 0 3px 18px rgba(0, 0, 0, .95), 0 0 40px rgba(0,0,0,.6);
-        line-height: 1.15;
-    }
-    .cinema-banner .cinema-tag { margin-left: auto; flex-shrink: 0; }
     .cinema-banner::after {
         content: "";
         position: absolute;
@@ -621,56 +576,6 @@ st.markdown(
     }
     .cinema-banner .cinema-tag { margin-left: auto; flex-shrink: 0; }
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
-    /* V128 — badge « 🎬 Fiche » : exactement le même style que les
-       link-pills (TMDB, MDBL, Où regarder). C'est un vrai <a> HTML. */
-    /* V130 — BOUTON « 🎬 » DANS LA TUILE : le bloc horizontal
-       [carte | bouton] est remonté par-dessus le bas de la carte.
-       Sélecteur :has() ciblé : SEULEMENT les blocs à exactement 2
-       colonnes dont la 2e contient un bouton (pattern unique des
-       boutons cinéma). Chrome 105+, Safari 15.4+, Firefox 121+. */
-    [data-testid="stHorizontalBlock"]:has(> div:nth-child(2):last-child [data-testid="stBaseButton"]) {
-        margin-top: -36px !important;
-        margin-bottom: 0 !important;
-        height: 24px !important;
-        min-height: 24px !important;
-        overflow: visible !important;
-        z-index: 10;
-        position: relative;
-    }
-    [data-testid="stHorizontalBlock"]:has(> div:nth-child(2):last-child [data-testid="stBaseButton"]) button {
-        height: 24px !important;
-        min-height: 24px !important;
-        padding: 0 8px !important;
-        font-size: .70rem !important;
-        border-radius: 999px !important;
-        background: rgba(0, 163, 146, .10) !important;
-        border: 1px solid rgba(0, 224, 199, .25) !important;
-        color: #00e0c7 !important;
-        line-height: 1 !important;
-        box-shadow: none !important;
-    }
-    [data-testid="stHorizontalBlock"]:has(> div:nth-child(2):last-child [data-testid="stBaseButton"]) button:hover {
-        background: rgba(0, 163, 146, .25) !important;
-        border-color: rgba(0, 224, 199, .50) !important;
-        color: #fff !important;
-    }
-    a.cinema-fiche-link {
-        background: rgba(0, 163, 146, .12);
-        border: 1px solid rgba(0, 224, 199, .30);
-        border-radius: 999px;
-        color: #00e0c7;
-        font-size: .78rem;
-        font-weight: 600;
-        padding: 2px 10px;
-        text-decoration: none;
-        cursor: pointer;
-    }
-    a.cinema-fiche-link:hover {
-        background: rgba(0, 163, 146, .25);
-        border-color: rgba(0, 224, 199, .50);
-        color: #fff;
-    }
-
     .cinema-section-title {
         font-size: .8rem;
         font-weight: 800;
@@ -2532,80 +2437,29 @@ def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
 
 
 @st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours, comme les fiches
-def _fetch_tmdb_details_fr(kind: str, tmdb: int, key: str) -> dict:
-    """Fiche TMDB en FRANÇAIS (synopsis + logo + images) — V127, fiche cinéma.
+def _fetch_tmdb_logo(kind: str, tmdb: int, key: str) -> str:
+    """Logo « clear » TMDB (PNG transparent) — V124, fiche cinéma.
 
-    1 SEUL appel au premier clic « 🎬 » (puis mémorisé 30 jours), avec
-    language=fr-FR pour le synopsis ET append_to_response=images pour le
-    clear logo. Retourne le payload complet (ou {} si erreur).
+    1 SEUL appel, déclenché uniquement au premier clic « 🎬 » sur un
+    contenu (puis mémorisé). Préférence de langue : fr > en > sans langue.
+    Retourne le file_path ('/abc.png') ou '' si aucun logo.
     """
     try:
         response = requests.get(
-            f"https://api.themoviedb.org/3/{kind}/{tmdb}",
-            params={
-                "api_key": key,
-                "language": "fr-FR",
-                "append_to_response": "images",
-                "include_image_language": "fr,en,null",
-            },
-            timeout=10,
+            f"https://api.themoviedb.org/3/{kind}/{tmdb}/images",
+            params={"api_key": key, "include_image_language": "fr,en,null"},
+            timeout=8,
         )
         if response.status_code != 200:
-            return {}
-        return response.json() or {}
+            return ""
+        logos = (response.json() or {}).get("logos") or []
     except Exception:
-        return {}
-
-
-def _extract_dominant_color(image_url: str) -> tuple[int, int, int] | None:
-    """Extrait la couleur dominante d'une image TMDB (comme FlickTrove).
-
-    Télécharge l'image en petit (w92), puis calcule la couleur moyenne
-    pondérée par la saturation (les couleurs vives pèsent plus que le
-    gris/noir). Retourne un tuple RGB ou None si échec.
-    """
-    try:
-        import io as _io
-        from PIL import Image
-        response = requests.get(image_url, timeout=6)
-        if response.status_code != 200:
-            return None
-        img = Image.open(_io.BytesIO(response.content)).convert("RGB")
-        img = img.resize((32, 18))  # miniature pour la vitesse
-        pixels = list(img.getdata())
-        if not pixels:
-            return None
-        # Moyenne pondérée : chaque pixel pèse selon sa saturation
-        # (les couleurs vives dominent, le gris/noir s'efface)
-        import colorsys
-        weighted_r = weighted_g = weighted_b = total_weight = 0.0
-        for r, g, b in pixels:
-            h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-            weight = s * v + 0.05  # +0.05 pour ne pas ignorer le noir total
-            weighted_r += r * weight
-            weighted_g += g * weight
-            weighted_b += b * weight
-            total_weight += weight
-        if total_weight == 0:
-            return None
-        return (
-            int(weighted_r / total_weight),
-            int(weighted_g / total_weight),
-            int(weighted_b / total_weight),
-        )
-    except Exception:
-        return None
-
-
-def _pick_logo_from_payload(payload: dict) -> str:
-    """Extrait le meilleur clear logo d'un payload TMDB (fr > en > null)."""
-    images = payload.get("images") if isinstance(payload.get("images"), dict) else {}
-    logos = images.get("logos") or []
+        return ""
     for lang in ("fr", "en", None):
         for logo in logos:
             if isinstance(logo, dict) and logo.get("iso_639_1") == lang and logo.get("file_path"):
                 return str(logo["file_path"])
-    for logo in logos:
+    for logo in logos:  # dernier recours : n'importe quel logo
         if isinstance(logo, dict) and logo.get("file_path"):
             return str(logo["file_path"])
     return ""
@@ -3357,11 +3211,12 @@ _CINEMA_STATUS_FR = {
 
 
 def _render_cinema_detail_body(row: dict) -> None:
-    """Corps de la fiche cinéma — V127 compact, avec synopsis français.
+    """Corps de la fiche cinéma (rendu pur, testable sans dialog).
 
-    Bannière plein écran : backdrop + blur (couleurs dominantes) + clear
-    logo en bas à gauche. Layout compact : poster + métadonnées + score
-    sur UNE ligne visuelle, synopsis, pastilles, liens.
+    V124 — inspiré de FlickTrove (demande utilisateur) : bannière avec le
+    backdrop TMDB + dégradé vers le fond de l'app et clear logo en bas à
+    gauche ; puis affiche, métadonnées, score TRANSPARENT (chaque pastille
+    explique son influence) et liens TMDB/MDBList.
     """
     item = row.get("item") or {}
     raw_title = _media_title(item)
@@ -3373,125 +3228,88 @@ def _render_cinema_detail_body(row: dict) -> None:
     except (TypeError, ValueError):
         tmdb_id = None
     api_key = _tmdb_api_key()
-
-    # 1 appel au 1er clic : synopsis FR + clear logo + images
-    fr_payload = {}
+    logo = ""
     if api_key and tmdb_id:
-        fr_payload = _fetch_tmdb_details_fr(
-            "tv" if row.get("type") == "Série" else "movie", tmdb_id, api_key
-        )
-    logo = _pick_logo_from_payload(fr_payload)
-    synopsis = str(fr_payload.get("overview") or "").strip()
-
+        # 1 appel au PREMIER clic seulement, puis mémorisé 30 jours.
+        logo = _fetch_tmdb_logo("tv" if row.get("type") == "Série" else "movie", tmdb_id, api_key)
     poster = escape(_poster_url(item), quote=True)
 
-    # V129 — COULEUR DOMINANTE (comme FlickTrove) : on télécharge le
-    # backdrop en miniature et on extrait sa couleur dominante. Cette
-    # couleur teinte le fond de toute la fiche → chaque film a « ses »
-    # couleurs, pas un fond générique.
-    dominant_rgb = None
-    if backdrop:
-        dominant_rgb = _extract_dominant_color(
-            f"https://image.tmdb.org/t/p/w92{backdrop}"
-        )
-    if dominant_rgb:
-        r, g, b = dominant_rgb
-        # Fond : couleur dominante assombrie (70% vers le noir) + dégradé
-        bg_style = (
-            f"background: linear-gradient(180deg, "
-            f"rgba({r},{g},{b},.28) 0%, rgba({r//2},{g//2},{b//2},.12) 40%, "
-            f"rgba(2,20,17,.85) 100%);"
-            f" border-radius: 14px; padding: .6rem .8rem; margin: -0.2rem -0.4rem .4rem;"
-        )
-    else:
-        bg_style = (
-            "background: linear-gradient(180deg, rgba(0,163,146,.08) 0%, "
-            "rgba(2,20,17,.85) 100%);"
-            " border-radius: 14px; padding: .6rem .8rem; margin: -0.2rem -0.4rem .4rem;"
-        )
-
-    # ── Bannière (blur + net + logo) ──
     if backdrop:
         banner_bg = f"https://image.tmdb.org/t/p/w780{escape(backdrop, quote=True)}"
         if logo:
             logo_html = (
-                f'<img class="cinema-logo" src="https://image.tmdb.org/t/p/w500{escape(logo, quote=True)}"'
+                f'<img class="cinema-logo" src="https://image.tmdb.org/t/p/w300{escape(logo, quote=True)}"'
                 f' alt="{title}" loading="lazy">'
             )
         else:
             logo_html = f'<span class="cinema-title-fallback">{title}</span>'
         st.markdown(
-            f'<div style="{bg_style}">'
-            f'<div class="cinema-banner">'
-            f'<div class="cinema-bg-blur" style="background-image:url({banner_bg});"></div>'
-            f'<div class="cinema-bg-sharp" style="background-image:url({banner_bg});"></div>'
+            f'<div class="cinema-banner" style="background-image:url({banner_bg});">'
             f'<div class="cinema-bottom">{logo_html}'
             f'<span class="cinema-tag"><span class="source-badge">{escape(str(row.get("type") or ""))}</span></span>'
-            "</div></div></div>",
+            "</div></div>",
             unsafe_allow_html=True,
         )
     else:
+        # Pas de backdrop (contenu non enrichi) : titre simple, pas de bannière.
         st.markdown(f"### {title}")
 
-    # ── Affiche à gauche + (chips + score + synopsis) à droite ──
-    poster_col, info_col = st.columns([0.14, 0.86])
+    # ── Affiche + métadonnées ──
+    meta_bits = []
+    year = escape(_media_year(item))
+    if year:
+        meta_bits.append(f'<span class="mc-year" data-tooltip="Année de sortie">📅 {year}</span>')
+    if row.get("type") == "Série":
+        total_ep = int(row.get("total_episodes") or 0)
+        seasons = _media_seasons(item)
+        ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
+        serie_bits = []
+        if seasons:
+            serie_bits.append(f"{seasons} saison(s)")
+        if total_ep:
+            serie_bits.append(f"{total_ep} épisode(s)")
+        if ep_runtime:
+            serie_bits.append(f"~{ep_runtime} min/ép.")
+        if serie_bits:
+            meta_bits.append(f'<span class="mc-year" data-tooltip="Série">📺 {" · ".join(serie_bits)}</span>')
+    elif row.get("runtime"):
+        try:
+            meta_bits.append(f'<span class="mc-year" data-tooltip="Durée">⏱️ {_format_minutes(int(row["runtime"]))}</span>')
+        except (TypeError, ValueError):
+            pass
+    if row.get("note") is not None:
+        meta_bits.append(f'<span class="mc-note" data-tooltip="Note communauté (sur 10)">⭐ {row["note"]:.1f}</span>')
+    status_raw = str(row.get("status") or "").strip().lower()
+    if status_raw in _CINEMA_STATUS_FR:
+        meta_bits.append(f'<span class="mc-year">{_CINEMA_STATUS_FR[status_raw]}</span>')
+    if row.get("genres"):
+        meta_bits.append(f'<span class="mc-year" data-tooltip="Genres">🎭 {escape(", ".join(map(str, row["genres"][:4])))}</span>')
+    if row.get("studios"):
+        meta_bits.append(f'<span class="mc-year" data-tooltip="Studios">🏢 {escape(", ".join(map(str, row["studios"][:2])))}</span>')
+
+    poster_col, info_col = st.columns([0.12, 0.88])
     with poster_col:
         if poster:
             st.markdown(
-                f'<img src="{poster}" alt="{title}" style="width:100%;border-radius:8px;'
-                f'box-shadow:0 8px 20px rgba(0,0,0,.5);object-fit:contain;" loading="lazy">',
+                f'<img src="{poster}" alt="{title}" style="width:100%;border-radius:10px;'
+                f'box-shadow:0 10px 26px rgba(0,0,0,.55);" loading="lazy">',
                 unsafe_allow_html=True,
             )
     with info_col:
-        # Chips métadonnées (une ligne compacte)
-        meta_bits = []
-        year = escape(_media_year(item))
-        if year:
-            meta_bits.append(f'<span class="mc-year">📅 {year}</span>')
-        if row.get("type") == "Série":
-            total_ep = int(row.get("total_episodes") or 0)
-            seasons = _media_seasons(item)
-            ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
-            bits = []
-            if seasons:
-                bits.append(f"{seasons} saison(s)")
-            if total_ep:
-                bits.append(f"{total_ep} ép.")
-            if ep_runtime:
-                bits.append(f"~{ep_runtime} min/ép.")
-            if bits:
-                meta_bits.append(f'<span class="mc-year">📺 {" · ".join(bits)}</span>')
-        elif row.get("runtime"):
-            try:
-                meta_bits.append(f'<span class="mc-year">⏱️ {_format_minutes(int(row["runtime"]))}</span>')
-            except (TypeError, ValueError):
-                pass
-        if row.get("note") is not None:
-            meta_bits.append(f'<span class="mc-note">⭐ {row["note"]:.1f}</span>')
-        status_raw = str(row.get("status") or "").strip().lower()
-        if status_raw in _CINEMA_STATUS_FR:
-            meta_bits.append(f'<span class="mc-year">{_CINEMA_STATUS_FR[status_raw]}</span>')
-        if row.get("genres"):
-            meta_bits.append(f'<span class="mc-year">🎭 {escape(", ".join(map(str, row["genres"][:4])))}</span>')
         st.markdown(f'<div class="cinema-chips">{"".join(meta_bits)}</div>', unsafe_allow_html=True)
-        # Score compact
         score_val = int(round(row.get("score", 0)))
         st.progress(max(0, min(score_val, 100)) / 100)
-        st.caption(f"**{score_val}/100** · friction {int(row.get('friction', 0))}/100")
-        # Synopsis FRANÇAIS — à côté du poster, pas en dessous
-        if synopsis:
-            st.caption(synopsis)
-
-    # ── Pourquoi ce score ? ──
-    signals = row.get("signals") or []
-    if signals:
-        pills = "".join(_signal_pill(signal) for signal in signals)
-        st.markdown(
-            f'<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem;">{pills}</div>',
-            unsafe_allow_html=True,
+        st.caption(
+            f"**Score : {score_val}/100** · friction {int(row.get('friction', 0))}/100 "
+            "(facilité de lancement)"
         )
 
-    # ── Casting (une ligne) ──
+    # ── Pourquoi ce score ? (transparence totale) ──
+    signals = row.get("signals") or []
+    if signals:
+        st.markdown('<div class="cinema-section-title">Pourquoi ce score ?</div>', unsafe_allow_html=True)
+        pills = "".join(_signal_pill(signal) for signal in signals)
+        st.markdown(f'<div style="display:flex;flex-wrap:wrap;gap:.35rem;">{pills}</div>', unsafe_allow_html=True)
     people = row.get("people") or []
     directors = row.get("directors") or []
     if people or directors:
@@ -3503,12 +3321,14 @@ def _render_cinema_detail_body(row: dict) -> None:
         st.caption(" · ".join(cast_bits))
 
     # ── Liens ──
+    st.markdown('<div class="cinema-section-title">Où voir la fiche</div>', unsafe_allow_html=True)
     st.markdown(
         _content_links_html(ids, raw_title, is_show=(row.get("type") == "Série")),
         unsafe_allow_html=True,
     )
 
 
+@st.dialog("🎬 Fiche cinéma", width="large")
 def _cinema_detail_dialog() -> None:
     """Fenêtre modale : fiche cinéma du contenu choisi (V124)."""
     _render_cinema_detail_body(st.session_state.get("_cinema_detail_row") or {})
@@ -3618,10 +3438,9 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     )
     score_inline = f'<span class="score-badge gsm-only" data-tooltip="{escape(score_tip, quote=True)}">{score_val}/100</span>'
     links_html = _content_links_html(item_ids, raw_title, is_show=(row.get("type") == "Série"))
-    # V127 — RETOUR V122 PUR : poster DANS la tuile, une seule carte
-    # markdown, rien entre les contenus. Un petit bouton « 🎬 Fiche »
-    # est rendu APRÈS la carte puis remonté DANS la tuile (margin
-    # négatif CSS) pour apparaître à côté des liens TMDB/MDBL.
+    # V125 — retour au fond propre V122 (le backdrop était trop zoomé /
+    # étiré, qualité décevante — retour utilisateur). Le « waouh » vit
+    # dans la fiche cinéma (dialog), pas sur les cartes.
     card_html = (
         f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
@@ -3634,17 +3453,16 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
         + f'</div>{score_col}</div>'
     )
+    # V125 — bouton en PIED DE CARTE (plus de colonnes latérales qui
+    # provoquaient des sauts sur GSM — retour utilisateur). Le bouton
+    # ressemble à un « footer » discret de la carte : même bord, même
+    # fond, texte léger « Voir la fiche cinéma ».
     st.markdown(card_html, unsafe_allow_html=True)
-    # V129 — BOUTON « 🎬 » : méthode V126 (qui marchait : dialog plein
-    # écran au clic). Le bouton est ultra-compact : juste l'icône 🎬,
-    # 24px de haut, placé en bas à droite de la tuile via une mini-
-    # colonne. C'est le SEUL mécanisme Streamlit pour ouvrir un dialog
-    # — on ne peut pas rendre le HTML d'une carte cliquable vers Python.
     detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
     if st.button(
         "🎬 Voir la fiche cinéma",
         key=detail_key,
-        help="Bannière, clear logo TMDB, synopsis, score expliqué",
+        help="Bannière, clear logo TMDB, détails et score expliqué",
         use_container_width=True,
         type="secondary",
     ):
@@ -5430,7 +5248,6 @@ def render_watchlist_page() -> None:
         st.session_state["_qr_tmdb_wait"] = 0
     # Signet en attente : appliqué ICI, avant la création de tout widget.
     _apply_pending_bookmark()
-
     # Flash de confirmation après un signet chargé (URL ou bouton).
     _flash = st.session_state.pop("_qr_bookmark_flash", None)
     _skipped = st.session_state.pop("_qr_bookmark_skipped", None)
