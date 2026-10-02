@@ -620,30 +620,25 @@ st.markdown(
     }
     .cinema-banner .cinema-tag { margin-left: auto; flex-shrink: 0; }
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
-    /* V127 — bouton « 🎬 Fiche » remonté DANS la tuile (aligné avec les
-       liens TMDB/MDBL). Le margin-top négatif le tire vers le haut pour
-       qu'il chevauche le bas de la carte précédente. */
-    .stButton > button[key*="cin_"] {
-        margin-top: -42px;
-        margin-bottom: 6px;
-        float: right;
+    /* V128 — badge « 🎬 Fiche » : exactement le même style que les
+       link-pills (TMDB, MDBL, Où regarder). C'est un vrai <a> HTML. */
+    a.cinema-fiche-link {
         background: rgba(0, 163, 146, .12);
         border: 1px solid rgba(0, 224, 199, .30);
         border-radius: 999px;
         color: #00e0c7;
-        font-size: .74rem;
+        font-size: .78rem;
         font-weight: 600;
         padding: 2px 10px;
-        height: 26px;
-        min-height: 26px;
-        line-height: 1;
-        box-shadow: none;
+        text-decoration: none;
+        cursor: pointer;
     }
-    .stButton > button[key*="cin_"]:hover {
+    a.cinema-fiche-link:hover {
         background: rgba(0, 163, 146, .25);
         border-color: rgba(0, 224, 199, .50);
         color: #fff;
     }
+
     .cinema-section-title {
         font-size: .8rem;
         font-weight: 800;
@@ -3340,8 +3335,8 @@ def _render_cinema_detail_body(row: dict) -> None:
     else:
         st.markdown(f"### {title}")
 
-    # ── Ligne compacte : affiche + chips + score ──
-    poster_col, info_col = st.columns([0.10, 0.90])
+    # ── Affiche à gauche + (chips + score + synopsis) à droite ──
+    poster_col, info_col = st.columns([0.14, 0.86])
     with poster_col:
         if poster:
             st.markdown(
@@ -3350,6 +3345,7 @@ def _render_cinema_detail_body(row: dict) -> None:
                 unsafe_allow_html=True,
             )
     with info_col:
+        # Chips métadonnées (une ligne compacte)
         meta_bits = []
         year = escape(_media_year(item))
         if year:
@@ -3380,14 +3376,13 @@ def _render_cinema_detail_body(row: dict) -> None:
         if row.get("genres"):
             meta_bits.append(f'<span class="mc-year">🎭 {escape(", ".join(map(str, row["genres"][:4])))}</span>')
         st.markdown(f'<div class="cinema-chips">{"".join(meta_bits)}</div>', unsafe_allow_html=True)
+        # Score compact
         score_val = int(round(row.get("score", 0)))
         st.progress(max(0, min(score_val, 100)) / 100)
         st.caption(f"**{score_val}/100** · friction {int(row.get('friction', 0))}/100")
-
-    # ── Synopsis français ──
-    if synopsis:
-        st.markdown(f'<div class="cinema-section-title">Synopsis</div>', unsafe_allow_html=True)
-        st.caption(synopsis)
+        # Synopsis FRANÇAIS — à côté du poster, pas en dessous
+        if synopsis:
+            st.caption(synopsis)
 
     # ── Pourquoi ce score ? ──
     signals = row.get("signals") or []
@@ -3541,15 +3536,20 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
         + f'</div>{score_col}</div>'
     )
+    # V128 — BADGE « 🎬 Fiche » EN HTML (comme TMDB/MDBL) :
+    # un vrai <a class="link-pill"> dans la carte, exactement le même
+    # style que les autres liens. Le clic recharge la page avec
+    # ?fiche=KEY → le dialog s'ouvre automatiquement (détection en
+    # tête de page). C'est le SEUL moyen d'avoir un badge HTML qui
+    # déclenche du Python en Streamlit.
+    fiche_key = str(row.get("key") or id(row))
+    fiche_badge = (
+        f'<a class="link-pill cinema-fiche-link" href="?fiche={escape(fiche_key, quote=True)}" '
+        f'title="Ouvrir la fiche cinéma (bannière, logo, synopsis, score)">🎬 Fiche</a>'
+    )
+    # Injecte le badge APRÈS les liens TMDB/MDBL (dans la même rangée)
+    card_html = card_html.replace(links_html, links_html.replace("</div>", fiche_badge + "</div>"))
     st.markdown(card_html, unsafe_allow_html=True)
-    # V127 — bouton « 🎬 Fiche » : compact, pill, remonté dans la tuile
-    # via margin-top négatif pour s'aligner avec les liens TMDB/MDBL.
-    # Ce bouton est le SEUL moyen Streamlit d'ouvrir un dialog — il est
-    # rendu après la carte mais visuellement DANS la tuile.
-    detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
-    if st.button("🎬 Fiche", key=detail_key, help="Bannière, logo, synopsis, score expliqué",
-                 type="secondary"):
-        _open_cinema_detail(row)
 
 
 def _render_taste_profile(profile: dict) -> None:
@@ -5331,6 +5331,14 @@ def render_watchlist_page() -> None:
         st.session_state["_qr_tmdb_wait"] = 0
     # Signet en attente : appliqué ICI, avant la création de tout widget.
     _apply_pending_bookmark()
+    # V128 — badge « 🎬 Fiche » cliqué : le lien HTML pose ?fiche=KEY,
+    # on retrouve la ligne correspondante et on ouvre le dialog cinéma.
+    _fiche_pending = st.query_params.get("fiche") or ""
+    if _fiche_pending:
+        st.query_params.pop("fiche")
+        # Retrouve la ligne parmi les résultats scorés (elle sera
+        # re-scorée après le rerun — on cherche par clé).
+        st.session_state["_cinema_fiche_key"] = _fiche_pending
     # Flash de confirmation après un signet chargé (URL ou bouton).
     _flash = st.session_state.pop("_qr_bookmark_flash", None)
     _skipped = st.session_state.pop("_qr_bookmark_skipped", None)
@@ -5717,6 +5725,19 @@ def render_watchlist_page() -> None:
         score_item(item, profile, source_name=source["name"])
         for item in items
     ]
+
+    # V128 — badge « 🎬 Fiche » : si un ?fiche=KEY a été détecté,
+    # retrouve la ligne scorée et ouvre le dialog cinéma automatiquement.
+    _fiche_key = st.session_state.pop("_cinema_fiche_key", None)
+    if _fiche_key:
+        _fiche_row = next((r for r in scored if r.get("key") == _fiche_key), None)
+        if _fiche_row is None:
+            # La clé peut différer après re-scoring : cherche par titre.
+            _fiche_row = next((r for r in scored if r.get("key", "").endswith(_fiche_key.split(":")[-1])), None)
+        if _fiche_row:
+            _open_cinema_detail(_fiche_row)
+        else:
+            st.caption(f"⚠️ Contenu « {_fiche_key} » introuvable dans les résultats actuels.")
 
     def time_ok(row: dict) -> bool:
         if time_filter == "Aucune limite":
