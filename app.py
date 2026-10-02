@@ -3272,12 +3272,11 @@ _CINEMA_STATUS_FR = {
 
 
 def _render_cinema_detail_body(row: dict) -> None:
-    """Corps de la fiche cinéma — V131.
+    """Fiche cinéma — V131.2 : TOUT en un seul bloc HTML.
 
-    Bannière FlickTrove : backdrop étiré (100% 100%) + couche blur large
-    (couleurs dominantes) + couche nette qui fond vers le bas + clear logo
-    90px en bas à gauche. Fond de fiche teinté par la couleur dominante.
-    Synopsis français à CÔTÉ de l'affiche. Layout compact (1 écran PC).
+    La couleur dominante enveloppe la TOTALITÉ de la fiche (bannière +
+    contenu), le poster est petit à gauche, TOUTES les infos sont à
+    droite (chips, score, synopsis, pastilles, casting, liens).
     """
     item = row.get("item") or {}
     raw_title = _media_title(item)
@@ -3290,7 +3289,6 @@ def _render_cinema_detail_body(row: dict) -> None:
         tmdb_id = None
     api_key = _tmdb_api_key()
 
-    # 1 appel au 1er clic : synopsis FR + clear logo (mémoisé 30 j)
     fr_payload = {}
     if api_key and tmdb_id:
         fr_payload = _fetch_tmdb_details_fr(
@@ -3298,35 +3296,17 @@ def _render_cinema_detail_body(row: dict) -> None:
         )
     logo = _pick_logo_from_payload(fr_payload)
     synopsis = str(fr_payload.get("overview") or "").strip()
-
     poster = escape(_poster_url(item), quote=True)
 
-    # Couleur dominante (comme FlickTrove) : teinte le fond de la fiche
+    # ── Couleur dominante ──
     dominant_rgb = None
     if backdrop:
         dominant_rgb = _extract_dominant_color(
             f"https://image.tmdb.org/t/p/w92{backdrop}"
         )
-    if dominant_rgb:
-        r, g, b = dominant_rgb
-        # V131.1 — opacités RENFORCÉES : la couleur doit être VISIBLE
-        # (l'ancienne .25 était trop discrète — retour utilisateur)
-        bg_style = (
-            f"background: linear-gradient(180deg, "
-            f"rgba({r},{g},{b},.45) 0%, rgba({r},{g},{b},.25) 30%, "
-            f"rgba({r//2},{g//2},{b//2},.15) 55%, "
-            f"rgba(2,20,17,.85) 100%);"
-            f" border-left: 4px solid rgba({r},{g},{b},.70);"
-            f" border-radius: 12px; padding: .5rem .7rem; margin: -.3rem -.5rem .3rem;"
-        )
-    else:
-        bg_style = (
-            "background: linear-gradient(180deg, rgba(0,163,146,.06) 0%, "
-            "rgba(2,20,17,.82) 100%);"
-            " border-radius: 12px; padding: .5rem .7rem; margin: -.3rem -.5rem .3rem;"
-        )
 
-    # ── Bannière (blur + net + logo) ──
+    # ── Construire tous les fragments HTML ──
+    # Bannière
     if backdrop:
         banner_bg = f"https://image.tmdb.org/t/p/w780{escape(backdrop, quote=True)}"
         if logo:
@@ -3336,85 +3316,132 @@ def _render_cinema_detail_body(row: dict) -> None:
             )
         else:
             logo_html = f'<span class="cinema-title-fallback">{title}</span>'
-        st.markdown(
-            f'<div style="{bg_style}">'
+        banner_html = (
             f'<div class="cinema-banner">'
             f'<div class="cinema-bg-blur" style="background-image:url({banner_bg});"></div>'
             f'<div class="cinema-bg-sharp" style="background-image:url({banner_bg});"></div>'
             f'<div class="cinema-bottom">{logo_html}'
             f'<span class="cinema-tag"><span class="source-badge">{escape(str(row.get("type") or ""))}</span></span>'
-            "</div></div></div>",
-            unsafe_allow_html=True,
+            "</div></div>"
         )
     else:
-        st.markdown(f'<div style="{bg_style}"><h3>{title}</h3></div>', unsafe_allow_html=True)
+        banner_html = f'<h3 style="color:#fff;margin:.2rem 0 .5rem;">{title}</h3>'
 
-    # ── Affiche à gauche + (chips + score + SYNOPSIS) à droite ──
-    poster_col, info_col = st.columns([0.15, 0.85])
-    with poster_col:
-        if poster:
-            st.markdown(
-                f'<img src="{poster}" alt="{title}" style="width:100%;border-radius:8px;'
-                f'box-shadow:0 8px 20px rgba(0,0,0,.5);object-fit:contain;" loading="lazy">',
-                unsafe_allow_html=True,
-            )
-    with info_col:
-        meta_bits = []
-        year = escape(_media_year(item))
-        if year:
-            meta_bits.append(f'<span class="mc-year">📅 {year}</span>')
-        if row.get("type") == "Série":
-            total_ep = int(row.get("total_episodes") or 0)
-            seasons = _media_seasons(item)
-            ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
-            bits = []
-            if seasons:
-                bits.append(f"{seasons} saison(s)")
-            if total_ep:
-                bits.append(f"{total_ep} ép.")
-            if ep_runtime:
-                bits.append(f"~{ep_runtime} min/ép.")
-            if bits:
-                meta_bits.append(f'<span class="mc-year">📺 {" · ".join(bits)}</span>')
-        elif row.get("runtime"):
-            try:
-                meta_bits.append(f'<span class="mc-year">⏱️ {_format_minutes(int(row["runtime"]))}</span>')
-            except (TypeError, ValueError):
-                pass
-        if row.get("note") is not None:
-            meta_bits.append(f'<span class="mc-note">⭐ {row["note"]:.1f}</span>')
-        status_raw = str(row.get("status") or "").strip().lower()
-        if status_raw in _CINEMA_STATUS_FR:
-            meta_bits.append(f'<span class="mc-year">{_CINEMA_STATUS_FR[status_raw]}</span>')
-        if row.get("genres"):
-            meta_bits.append(f'<span class="mc-year">🎭 {escape(", ".join(map(str, row["genres"][:4])))}</span>')
-        st.markdown(f'<div class="cinema-chips">{"".join(meta_bits)}</div>', unsafe_allow_html=True)
-        score_val = int(round(row.get("score", 0)))
-        st.progress(max(0, min(score_val, 100)) / 100)
-        st.caption(f"**{score_val}/100** · friction {int(row.get('friction', 0))}/100")
-        # Synopsis français — À CÔTÉ de l'affiche, pas en dessous
-        if synopsis:
-            st.caption(synopsis)
+    # Poster (petit, à gauche)
+    poster_html = ""
+    if poster:
+        poster_html = (
+            f'<img src="{poster}" alt="{title}" style="width:100%;border-radius:8px;'
+            f'box-shadow:0 8px 20px rgba(0,0,0,.5);object-fit:contain;" loading="lazy">'
+        )
 
-    # ── Pastilles score (compact) ──
+    # Chips métadonnées
+    meta_bits = []
+    year = escape(_media_year(item))
+    if year:
+        meta_bits.append(f'<span class="mc-year">📅 {year}</span>')
+    if row.get("type") == "Série":
+        total_ep = int(row.get("total_episodes") or 0)
+        seasons = _media_seasons(item)
+        ep_runtime = _sane_episode_runtime(row.get("runtime"), total_ep)
+        bits = []
+        if seasons:
+            bits.append(f"{seasons} saison(s)")
+        if total_ep:
+            bits.append(f"{total_ep} ép.")
+        if ep_runtime:
+            bits.append(f"~{ep_runtime} min/ép.")
+        if bits:
+            meta_bits.append(f'<span class="mc-year">📺 {" · ".join(bits)}</span>')
+    elif row.get("runtime"):
+        try:
+            meta_bits.append(f'<span class="mc-year">⏱️ {_format_minutes(int(row["runtime"]))}</span>')
+        except (TypeError, ValueError):
+            pass
+    if row.get("note") is not None:
+        meta_bits.append(f'<span class="mc-note">⭐ {row["note"]:.1f}</span>')
+    status_raw = str(row.get("status") or "").strip().lower()
+    if status_raw in _CINEMA_STATUS_FR:
+        meta_bits.append(f'<span class="mc-year">{_CINEMA_STATUS_FR[status_raw]}</span>')
+    if row.get("genres"):
+        meta_bits.append(f'<span class="mc-year">🎭 {escape(", ".join(map(str, row["genres"][:4])))}</span>')
+    chips_html = f'<div class="cinema-chips">{"".join(meta_bits)}</div>'
+
+    # Score bar (HTML, pas st.progress)
+    score_val = int(round(row.get("score", 0)))
+    friction_val = int(row.get("friction", 0))
+    score_html = (
+        f'<div class="progress-bar-container" style="margin:.4rem 0 .2rem;">'
+        f'<div class="progress-bar-fill" style="width:{max(0, min(score_val, 100))}%;"></div></div>'
+        f'<div style="font-size:.78rem;color:#9fc4c0;margin-bottom:.3rem;">'
+        f'<strong style="color:#fff;font-size:.9rem;">{score_val}/100</strong>'
+        f' · friction {friction_val}/100</div>'
+    )
+
+    # Synopsis
+    synopsis_html = ""
+    if synopsis:
+        synopsis_html = (
+            f'<p style="font-size:.82rem;color:#cfe8e5;line-height:1.5;'
+            f'margin:.35rem 0 .3rem;">{escape(synopsis)}</p>'
+        )
+
+    # Pastilles score
     signals = row.get("signals") or []
+    pills_html = ""
     if signals:
-        pills = "".join(_signal_pill(signal) for signal in signals)
-        st.markdown(f'<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.3rem;">{pills}</div>',
-                    unsafe_allow_html=True)
+        pills = "".join(_signal_pill(s) for s in signals)
+        pills_html = f'<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.25rem 0;">{pills}</div>'
 
-    # ── Casting (une ligne) + liens ──
+    # Casting
     people = row.get("people") or []
     directors = row.get("directors") or []
+    casting_html = ""
     if people or directors:
         cast_bits = []
         if directors:
             cast_bits.append("🎬 " + escape(", ".join(map(str, directors[:2]))))
         if people:
             cast_bits.append("👥 " + escape(", ".join(map(str, people[:6]))))
-        st.caption(" · ".join(cast_bits))
+        casting_html = f'<p style="font-size:.78rem;color:#9fc4c0;margin:.25rem 0;">{" · ".join(cast_bits)}</p>'
+
+    # Liens (déjà HTML via _content_links_html)
+    links_html = _content_links_html(ids, raw_title, is_show=(row.get("type") == "Série"))
+
+    # ── Wrapper avec couleur dominante qui enveloppe TOUT ──
+    if dominant_rgb:
+        r, g, b = dominant_rgb
+        wrapper_style = (
+            f"background: linear-gradient(180deg, "
+            f"rgba({r},{g},{b},.40) 0%, "
+            f"rgba({r},{g},{b},.22) 25%, "
+            f"rgba({r//2},{g//2},{b//2},.12) 55%, "
+            f"rgba(2,20,17,.78) 100%);"
+            f" border-radius: 14px; padding: .5rem .7rem;"
+            f" margin: -.3rem -.5rem .2rem;"
+        )
+    else:
+        wrapper_style = (
+            "background: linear-gradient(180deg, rgba(0,163,146,.06) 0%, "
+            "rgba(2,20,17,.78) 100%);"
+            " border-radius: 14px; padding: .5rem .7rem;"
+            " margin: -.3rem -.5rem .2rem;"
+        )
+
+    # ── UN SEUL st.markdown : bannière + poster petit + TOUTES les infos ──
     st.markdown(
-        _content_links_html(ids, raw_title, is_show=(row.get("type") == "Série")),
+        f'<div style="{wrapper_style}">'
+        f"{banner_html}"
+        f'<div style="display:flex;gap:14px;align-items:flex-start;margin-top:.4rem;">'
+        f'<div style="width:10%;flex-shrink:0;min-width:60px;">{poster_html}</div>'
+        f'<div style="flex:1;min-width:0;">'
+        f"{chips_html}"
+        f"{score_html}"
+        f"{synopsis_html}"
+        f"{pills_html}"
+        f"{casting_html}"
+        f"{links_html}"
+        f"</div></div></div>",
         unsafe_allow_html=True,
     )
 
