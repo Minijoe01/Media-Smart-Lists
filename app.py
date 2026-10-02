@@ -622,6 +622,25 @@ st.markdown(
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
     /* V128 — badge « 🎬 Fiche » : exactement le même style que les
        link-pills (TMDB, MDBL, Où regarder). C'est un vrai <a> HTML. */
+    /* V129 — bouton « 🎬 » ultra-compact : 24px, pill, discret,
+       même famille visuelle que les link-pills. */
+    .stButton > button[kind="secondary"]:has-text("🎬") {
+        height: 26px !important;
+        min-height: 26px !important;
+        padding: 0 8px !important;
+        font-size: .72rem !important;
+        border-radius: 999px !important;
+        background: rgba(0, 163, 146, .10) !important;
+        border: 1px solid rgba(0, 224, 199, .25) !important;
+        color: #00e0c7 !important;
+        line-height: 1 !important;
+    }
+    /* Fiche cinéma : fond coloré par la couleur dominante du backdrop */
+    .cinema-dialog-bg {
+        border-radius: 14px;
+        padding: .6rem .8rem;
+        margin: -0.2rem -0.4rem .4rem;
+    }
     a.cinema-fiche-link {
         background: rgba(0, 163, 146, .12);
         border: 1px solid rgba(0, 224, 199, .30);
@@ -2525,6 +2544,46 @@ def _fetch_tmdb_details_fr(kind: str, tmdb: int, key: str) -> dict:
         return {}
 
 
+def _extract_dominant_color(image_url: str) -> tuple[int, int, int] | None:
+    """Extrait la couleur dominante d'une image TMDB (comme FlickTrove).
+
+    Télécharge l'image en petit (w92), puis calcule la couleur moyenne
+    pondérée par la saturation (les couleurs vives pèsent plus que le
+    gris/noir). Retourne un tuple RGB ou None si échec.
+    """
+    try:
+        import io as _io
+        from PIL import Image
+        response = requests.get(image_url, timeout=6)
+        if response.status_code != 200:
+            return None
+        img = Image.open(_io.BytesIO(response.content)).convert("RGB")
+        img = img.resize((32, 18))  # miniature pour la vitesse
+        pixels = list(img.getdata())
+        if not pixels:
+            return None
+        # Moyenne pondérée : chaque pixel pèse selon sa saturation
+        # (les couleurs vives dominent, le gris/noir s'efface)
+        import colorsys
+        weighted_r = weighted_g = weighted_b = total_weight = 0.0
+        for r, g, b in pixels:
+            h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+            weight = s * v + 0.05  # +0.05 pour ne pas ignorer le noir total
+            weighted_r += r * weight
+            weighted_g += g * weight
+            weighted_b += b * weight
+            total_weight += weight
+        if total_weight == 0:
+            return None
+        return (
+            int(weighted_r / total_weight),
+            int(weighted_g / total_weight),
+            int(weighted_b / total_weight),
+        )
+    except Exception:
+        return None
+
+
 def _pick_logo_from_payload(payload: dict) -> str:
     """Extrait le meilleur clear logo d'un payload TMDB (fr > en > null)."""
     images = payload.get("images") if isinstance(payload.get("images"), dict) else {}
@@ -3313,6 +3372,31 @@ def _render_cinema_detail_body(row: dict) -> None:
 
     poster = escape(_poster_url(item), quote=True)
 
+    # V129 — COULEUR DOMINANTE (comme FlickTrove) : on télécharge le
+    # backdrop en miniature et on extrait sa couleur dominante. Cette
+    # couleur teinte le fond de toute la fiche → chaque film a « ses »
+    # couleurs, pas un fond générique.
+    dominant_rgb = None
+    if backdrop:
+        dominant_rgb = _extract_dominant_color(
+            f"https://image.tmdb.org/t/p/w92{backdrop}"
+        )
+    if dominant_rgb:
+        r, g, b = dominant_rgb
+        # Fond : couleur dominante assombrie (70% vers le noir) + dégradé
+        bg_style = (
+            f"background: linear-gradient(180deg, "
+            f"rgba({r},{g},{b},.28) 0%, rgba({r//2},{g//2},{b//2},.12) 40%, "
+            f"rgba(2,20,17,.85) 100%);"
+            f" border-radius: 14px; padding: .6rem .8rem; margin: -0.2rem -0.4rem .4rem;"
+        )
+    else:
+        bg_style = (
+            "background: linear-gradient(180deg, rgba(0,163,146,.08) 0%, "
+            "rgba(2,20,17,.85) 100%);"
+            " border-radius: 14px; padding: .6rem .8rem; margin: -0.2rem -0.4rem .4rem;"
+        )
+
     # ── Bannière (blur + net + logo) ──
     if backdrop:
         banner_bg = f"https://image.tmdb.org/t/p/w780{escape(backdrop, quote=True)}"
@@ -3324,12 +3408,13 @@ def _render_cinema_detail_body(row: dict) -> None:
         else:
             logo_html = f'<span class="cinema-title-fallback">{title}</span>'
         st.markdown(
+            f'<div style="{bg_style}">'
             f'<div class="cinema-banner">'
             f'<div class="cinema-bg-blur" style="background-image:url({banner_bg});"></div>'
             f'<div class="cinema-bg-sharp" style="background-image:url({banner_bg});"></div>'
             f'<div class="cinema-bottom">{logo_html}'
             f'<span class="cinema-tag"><span class="source-badge">{escape(str(row.get("type") or ""))}</span></span>'
-            "</div></div>",
+            "</div></div></div>",
             unsafe_allow_html=True,
         )
     else:
@@ -3536,20 +3621,17 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
         + f'</div>{score_col}</div>'
     )
-    # V128 — BADGE « 🎬 Fiche » EN HTML (comme TMDB/MDBL) :
-    # un vrai <a class="link-pill"> dans la carte, exactement le même
-    # style que les autres liens. Le clic recharge la page avec
-    # ?fiche=KEY → le dialog s'ouvre automatiquement (détection en
-    # tête de page). C'est le SEUL moyen d'avoir un badge HTML qui
-    # déclenche du Python en Streamlit.
-    fiche_key = str(row.get("key") or id(row))
-    fiche_badge = (
-        f'<a class="link-pill cinema-fiche-link" href="?fiche={escape(fiche_key, quote=True)}" '
-        f'title="Ouvrir la fiche cinéma (bannière, logo, synopsis, score)">🎬 Fiche</a>'
-    )
-    # Injecte le badge APRÈS les liens TMDB/MDBL (dans la même rangée)
-    card_html = card_html.replace(links_html, links_html.replace("</div>", fiche_badge + "</div>"))
     st.markdown(card_html, unsafe_allow_html=True)
+    # V129 — BOUTON « 🎬 » : méthode V126 (qui marchait : dialog plein
+    # écran au clic). Le bouton est ultra-compact : juste l'icône 🎬,
+    # 24px de haut, placé en bas à droite de la tuile via une mini-
+    # colonne. C'est le SEUL mécanisme Streamlit pour ouvrir un dialog
+    # — on ne peut pas rendre le HTML d'une carte cliquable vers Python.
+    detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
+    _spacer, _btn = st.columns([0.955, 0.045])
+    with _btn:
+        if st.button("🎬", key=detail_key, help="Fiche cinéma : bannière, logo, synopsis, score expliqué"):
+            _open_cinema_detail(row)
 
 
 def _render_taste_profile(profile: dict) -> None:
@@ -5331,14 +5413,7 @@ def render_watchlist_page() -> None:
         st.session_state["_qr_tmdb_wait"] = 0
     # Signet en attente : appliqué ICI, avant la création de tout widget.
     _apply_pending_bookmark()
-    # V128 — badge « 🎬 Fiche » cliqué : le lien HTML pose ?fiche=KEY,
-    # on retrouve la ligne correspondante et on ouvre le dialog cinéma.
-    _fiche_pending = st.query_params.get("fiche") or ""
-    if _fiche_pending:
-        st.query_params.pop("fiche")
-        # Retrouve la ligne parmi les résultats scorés (elle sera
-        # re-scorée après le rerun — on cherche par clé).
-        st.session_state["_cinema_fiche_key"] = _fiche_pending
+
     # Flash de confirmation après un signet chargé (URL ou bouton).
     _flash = st.session_state.pop("_qr_bookmark_flash", None)
     _skipped = st.session_state.pop("_qr_bookmark_skipped", None)
@@ -5725,19 +5800,6 @@ def render_watchlist_page() -> None:
         score_item(item, profile, source_name=source["name"])
         for item in items
     ]
-
-    # V128 — badge « 🎬 Fiche » : si un ?fiche=KEY a été détecté,
-    # retrouve la ligne scorée et ouvre le dialog cinéma automatiquement.
-    _fiche_key = st.session_state.pop("_cinema_fiche_key", None)
-    if _fiche_key:
-        _fiche_row = next((r for r in scored if r.get("key") == _fiche_key), None)
-        if _fiche_row is None:
-            # La clé peut différer après re-scoring : cherche par titre.
-            _fiche_row = next((r for r in scored if r.get("key", "").endswith(_fiche_key.split(":")[-1])), None)
-        if _fiche_row:
-            _open_cinema_detail(_fiche_row)
-        else:
-            st.caption(f"⚠️ Contenu « {_fiche_key} » introuvable dans les résultats actuels.")
 
     def time_ok(row: dict) -> bool:
         if time_filter == "Aucune limite":
