@@ -622,24 +622,36 @@ st.markdown(
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
     /* V128 — badge « 🎬 Fiche » : exactement le même style que les
        link-pills (TMDB, MDBL, Où regarder). C'est un vrai <a> HTML. */
-    /* V129 — bouton « 🎬 » ultra-compact : 24px, pill, discret,
-       même famille visuelle que les link-pills. */
-    .stButton > button[kind="secondary"]:has-text("🎬") {
-        height: 26px !important;
-        min-height: 26px !important;
+    /* V130 — BOUTON « 🎬 » DANS LA TUILE : le bloc horizontal
+       [carte | bouton] est remonté par-dessus le bas de la carte.
+       Sélecteur :has() ciblé : SEULEMENT les blocs à exactement 2
+       colonnes dont la 2e contient un bouton (pattern unique des
+       boutons cinéma). Chrome 105+, Safari 15.4+, Firefox 121+. */
+    [data-testid="stHorizontalBlock"]:has(> div:nth-child(2):last-child [data-testid="stBaseButton"]) {
+        margin-top: -36px !important;
+        margin-bottom: 0 !important;
+        height: 24px !important;
+        min-height: 24px !important;
+        overflow: visible !important;
+        z-index: 10;
+        position: relative;
+    }
+    [data-testid="stHorizontalBlock"]:has(> div:nth-child(2):last-child [data-testid="stBaseButton"]) button {
+        height: 24px !important;
+        min-height: 24px !important;
         padding: 0 8px !important;
-        font-size: .72rem !important;
+        font-size: .70rem !important;
         border-radius: 999px !important;
         background: rgba(0, 163, 146, .10) !important;
         border: 1px solid rgba(0, 224, 199, .25) !important;
         color: #00e0c7 !important;
         line-height: 1 !important;
+        box-shadow: none !important;
     }
-    /* Fiche cinéma : fond coloré par la couleur dominante du backdrop */
-    .cinema-dialog-bg {
-        border-radius: 14px;
-        padding: .6rem .8rem;
-        margin: -0.2rem -0.4rem .4rem;
+    [data-testid="stHorizontalBlock"]:has(> div:nth-child(2):last-child [data-testid="stBaseButton"]) button:hover {
+        background: rgba(0, 163, 146, .25) !important;
+        border-color: rgba(0, 224, 199, .50) !important;
+        color: #fff !important;
     }
     a.cinema-fiche-link {
         background: rgba(0, 163, 146, .12);
@@ -3628,8 +3640,8 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     # colonne. C'est le SEUL mécanisme Streamlit pour ouvrir un dialog
     # — on ne peut pas rendre le HTML d'une carte cliquable vers Python.
     detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
-    _spacer, _btn = st.columns([0.955, 0.045])
-    with _btn:
+    _card_zone, _btn_zone = st.columns([0.93, 0.07])
+    with _btn_zone:
         if st.button("🎬", key=detail_key, help="Fiche cinéma : bannière, logo, synopsis, score expliqué"):
             _open_cinema_detail(row)
 
