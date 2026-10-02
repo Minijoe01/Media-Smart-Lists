@@ -550,21 +550,22 @@ st.markdown(
     /* Couche blur : le même backdrop, flouté et étiré — effet FlickTrove */
     .cinema-banner .cinema-bg-blur {
         position: absolute;
-        inset: -40px;  /* déborde pour éviter les bords nets du blur */
-        background-size: cover;
+        inset: -60px;
+        background-size: 100% 100%;
         background-position: center;
-        filter: blur(28px) saturate(1.3) brightness(.55);
+        filter: blur(35px) saturate(1.4) brightness(.50);
         z-index: 0;
     }
     /* Image nette au centre, par-dessus le blur */
     .cinema-banner .cinema-bg-sharp {
         position: absolute;
         inset: 0;
-        background-size: cover;
-        background-position: center 20%;
+        background-size: 100% auto;
+        background-position: center top;
+        background-repeat: no-repeat;
         z-index: 1;
-        -webkit-mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
-        mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
+        -webkit-mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 95%);
+        mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 95%);
     }
     .cinema-banner .cinema-bottom {
         position: absolute;
@@ -577,9 +578,9 @@ st.markdown(
         gap: 12px;
     }
     .cinema-banner img.cinema-logo {
-        max-height: 76px;
-        max-width: 65%;
-        filter: drop-shadow(0 4px 18px rgba(0, 0, 0, .9)) drop-shadow(0 0 30px rgba(0,0,0,.5));
+        max-height: 90px;
+        max-width: 70%;
+        filter: drop-shadow(0 4px 20px rgba(0, 0, 0, .95)) drop-shadow(0 0 40px rgba(0,0,0,.6));
     }
     .cinema-banner .cinema-title-fallback {
         font-size: 1.8rem;
@@ -3640,10 +3641,14 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     # colonne. C'est le SEUL mécanisme Streamlit pour ouvrir un dialog
     # — on ne peut pas rendre le HTML d'une carte cliquable vers Python.
     detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
-    _card_zone, _btn_zone = st.columns([0.93, 0.07])
-    with _btn_zone:
-        if st.button("🎬", key=detail_key, help="Fiche cinéma : bannière, logo, synopsis, score expliqué"):
-            _open_cinema_detail(row)
+    if st.button(
+        "🎬 Voir la fiche cinéma",
+        key=detail_key,
+        help="Bannière, clear logo TMDB, synopsis, score expliqué",
+        use_container_width=True,
+        type="secondary",
+    ):
+        _open_cinema_detail(row)
 
 
 def _render_taste_profile(profile: dict) -> None:
