@@ -555,23 +555,31 @@ st.markdown(
         filter: blur(35px) saturate(1.4) brightness(.50);
         z-index: 0;
     }
-    /* V131 — Couche NETTE : l'image PLEINE LARGEUR (pas tronquée) qui
-       fond vers le bas via un masque dégradé */
+    /* V133 — Couche NETTE : l'image PLEINE LARGEUR, plus de masque-flou
+       en bas (le « flou qui fait une coupure » est remplacé par un vrai
+       FONDU ENCHAÎNÉ vers la couleur d'accentuation, couche .cinema-bg-fade) */
     .cinema-banner .cinema-bg-sharp {
         position: absolute;
         inset: 0;
         background-size: cover;  /* remplit la bannière SANS tronquer les visages */
         background-position: center 20%;  /* montre le haut (visages) — comme V127 */
         z-index: 1;
-        -webkit-mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 95%);
-        mask-image: linear-gradient(180deg, black 0%, black 55%, transparent 95%);
+    }
+    /* V133 — FONDU ENCHAÎNÉ : le bas de la bannière fond vers la couleur
+       d'accentuation de la fiche (dégradé injecté par média, car la
+       couleur dépend du film) → la bannière s'intègre proprement, plus
+       aucune coupure bannière/fiche. */
+    .cinema-banner .cinema-bg-fade {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
     }
     .cinema-banner .cinema-bottom {
         position: absolute;
         left: 16px;
         right: 16px;
         bottom: 12px;
-        z-index: 2;
+        z-index: 3;
         display: flex;
         align-items: flex-end;
         gap: 12px;
@@ -3315,14 +3323,15 @@ _CINEMA_STATUS_FR = {
 
 
 def _render_cinema_detail_body(row: dict) -> None:
-    """Fiche cinéma — V132 : TOUT en un seul bloc HTML.
+    """Fiche cinéma — V133 : TOUT en un seul bloc HTML, 100% OPAQUE.
 
-    La couleur dominante peint la BOÎTE du dialog elle-même (plus de
-    contour noir : le fond carbone de la boîte est recouvert), la
-    bannière fond dedans bord à bord, le poster est petit à gauche,
-    TOUTES les infos sont à droite (chips, score, synopsis, pastilles,
-    casting, liens). Le texte doux (synopsis/casting) est en !important
-    car la règle globale « p, li, label » du skin l'écrasait.
+    La couleur dominante peint la boîte du dialog en couleurs SOLIDES
+    (V133 : plus aucune transparence — on ne voit plus l'app derrière),
+    la bannière fond enchaîné vers la couleur d'accentuation en bas
+    (V133 : plus de coupure bannière/fiche), la croix de fermeture est
+    forcée AU-DESSUS de la bannière (V133 : elle était peinte dessous),
+    le poster est petit à gauche, TOUTES les infos sont à droite. Le
+    texte doux (synopsis/casting) est en !important (V132).
     """
     item = row.get("item") or {}
     raw_title = _media_title(item)
@@ -3351,6 +3360,70 @@ def _render_cinema_detail_body(row: dict) -> None:
             f"https://image.tmdb.org/t/p/w92{backdrop}"
         )
 
+    # ── V133 — Couleurs PLEINEMENT OPAQUES sur la boîte du dialog ──
+    # V132 peignait la boîte du dialog avec des dégradés SEMI-TRANSPARENTS
+    # (opacité 58% → 27%) : plus on descendait dans la fiche, plus on
+    # voyait l'application DERRIÈRE (retour utilisateur). V133 : chaque
+    # stop est une couleur SOLIDE (mélange opaque de la couleur dominante
+    # avec un carbone profond) → la fiche est totalement opaque, et la
+    # teinte du film reste visible partout.
+    #   · M = « couleur d'accentuation » : elle reçoit le FONDU de la
+    #     bannière et habite tout le haut de la fiche (uniforme jusqu'à
+    #     55% → raccord parfait avec le bas de la bannière, quelle que
+    #     soit la hauteur de la fiche, PC ou GSM).
+    #   · D = version profonde : le bas de la fiche garde la teinte en
+    #     s'assombrissant élégamment (jamais de noir neutre).
+    if dominant_rgb:
+        r, g, b = dominant_rgb
+        cr, cg, cb = 2, 16, 14  # carbone profond de référence
+
+        def _mix(alpha: float) -> tuple[int, int, int]:
+            return (
+                int(r * alpha + cr * (1 - alpha)),
+                int(g * alpha + cg * (1 - alpha)),
+                int(b * alpha + cb * (1 - alpha)),
+            )
+
+        m_rgb = _mix(.50)   # couleur d'accentuation (fondu bannière / haut de fiche)
+        d_rgb = _mix(.30)   # fond profond (bas de fiche)
+
+        # Garde-fou lisibilité : si le film a une couleur dominante TRÈS
+        # claire (pâle/jaune), on assombrit M et D pour que le texte
+        # reste lisible dessus.
+        def _clamp_deep(t: tuple[int, int, int], max_bright: float = 105.0) -> tuple[int, int, int]:
+            bright = 0.299 * t[0] + 0.587 * t[1] + 0.114 * t[2]
+            if bright > max_bright:
+                k = max_bright / bright
+                return (int(t[0] * k), int(t[1] * k), int(t[2] * k))
+            return t
+
+        m_rgb = _clamp_deep(m_rgb)
+        d_rgb = _clamp_deep(d_rgb)
+        m_str = f"rgb({m_rgb[0]},{m_rgb[1]},{m_rgb[2]})"
+        d_str = f"rgb({d_rgb[0]},{d_rgb[1]},{d_rgb[2]})"
+        # La boîte : M uniforme sous la bannière (raccord parfait), puis
+        # fondu vers D. 100% opaque : rgb() sans aucun alpha.
+        box_gradient = f"linear-gradient(180deg, {m_str} 0%, {m_str} 55%, {d_str} 100%)"
+        box_border = f"rgba({r},{g},{b},.35)"
+        # FONDU ENCHAÎNÉ du bas de la bannière vers la couleur M : l'image
+        # reste nette en haut, puis fond progressivement — plus de coupure.
+        banner_fade = (
+            f"linear-gradient(180deg, "
+            f"rgba({m_rgb[0]},{m_rgb[1]},{m_rgb[2]},0) 30%, "
+            f"rgba({m_rgb[0]},{m_rgb[1]},{m_rgb[2]},.38) 58%, "
+            f"rgba({m_rgb[0]},{m_rgb[1]},{m_rgb[2]},.75) 83%, "
+            f"{m_str} 100%)"
+        )
+    else:
+        m_str = "rgb(6,34,30)"
+        d_str = "rgb(3,22,19)"
+        box_gradient = f"linear-gradient(180deg, {m_str} 0%, {m_str} 55%, {d_str} 100%)"
+        box_border = "rgba(0,163,146,.30)"
+        banner_fade = (
+            f"linear-gradient(180deg, rgba(6,34,30,0) 30%, rgba(6,34,30,.38) 58%, "
+            f"rgba(6,34,30,.75) 83%, rgb(6,34,30) 100%)"
+        )
+
     # ── Construire tous les fragments HTML ──
     # Bannière
     if backdrop:
@@ -3366,6 +3439,9 @@ def _render_cinema_detail_body(row: dict) -> None:
             f'<div class="cinema-banner">'
             f'<div class="cinema-bg-blur" style="background-image:url({banner_bg});"></div>'
             f'<div class="cinema-bg-sharp" style="background-image:url({banner_bg});"></div>'
+            # V133 — fondu enchaîné du bas de la bannière vers la couleur
+            # d'accentuation de la fiche (plus de coupure bannière/fiche).
+            f'<div class="cinema-bg-fade" style="background-image:{banner_fade};"></div>'
             f'<div class="cinema-bottom">{logo_html}'
             f'<span class="cinema-tag"><span class="source-badge">{escape(str(row.get("type") or ""))}</span></span>'
             "</div></div>"
@@ -3451,35 +3527,6 @@ def _render_cinema_detail_body(row: dict) -> None:
     # Liens (déjà HTML via _content_links_html)
     links_html = _content_links_html(ids, raw_title, is_show=(row.get("type") == "Série"))
 
-    # ── V132 — Couleur dominante sur TOUTE la boîte du dialog ──
-    # Diagnostic fait dans un vrai Chromium (Streamlit 1.60) : la boîte
-    # du dialog (div enfant direct de [data-testid="stDialog"]) a son
-    # PROPRE fond carbone rgb(1,23,21) → c'était LUI, le « contour noir »
-    # sur les bords et en bas (le dégradé V131.3 ne vivait que dans le
-    # bloc markdown, à l'intérieur, et fondait vers du noir).
-    # On peint donc directement la boîte : la teinte dominante couvre du
-    # haut (bannière) jusqu'à la dernière ligne, sans coupure.
-    if dominant_rgb:
-        r, g, b = dominant_rgb
-        # Bas du dégradé : version PROFONDE de la couleur — on garde la
-        # teinte jusqu'au bout, on ne retombe PAS sur du noir neutre.
-        dr, dg, db = int(r * .52 + 1), int(g * .52 + 1), int(b * .52 + 1)
-        box_gradient = (
-            f"linear-gradient(180deg, "
-            f"rgba({r},{g},{b},.58) 0%, "
-            f"rgba({r},{g},{b},.44) 22%, "
-            f"rgba({r},{g},{b},.32) 50%, "
-            f"rgba({r},{g},{b},.27) 78%, "
-            f"rgba({dr},{dg},{db},.96) 100%)"
-        )
-        box_border = f"rgba({r},{g},{b},.35)"
-    else:
-        box_gradient = (
-            "linear-gradient(180deg, rgba(0,163,146,.16) 0%, "
-            "rgba(0,163,146,.09) 45%, rgba(2,20,17,.94) 100%)"
-        )
-        box_border = "rgba(0,163,146,.30)"
-
     # Ce CSS est injecté DANS le markdown du dialog : il n'existe que
     # pendant que la fiche est ouverte (retiré du DOM à la fermeture) —
     # aucun impact sur les autres dialogs de l'app.
@@ -3489,7 +3536,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         # par défaut de Streamlit) : la boîte colorée ressort mieux.
         '[data-testid="stDialog"]{background:rgba(1,8,7,.62)!important;}'
         # LA boîte du dialog (enfant direct de l'overlay) : peinte avec
-        # la couleur dominante, coins arrondis et liseré teinté.
+        # la couleur dominante EN OPAQUE, coins arrondis et liseré teinté.
         '[data-testid="stDialog"]>div{'
         f"background:{box_gradient}!important;"
         f"border:1px solid {box_border}!important;"
@@ -3499,15 +3546,17 @@ def _render_cinema_detail_body(row: dict) -> None:
         '[data-testid="stDialog"] h2{padding:6px 12px 0!important;min-height:0!important;}'
         # Corps du dialog : padding à zéro → la bannière va BORD À BORD.
         '[data-testid="stDialog"] section>div{padding:0 0 10px!important;}'
-        # Croix de fermeture : pastille sombre translucide → toujours
-        # lisible, même sur une bannière très claire.
+        # Croix de fermeture : V133 — elle était PEINTE SOUS LA BANNIÈRE
+        # (occlusion constatée dans Chromium : elementFromPoint renvoyait
+        # la couche image au lieu du bouton). z-index élevé → toujours
+        # AU-DESSUS de la bannière + pastille sombre pour la lisibilité.
         '[data-testid="stDialog"] button[aria-label="Close"]{'
-        "background:rgba(0,0,0,.45)!important;border-radius:8px!important;"
+        "z-index:2000!important;"
+        "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
         "</style>"
     )
-    # Le wrapper devient TRANSPARENT : la couleur vit désormais sur la
-    # boîte du dialog elle-même (plus de double peinture, plus de bords).
+    # Le wrapper reste TRANSPARENT : la couleur vit sur la boîte du dialog.
     wrapper_style = "padding:0 0 .45rem;margin:0;"
 
     # ── UN SEUL st.markdown : CSS du dialog + bannière FONDUE + layout ──
