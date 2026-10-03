@@ -534,7 +534,7 @@ st.markdown(
     .cinema-banner {
         position: relative;
         min-height: 260px;
-        border-radius: 12px;
+        border-radius: 0;  /* V132 : pleine largeur, bord à bord dans le dialog */
         overflow: hidden;
         margin-bottom: 0;  /* plus d'écart : la bannière FOND dans la fiche */
         border: none;
@@ -543,7 +543,7 @@ st.markdown(
                                      travers, effet de fondu continu */
     }
     @media (max-width: 640px) {
-        .cinema-banner { min-height: 180px; border-radius: 12px 12px 0 0; }
+        .cinema-banner { min-height: 180px; border-radius: 0; }
     }
     /* V131 — Couche BLUR : l'image est ÉTIRÉE (100% 100%) et floutée
        largement — c'est ce qui donne les couleurs dominantes (FlickTrove) */
@@ -595,7 +595,8 @@ st.markdown(
         display: flex;
         gap: 14px;
         align-items: flex-start;
-        padding: .5rem .2rem .2rem;
+        padding: .55rem .95rem .3rem;  /* V132 : respire sur les côtés,
+                                           la bannière est bord à bord */
     }
     .cinema-poster { width: 11%; flex-shrink: 0; min-width: 65px; }
     .cinema-info { flex: 1; min-width: 0; }
@@ -612,17 +613,22 @@ st.markdown(
         }
         .cinema-info { width: 100%; }
     }
-    /* V131.3 — Texte plus doux (moins agressif que le blanc pur) */
+    /* V131.3 — Texte plus doux (moins agressif que le blanc pur).
+       V132 — !important OBLIGATOIRE : la règle globale du skin
+       « p, li, label { color: var(--am-text) !important } » (quasi blanc)
+       écrasait ces couleurs depuis le début, et Streamlit force
+       « font-size: inherit » sur les <p> des markdown avec une spécificité
+       supérieure à une classe simple. Vu et vérifié dans un vrai Chromium. */
     .cinema-synopsis {
-        font-size: .82rem;
-        color: #b0ccc8;  /* gris-vert doux */
-        line-height: 1.55;
-        margin: .35rem 0 .3rem;
+        font-size: .82rem !important;
+        color: #b0ccc8 !important;  /* gris-vert doux */
+        line-height: 1.55 !important;
+        margin: .35rem 0 .3rem !important;
     }
     .cinema-casting {
-        font-size: .78rem;
-        color: #98b4b0;  /* gris encore plus doux */
-        margin: .25rem 0;
+        font-size: .78rem !important;
+        color: #98b4b0 !important;  /* gris encore plus doux */
+        margin: .25rem 0 !important;
     }
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
     .cinema-section-title {
@@ -3309,11 +3315,14 @@ _CINEMA_STATUS_FR = {
 
 
 def _render_cinema_detail_body(row: dict) -> None:
-    """Fiche cinéma — V131.2 : TOUT en un seul bloc HTML.
+    """Fiche cinéma — V132 : TOUT en un seul bloc HTML.
 
-    La couleur dominante enveloppe la TOTALITÉ de la fiche (bannière +
-    contenu), le poster est petit à gauche, TOUTES les infos sont à
-    droite (chips, score, synopsis, pastilles, casting, liens).
+    La couleur dominante peint la BOÎTE du dialog elle-même (plus de
+    contour noir : le fond carbone de la boîte est recouvert), la
+    bannière fond dedans bord à bord, le poster est petit à gauche,
+    TOUTES les infos sont à droite (chips, score, synopsis, pastilles,
+    casting, liens). Le texte doux (synopsis/casting) est en !important
+    car la règle globale « p, li, label » du skin l'écrasait.
     """
     item = row.get("item") or {}
     raw_title = _media_title(item)
@@ -3442,35 +3451,72 @@ def _render_cinema_detail_body(row: dict) -> None:
     # Liens (déjà HTML via _content_links_html)
     links_html = _content_links_html(ids, raw_title, is_show=(row.get("type") == "Série"))
 
-    # ── Wrapper avec couleur dominante qui enveloppe TOUT ──
+    # ── V132 — Couleur dominante sur TOUTE la boîte du dialog ──
+    # Diagnostic fait dans un vrai Chromium (Streamlit 1.60) : la boîte
+    # du dialog (div enfant direct de [data-testid="stDialog"]) a son
+    # PROPRE fond carbone rgb(1,23,21) → c'était LUI, le « contour noir »
+    # sur les bords et en bas (le dégradé V131.3 ne vivait que dans le
+    # bloc markdown, à l'intérieur, et fondait vers du noir).
+    # On peint donc directement la boîte : la teinte dominante couvre du
+    # haut (bannière) jusqu'à la dernière ligne, sans coupure.
     if dominant_rgb:
         r, g, b = dominant_rgb
-        # V131.3 — dégradé CONTINU : la couleur commence DANS la bannière
-        # (transparente) et fond vers le fond carbone. Un seul flux visuel.
-        wrapper_style = (
-            f"background: linear-gradient(180deg, "
-            f"rgba({r},{g},{b},.55) 0%, "
-            f"rgba({r},{g},{b},.40) 20%, "
-            f"rgba({r},{g},{b},.28) 40%, "
-            f"rgba({r//2},{g//2},{b//2},.18) 65%, "
-            f"rgba(2,20,17,.82) 100%);"
-            f" border-radius: 14px; padding: .5rem .7rem .3rem;"
-            f" margin: -.3rem -.5rem .2rem;"
+        # Bas du dégradé : version PROFONDE de la couleur — on garde la
+        # teinte jusqu'au bout, on ne retombe PAS sur du noir neutre.
+        dr, dg, db = int(r * .52 + 1), int(g * .52 + 1), int(b * .52 + 1)
+        box_gradient = (
+            f"linear-gradient(180deg, "
+            f"rgba({r},{g},{b},.58) 0%, "
+            f"rgba({r},{g},{b},.44) 22%, "
+            f"rgba({r},{g},{b},.32) 50%, "
+            f"rgba({r},{g},{b},.27) 78%, "
+            f"rgba({dr},{dg},{db},.96) 100%)"
         )
+        box_border = f"rgba({r},{g},{b},.35)"
     else:
-        wrapper_style = (
-            "background: linear-gradient(180deg, rgba(0,163,146,.06) 0%, "
-            "rgba(2,20,17,.78) 100%);"
-            " border-radius: 14px; padding: .5rem .7rem;"
-            " margin: -.3rem -.5rem .2rem;"
+        box_gradient = (
+            "linear-gradient(180deg, rgba(0,163,146,.16) 0%, "
+            "rgba(0,163,146,.09) 45%, rgba(2,20,17,.94) 100%)"
         )
+        box_border = "rgba(0,163,146,.30)"
 
-    # ── UN SEUL st.markdown : bannière FONDUE + layout adaptatif ──
-    # La bannière n'a plus de fond propre (transparent) : le dégradé de
-    # couleur dominante du wrapper passe au travers → fondu continu de la
-    # bannière vers la fiche. Sur PC : poster 11% à gauche + infos à droite.
-    # Sur GSM : poster 38% CENTRÉ en haut + infos en dessous.
+    # Ce CSS est injecté DANS le markdown du dialog : il n'existe que
+    # pendant que la fiche est ouverte (retiré du DOM à la fermeture) —
+    # aucun impact sur les autres dialogs de l'app.
+    dialog_css = (
+        "<style>"
+        # Voile neutre derrière la fiche (remplace le voile vert clair
+        # par défaut de Streamlit) : la boîte colorée ressort mieux.
+        '[data-testid="stDialog"]{background:rgba(1,8,7,.62)!important;}'
+        # LA boîte du dialog (enfant direct de l'overlay) : peinte avec
+        # la couleur dominante, coins arrondis et liseré teinté.
+        '[data-testid="stDialog"]>div{'
+        f"background:{box_gradient}!important;"
+        f"border:1px solid {box_border}!important;"
+        "box-shadow:0 26px 90px rgba(0,0,0,.60)!important;}"
+        # Entête du dialog (titre vide + croix) : tassé au maximum pour
+        # que la bannière monte haut.
+        '[data-testid="stDialog"] h2{padding:6px 12px 0!important;min-height:0!important;}'
+        # Corps du dialog : padding à zéro → la bannière va BORD À BORD.
+        '[data-testid="stDialog"] section>div{padding:0 0 10px!important;}'
+        # Croix de fermeture : pastille sombre translucide → toujours
+        # lisible, même sur une bannière très claire.
+        '[data-testid="stDialog"] button[aria-label="Close"]{'
+        "background:rgba(0,0,0,.45)!important;border-radius:8px!important;"
+        "padding:5px!important;}"
+        "</style>"
+    )
+    # Le wrapper devient TRANSPARENT : la couleur vit désormais sur la
+    # boîte du dialog elle-même (plus de double peinture, plus de bords).
+    wrapper_style = "padding:0 0 .45rem;margin:0;"
+
+    # ── UN SEUL st.markdown : CSS du dialog + bannière FONDUE + layout ──
+    # La bannière n'a pas de fond propre (transparent) et la boîte du
+    # dialog est peinte avec la couleur dominante → un seul flux visuel,
+    # de la bannière jusqu'en bas, sans bords noirs. Sur PC : poster 11%
+    # à gauche + infos à droite. Sur GSM : poster 38% CENTRÉ en haut.
     st.markdown(
+        f"{dialog_css}"
         f'<div style="{wrapper_style}">'
         f"{banner_html}"
         f'<div class="cinema-layout">'
