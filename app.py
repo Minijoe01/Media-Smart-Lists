@@ -588,7 +588,14 @@ st.markdown(
     .cinema-banner img.cinema-logo {
         max-height: 90px;
         max-width: 70%;
-        filter: drop-shadow(0 4px 20px rgba(0, 0, 0, .95)) drop-shadow(0 0 40px rgba(0,0,0,.6));
+        /* V135 — ombres ADOUÇIES et DÉCALÉES VERS LE BAS : l'ancien halo
+           (blur 40px à 60% + ombre à 95%) formait un rideau sombre
+           AU-DESSUS du logo — mesuré sur la capture utilisateur : zone
+           logo 48/255 contre 64 partout ailleurs = la « coupure nette »
+           ressentie en bas à gauche de la bannière. L'ombre reste (elle
+           a sa place) mais vit SOUS le logo, fondue dans la couture. */
+        filter: drop-shadow(0 5px 16px rgba(0, 0, 0, .55))
+                drop-shadow(0 10px 26px rgba(0, 0, 0, .40));
     }
     .cinema-banner .cinema-title-fallback {
         font-size: 1.6rem;
@@ -607,7 +614,7 @@ st.markdown(
         padding: .55rem .95rem .3rem;  /* V132 : respire sur les côtés,
                                            la bannière est bord à bord */
     }
-    .cinema-poster { width: 11%; flex-shrink: 0; min-width: 65px; }
+    .cinema-poster { width: 14%; flex-shrink: 0; min-width: 90px; }  /* V135 : 11→14% (retour utilisateur) */
     .cinema-info { flex: 1; min-width: 0; }
     @media (max-width: 640px) {
         .cinema-layout {
@@ -649,6 +656,41 @@ st.markdown(
         line-height: 1.45 !important;
         margin: .3rem 0 .15rem !important;
     }
+    /* V135 — DISTRIBUTION EN CERCLES (visages TMDB) : remplace la ligne
+       de texte acteurs/réal. Cercles photo + nom + rôle dans CE contenu.
+       PC : ligne qui se replie ; GSM : défilement horizontal. */
+    .cast-strip {
+        display: flex;
+        gap: .55rem;
+        overflow-x: auto;
+        padding: .5rem .1rem .25rem;
+        scrollbar-width: thin;
+    }
+    .cast-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: .2rem;
+        flex: 0 0 auto;
+        width: 78px;
+        text-align: center;
+    }
+    .cast-face {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 2px solid rgba(0, 163, 146, .45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(8, 55, 50, .6);
+        flex-shrink: 0;
+    }
+    .cast-face img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .cast-name { font-size: .68rem; font-weight: 700; color: var(--am-text); line-height: 1.15; overflow-wrap: anywhere; }
+    .cast-role { font-size: .62rem; color: var(--am-text-muted); line-height: 1.15; overflow-wrap: anywhere; }
+    .cast-initials { font-size: 1.05rem; font-weight: 800; color: var(--am-text-muted); }
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
     .cinema-section-title {
         font-size: .8rem;
@@ -1202,7 +1244,7 @@ st.markdown(
         + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
         background: rgba(8, 55, 50, .62) !important;
         border: 1px solid rgba(0, 163, 146, .45) !important;
-        border-left: 3px solid var(--am-green) !important;
+        border-left: 3px solid var(--am-yellow) !important;
         border-radius: 13px !important;
         color: var(--am-text) !important;
         font-weight: 600 !important;
@@ -2556,7 +2598,7 @@ def _fetch_tmdb_details_fr(kind: str, tmdb: int, key: str) -> dict:
             params={
                 "api_key": key,
                 "language": "fr-FR",
-                "append_to_response": "images",
+                "append_to_response": "images,credits",  # V135 : + casting (visages) — même appel
                 "include_image_language": "fr,en,null",
             },
             timeout=10,
@@ -3446,6 +3488,21 @@ def _render_cinema_detail_body(row: dict) -> None:
 
         m_rgb = _clamp_deep(m_rgb)
         d_rgb = _clamp_deep(d_rgb)
+
+        # V135 — ACCENT ADAPTATIF : la couleur dominante thématise les
+        # éléments de la fiche (pastilles, barre de score, liens, cercles
+        # acteurs, titre de section) — un look moderne qui change avec
+        # chaque film, tout en restant lisible : l'accent est ÉCLAIRCI si
+        # la couleur dominante est trop sombre.
+        def _lighten(t: tuple[int, int, int], min_bright: float) -> tuple[int, int, int]:
+            bright = 0.299 * t[0] + 0.587 * t[1] + 0.114 * t[2]
+            if bright >= min_bright:
+                return t
+            k = min_bright / max(bright, 1.0)
+            return (min(255, int(t[0] * k)), min(255, int(t[1] * k)), min(255, int(t[2] * k)))
+
+        a_rgb = _lighten((r, g, b), 150)    # accent (bordures, pastilles)
+        a2_rgb = _lighten((r, g, b), 205)   # accent clair (dégradé barre, titres)
         m_str = f"rgb({m_rgb[0]},{m_rgb[1]},{m_rgb[2]})"
         d_str = f"rgb({d_rgb[0]},{d_rgb[1]},{d_rgb[2]})"
         # La boîte : M uniforme sous la bannière (raccord parfait), puis
@@ -3464,12 +3521,33 @@ def _render_cinema_detail_body(row: dict) -> None:
     else:
         m_str = "rgb(6,34,30)"
         d_str = "rgb(3,22,19)"
+        a_rgb = (0, 199, 179)     # accent vert Aston (fallback sans backdrop)
+        a2_rgb = (64, 255, 230)   # accent clair
         box_gradient = f"linear-gradient(180deg, {m_str} 0%, {m_str} 55%, {d_str} 100%)"
         box_border = "rgba(0,163,146,.30)"
         banner_fade = (
             f"linear-gradient(180deg, rgba(6,34,30,0) 30%, rgba(6,34,30,.38) 58%, "
             f"rgba(6,34,30,.75) 83%, rgb(6,34,30) 100%)"
         )
+
+    # V135 — CSS de thématisation adaptative (accent du film) : pastilles,
+    # barre de score, liens, cercles acteurs, titre de section.
+    ar, ag, ab = a_rgb
+    a2r, a2g, a2b = a2_rgb
+    accent_css = (
+        f".cinema-chips .mc-year,.cinema-chips .mc-note{{"
+        f"background:rgba({ar},{ag},{ab},.14)!important;"
+        f"border:1px solid rgba({ar},{ag},{ab},.38)!important;}}"
+        f".cinema-info .progress-bar-container{{background:rgba(255,255,255,.10)!important;}}"
+        f".cinema-info .progress-bar-fill{{"
+        f"background:linear-gradient(90deg,rgb({ar},{ag},{ab}),rgb({a2r},{a2g},{a2b}))!important;}}"
+        f".cinema-info .link-pill{{border:1px solid rgba({ar},{ag},{ab},.40)!important;}}"
+        f".cinema-info .link-pill:hover{{"
+        f"background:rgba({ar},{ag},{ab},.20)!important;"
+        f"border-color:rgba({ar},{ag},{ab},.65)!important;}}"
+        f".cinema-info .cinema-section-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
+        f".cinema-info .cast-face{{border-color:rgba({ar},{ag},{ab},.55)!important;}}"
+    )
 
     # ── Construire tous les fragments HTML ──
     # Bannière
@@ -3496,18 +3574,14 @@ def _render_cinema_detail_body(row: dict) -> None:
     else:
         banner_html = f'<h3 style="color:#fff;margin:.2rem 0 .5rem;">{title}</h3>'
 
-    # Poster (petit, à gauche) — V134 : il ÉMERGE de la couleur de la fiche
-    # (fondu sur ses 22 premiers % de hauteur) au lieu d'apparaître d'un
-    # coup : c'était LUI, la « coupure nette » en bas à gauche de la
-    # bannière (mesuré : Δ=173 juste sous la couture côté poster, contre
-    # Δ≤24 côté texte). L'ombre du clear logo, elle, reste inchangée.
+    # Poster (petit, à gauche) — V135 : retour au poster NET (le fondu du
+    # haut de V134 est retiré, retour utilisateur : « je préfère la version
+    # d'avant concernant le poster »).
     poster_html = ""
     if poster:
         poster_html = (
             f'<img src="{poster}" alt="{title}" style="width:100%;border-radius:8px;'
-            f'box-shadow:0 12px 28px rgba(0,0,0,.42);object-fit:contain;'
-            f'-webkit-mask-image:linear-gradient(180deg,transparent 0,black 30%);'
-            f'mask-image:linear-gradient(180deg,transparent 0,black 30%);" loading="lazy">'
+            f'box-shadow:0 8px 20px rgba(0,0,0,.5);object-fit:contain;" loading="lazy">'
         )
 
     # Chips métadonnées
@@ -3604,11 +3678,69 @@ def _render_cinema_detail_body(row: dict) -> None:
         pills = "".join(_signal_pill(s) for s in signals)
         pills_html = f'<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.25rem 0;">{pills}</div>'
 
-    # Casting
+    # Casting — V135 : DISTRIBUTION EN CERCLES avec les visages TMDB
+    # (acteurs + rôle dans CE contenu, réalisateur en tête si dispo).
+    # Les données viennent du MÊME appel TMDB (append_to_response=credits).
+    # Repli : la ligne de texte d'avant si pas de credits.
     people = row.get("people") or []
     directors = row.get("directors") or []
+    credits = fr_payload.get("credits") if isinstance(fr_payload.get("credits"), dict) else {}
+    cast_members = []
+    for member in (credits.get("cast") or []):
+        if not isinstance(member, dict) or not str(member.get("name") or "").strip():
+            continue
+        cast_members.append({
+            "name": str(member["name"]).strip(),
+            "role": str(member.get("character") or "").strip(),
+            "photo": str(member.get("profile_path") or "").strip(),
+        })
+        if len(cast_members) >= 8:
+            break
+    director_member = None
+    for member in (credits.get("crew") or []):
+        if (
+            isinstance(member, dict)
+            and str(member.get("job") or "").strip().lower() == "director"
+            and str(member.get("name") or "").strip()
+        ):
+            director_member = {
+                "name": str(member["name"]).strip(),
+                "role": "Réalisation",
+                "photo": str(member.get("profile_path") or "").strip(),
+            }
+            break
+    if not director_member and directors:
+        director_member = {"name": str(directors[0]), "role": "Réalisation", "photo": ""}
+
+    def _cast_card(member: dict) -> str:
+        name = escape(member["name"])
+        role_html = (
+            f'<span class="cast-role">{escape(member["role"])}</span>'
+            if member.get("role") else ""
+        )
+        if member.get("photo"):
+            face = (
+                f'<img src="https://image.tmdb.org/t/p/w185{escape(member["photo"], quote=True)}"'
+                f' alt="{name}" loading="lazy">'
+            )
+        else:
+            initials = "".join(w[0] for w in member["name"].split()[:2]).upper()
+            face = f'<span class="cast-initials">{escape(initials)}</span>'
+        return (
+            f'<div class="cast-card"><div class="cast-face">{face}</div>'
+            f'<span class="cast-name">{name}</span>{role_html}</div>'
+        )
+
     casting_html = ""
-    if people or directors:
+    if director_member or cast_members:
+        cards = ([_cast_card(director_member)] if director_member else []) + [
+            _cast_card(m) for m in cast_members
+        ]
+        casting_html = (
+            f'<p class="cinema-section-title">Distribution</p>'
+            f'<div class="cast-strip">{"".join(cards)}</div>'
+        )
+    elif people or directors:
         cast_bits = []
         if directors:
             cast_bits.append("🎬 " + escape(", ".join(map(str, directors[:2]))))
@@ -3653,6 +3785,9 @@ def _render_cinema_detail_body(row: dict) -> None:
         "top:10px!important;right:10px!important;"
         "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
+        # V135 — thématisation adaptative : les éléments de la fiche
+        # prennent la couleur d'accent du film.
+        f"{accent_css}"
         "</style>"
     )
     # Le wrapper reste TRANSPARENT : la couleur vit sur la boîte du dialog.
