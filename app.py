@@ -533,7 +533,8 @@ st.markdown(
        de l'app, clear logo TMDB en bas à gauche (style FlickTrove). */
     .cinema-banner {
         position: relative;
-        min-height: 260px;
+        min-height: 300px;  /* V134 : plus haute sur PC (260→300) — montre
+                               plus du backdrop, moins de troncature */
         border-radius: 0;  /* V132 : pleine largeur, bord à bord dans le dialog */
         overflow: hidden;
         margin-bottom: 0;  /* plus d'écart : la bannière FOND dans la fiche */
@@ -637,6 +638,16 @@ st.markdown(
         font-size: .78rem !important;
         color: #98b4b0 !important;  /* gris encore plus doux */
         margin: .25rem 0 !important;
+    }
+    /* V134 — Tagline TMDB (la phrase d'accroche du film) : italique doux,
+       juste sous les pastilles. Même régime !important que le synopsis
+       (la règle globale « p, li, label » du skin écrase sinon la couleur). */
+    .cinema-tagline {
+        font-style: italic !important;
+        font-size: .85rem !important;
+        color: #c9dfda !important;
+        line-height: 1.45 !important;
+        margin: .3rem 0 .15rem !important;
     }
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
     .cinema-section-title {
@@ -1176,6 +1187,38 @@ st.markdown(
         border-left-color: var(--am-yellow);
         transform: translateY(-2px);
         box-shadow: 0 8px 22px rgba(0, 163, 146, .18);
+    }
+
+    /* V134 — Bouton « 🎬 Voir la fiche » : EXACTEMENT l'habillage des
+       tuiles (même fond, même liseré vert à gauche, même surbrillance
+       au survol : lueur verte + liseré jaune + soulèvement). Ciblé par
+       voisinage : le bouton qui suit IMMÉDIATEMENT une carte contenu
+       (.media-list-card) — les autres boutons de l'app ne bougent pas.
+       (Un HTML statique ne peut pas déclencher Python : le bouton
+       Streamlit reste obligé pour ouvrir la fiche.) */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
+        + div[data-testid="stElementContainer"] button[kind="secondary"],
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
+        background: rgba(8, 55, 50, .62) !important;
+        border: 1px solid rgba(0, 163, 146, .45) !important;
+        border-left: 3px solid var(--am-green) !important;
+        border-radius: 13px !important;
+        color: var(--am-text) !important;
+        font-weight: 600 !important;
+        box-shadow: none !important;
+        transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
+        + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover {
+        background: rgba(0, 163, 146, .12) !important;
+        border-color: rgba(0, 163, 146, .55) !important;
+        border-left-color: var(--am-yellow) !important;
+        transform: translateY(-2px);
+        box-shadow: 0 8px 22px rgba(0, 163, 146, .18) !important;
+        color: #fff !important;
     }
 
     /* Cartes contenus premium (V56) : posters liserés, en-tête chip/note,
@@ -3351,6 +3394,10 @@ def _render_cinema_detail_body(row: dict) -> None:
         )
     logo = _pick_logo_from_payload(fr_payload)
     synopsis = str(fr_payload.get("overview") or "").strip()
+    # V134 — infos bonus TMDB, GRATUITES (déjà dans le même appel FR) :
+    # tagline (phrase d'accroche), budget/recettes (films), diffuseur et
+    # créateurs (séries). Sur PC il y a la place pour les afficher.
+    tagline = str(fr_payload.get("tagline") or "").strip()
     poster = escape(_poster_url(item), quote=True)
 
     # ── Couleur dominante ──
@@ -3449,12 +3496,18 @@ def _render_cinema_detail_body(row: dict) -> None:
     else:
         banner_html = f'<h3 style="color:#fff;margin:.2rem 0 .5rem;">{title}</h3>'
 
-    # Poster (petit, à gauche)
+    # Poster (petit, à gauche) — V134 : il ÉMERGE de la couleur de la fiche
+    # (fondu sur ses 22 premiers % de hauteur) au lieu d'apparaître d'un
+    # coup : c'était LUI, la « coupure nette » en bas à gauche de la
+    # bannière (mesuré : Δ=173 juste sous la couture côté poster, contre
+    # Δ≤24 côté texte). L'ombre du clear logo, elle, reste inchangée.
     poster_html = ""
     if poster:
         poster_html = (
             f'<img src="{poster}" alt="{title}" style="width:100%;border-radius:8px;'
-            f'box-shadow:0 8px 20px rgba(0,0,0,.5);object-fit:contain;" loading="lazy">'
+            f'box-shadow:0 12px 28px rgba(0,0,0,.42);object-fit:contain;'
+            f'-webkit-mask-image:linear-gradient(180deg,transparent 0,black 30%);'
+            f'mask-image:linear-gradient(180deg,transparent 0,black 30%);" loading="lazy">'
         )
 
     # Chips métadonnées
@@ -3487,7 +3540,46 @@ def _render_cinema_detail_body(row: dict) -> None:
         meta_bits.append(f'<span class="mc-year">{_CINEMA_STATUS_FR[status_raw]}</span>')
     if row.get("genres"):
         meta_bits.append(f'<span class="mc-year">🎭 {escape(", ".join(map(str, row["genres"][:4])))}</span>')
+    # V134 — pastilles bonus TMDB (même appel API, aucun coût supplémentaire) :
+    # · Films  : budget de production + recettes mondiales
+    # · Séries : diffuseur (network) + créateurs
+    def _fmt_money(value: object) -> str:
+        try:
+            amount = float(value or 0)
+        except (TypeError, ValueError):
+            return ""
+        if amount >= 1_000_000_000:
+            return f"{amount / 1_000_000_000:.1f}".replace(".", ",") + " Md$"
+        if amount >= 1_000_000:
+            return f"{amount / 1_000_000:.0f} M$"
+        return ""
+
+    if row.get("type") == "Série":
+        networks = fr_payload.get("networks") or []
+        if isinstance(networks, list) and networks and isinstance(networks[0], dict):
+            net_name = str(networks[0].get("name") or "").strip()
+            if net_name:
+                meta_bits.append(f'<span class="mc-year" data-tooltip="Diffuseur">📡 {escape(net_name)}</span>')
+        creators = [
+            str(p.get("name") or "").strip()
+            for p in (fr_payload.get("created_by") or [])
+            if isinstance(p, dict) and p.get("name")
+        ][:2]
+        if creators:
+            meta_bits.append(
+                f'<span class="mc-year" data-tooltip="Créée par">✍️ {escape(", ".join(creators))}</span>'
+            )
+    else:
+        budget_txt = _fmt_money(fr_payload.get("budget"))
+        if budget_txt:
+            meta_bits.append(f'<span class="mc-year" data-tooltip="Budget de production">💰 {budget_txt}</span>')
+        revenue_txt = _fmt_money(fr_payload.get("revenue"))
+        if revenue_txt:
+            meta_bits.append(f'<span class="mc-year" data-tooltip="Recettes mondiales">🎟️ {revenue_txt}</span>')
     chips_html = f'<div class="cinema-chips">{"".join(meta_bits)}</div>'
+
+    # V134 — Tagline (phrase d'accroche) juste sous les pastilles
+    tagline_html = f'<p class="cinema-tagline">{escape(tagline)}</p>' if tagline else ""
 
     # Score bar (HTML, pas st.progress)
     score_val = int(round(row.get("score", 0)))
@@ -3537,21 +3629,28 @@ def _render_cinema_detail_body(row: dict) -> None:
         '[data-testid="stDialog"]{background:rgba(1,8,7,.62)!important;}'
         # LA boîte du dialog (enfant direct de l'overlay) : peinte avec
         # la couleur dominante EN OPAQUE, coins arrondis et liseré teinté.
+        # overflow:hidden (V134) → la bannière est ROGNÉE par les coins
+        # arrondis de la boîte, elle ne dépasse jamais.
         '[data-testid="stDialog"]>div{'
         f"background:{box_gradient}!important;"
         f"border:1px solid {box_border}!important;"
-        "box-shadow:0 26px 90px rgba(0,0,0,.60)!important;}"
-        # Entête du dialog (titre vide + croix) : tassé au maximum pour
-        # que la bannière monte haut.
-        '[data-testid="stDialog"] h2{padding:6px 12px 0!important;min-height:0!important;}'
-        # Corps du dialog : padding à zéro → la bannière va BORD À BORD.
+        "box-shadow:0 26px 90px rgba(0,0,0,.60)!important;"
+        "overflow:hidden!important;}"
+        # Entête du dialog (titre vide) : SUPPRIMÉ (V134) → la bannière
+        # commence au 1er pixel de la fiche, plus aucune bande de couleur
+        # au-dessus. La croix, elle, est positionnée en absolu : elle
+        # reste visible PAR-DESSUS la bannière.
+        '[data-testid="stDialog"] h2{display:none!important;}'
+        # Corps du dialog : padding à zéro → la bannière va BORD À BORD
+        # et commence dès le haut de la boîte.
         '[data-testid="stDialog"] section>div{padding:0 0 10px!important;}'
         # Croix de fermeture : V133 — elle était PEINTE SOUS LA BANNIÈRE
-        # (occlusion constatée dans Chromium : elementFromPoint renvoyait
-        # la couche image au lieu du bouton). z-index élevé → toujours
-        # AU-DESSUS de la bannière + pastille sombre pour la lisibilité.
+        # (occlusion constatée dans Chromium). V134 : z-index élevé (elle
+        # flotte sur la bannière) + repositionnée près du coin + pastille
+        # sombre pour la lisibilité sur bannières claires.
         '[data-testid="stDialog"] button[aria-label="Close"]{'
         "z-index:2000!important;"
+        "top:10px!important;right:10px!important;"
         "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
         "</style>"
@@ -3572,6 +3671,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         f'<div class="cinema-poster">{poster_html}</div>'
         f'<div class="cinema-info">'
         f"{chips_html}"
+        f"{tagline_html}"
         f"{score_html}"
         f"{synopsis_html}"
         f"{pills_html}"
@@ -3708,15 +3808,16 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         + f'</div>{score_col}</div>'
     )
     # V125 — bouton en PIED DE CARTE (plus de colonnes latérales qui
-    # provoquaient des sauts sur GSM — retour utilisateur). Le bouton
-    # ressemble à un « footer » discret de la carte : même bord, même
-    # fond, texte léger « Voir la fiche cinéma ».
+    # provoquaient des sauts sur GSM — retour utilisateur). V134 : libellé
+    # raccourci « Voir la fiche » (valable films ET séries) + habillage
+    # exact des tuiles (CSS :has() ci-dessus — même fond, même liseré,
+    # même surbrillance au survol).
     st.markdown(card_html, unsafe_allow_html=True)
     detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
     if st.button(
-        "🎬 Voir la fiche cinéma",
+        "🎬 Voir la fiche",
         key=detail_key,
-        help="Bannière, clear logo TMDB, détails et score expliqué",
+        help="Bannière, clear logo TMDB, détails et score expliqué — films et séries",
         use_container_width=True,
         type="secondary",
     ):
