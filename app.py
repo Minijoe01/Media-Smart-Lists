@@ -533,15 +533,17 @@ st.markdown(
        de l'app, clear logo TMDB en bas à gauche (style FlickTrove). */
     .cinema-banner {
         position: relative;
-        min-height: 260px;  /* PC : plus haute → moins de troncature */
+        min-height: 260px;
         border-radius: 12px;
         overflow: hidden;
-        margin-bottom: .5rem;
+        margin-bottom: 0;  /* plus d'écart : la bannière FOND dans la fiche */
         border: none;
-        background-color: #021a16;
+        background: transparent;  /* V131.3 : PAS de fond propre → le dégradé
+                                     de couleur dominante du wrapper passe au
+                                     travers, effet de fondu continu */
     }
     @media (max-width: 640px) {
-        .cinema-banner { min-height: 180px; }  /* GSM : inchangé (parfait) */
+        .cinema-banner { min-height: 180px; border-radius: 12px 12px 0 0; }
     }
     /* V131 — Couche BLUR : l'image est ÉTIRÉE (100% 100%) et floutée
        largement — c'est ce qui donne les couleurs dominantes (FlickTrove) */
@@ -587,6 +589,41 @@ st.markdown(
         line-height: 1.2;
     }
     .cinema-banner .cinema-tag { margin-left: auto; flex-shrink: 0; }
+    /* V131.3 — LAYOUT ADAPTATIF : PC = poster à gauche + infos à droite.
+       GSM = poster CENTRÉ et GRAND en haut, infos en dessous. */
+    .cinema-layout {
+        display: flex;
+        gap: 14px;
+        align-items: flex-start;
+        padding: .5rem .2rem .2rem;
+    }
+    .cinema-poster { width: 11%; flex-shrink: 0; min-width: 65px; }
+    .cinema-info { flex: 1; min-width: 0; }
+    @media (max-width: 640px) {
+        .cinema-layout {
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+        .cinema-poster {
+            width: 38%;          /* GRAND poster centré sur GSM */
+            min-width: 130px;
+            max-width: 180px;
+        }
+        .cinema-info { width: 100%; }
+    }
+    /* V131.3 — Texte plus doux (moins agressif que le blanc pur) */
+    .cinema-synopsis {
+        font-size: .82rem;
+        color: #b0ccc8;  /* gris-vert doux */
+        line-height: 1.55;
+        margin: .35rem 0 .3rem;
+    }
+    .cinema-casting {
+        font-size: .78rem;
+        color: #98b4b0;  /* gris encore plus doux */
+        margin: .25rem 0;
+    }
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
     .cinema-section-title {
         font-size: .8rem;
@@ -3378,13 +3415,10 @@ def _render_cinema_detail_body(row: dict) -> None:
         f' · friction {friction_val}/100</div>'
     )
 
-    # Synopsis
+    # Synopsis (texte doux — V131.3)
     synopsis_html = ""
     if synopsis:
-        synopsis_html = (
-            f'<p style="font-size:.82rem;color:#cfe8e5;line-height:1.5;'
-            f'margin:.35rem 0 .3rem;">{escape(synopsis)}</p>'
-        )
+        synopsis_html = f'<p class="cinema-synopsis">{escape(synopsis)}</p>' 
 
     # Pastilles score
     signals = row.get("signals") or []
@@ -3403,7 +3437,7 @@ def _render_cinema_detail_body(row: dict) -> None:
             cast_bits.append("🎬 " + escape(", ".join(map(str, directors[:2]))))
         if people:
             cast_bits.append("👥 " + escape(", ".join(map(str, people[:6]))))
-        casting_html = f'<p style="font-size:.78rem;color:#9fc4c0;margin:.25rem 0;">{" · ".join(cast_bits)}</p>'
+        casting_html = f'<p class="cinema-casting">{" · ".join(cast_bits)}</p>'
 
     # Liens (déjà HTML via _content_links_html)
     links_html = _content_links_html(ids, raw_title, is_show=(row.get("type") == "Série"))
@@ -3411,13 +3445,16 @@ def _render_cinema_detail_body(row: dict) -> None:
     # ── Wrapper avec couleur dominante qui enveloppe TOUT ──
     if dominant_rgb:
         r, g, b = dominant_rgb
+        # V131.3 — dégradé CONTINU : la couleur commence DANS la bannière
+        # (transparente) et fond vers le fond carbone. Un seul flux visuel.
         wrapper_style = (
             f"background: linear-gradient(180deg, "
-            f"rgba({r},{g},{b},.40) 0%, "
-            f"rgba({r},{g},{b},.22) 25%, "
-            f"rgba({r//2},{g//2},{b//2},.12) 55%, "
-            f"rgba(2,20,17,.78) 100%);"
-            f" border-radius: 14px; padding: .5rem .7rem;"
+            f"rgba({r},{g},{b},.55) 0%, "
+            f"rgba({r},{g},{b},.40) 20%, "
+            f"rgba({r},{g},{b},.28) 40%, "
+            f"rgba({r//2},{g//2},{b//2},.18) 65%, "
+            f"rgba(2,20,17,.82) 100%);"
+            f" border-radius: 14px; padding: .5rem .7rem .3rem;"
             f" margin: -.3rem -.5rem .2rem;"
         )
     else:
@@ -3428,13 +3465,17 @@ def _render_cinema_detail_body(row: dict) -> None:
             " margin: -.3rem -.5rem .2rem;"
         )
 
-    # ── UN SEUL st.markdown : bannière + poster petit + TOUTES les infos ──
+    # ── UN SEUL st.markdown : bannière FONDUE + layout adaptatif ──
+    # La bannière n'a plus de fond propre (transparent) : le dégradé de
+    # couleur dominante du wrapper passe au travers → fondu continu de la
+    # bannière vers la fiche. Sur PC : poster 11% à gauche + infos à droite.
+    # Sur GSM : poster 38% CENTRÉ en haut + infos en dessous.
     st.markdown(
         f'<div style="{wrapper_style}">'
         f"{banner_html}"
-        f'<div style="display:flex;gap:14px;align-items:flex-start;margin-top:.4rem;">'
-        f'<div style="width:10%;flex-shrink:0;min-width:60px;">{poster_html}</div>'
-        f'<div style="flex:1;min-width:0;">'
+        f'<div class="cinema-layout">'
+        f'<div class="cinema-poster">{poster_html}</div>'
+        f'<div class="cinema-info">'
         f"{chips_html}"
         f"{score_html}"
         f"{synopsis_html}"

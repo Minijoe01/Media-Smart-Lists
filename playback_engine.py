@@ -197,7 +197,12 @@ def normalize_now_playing(
             # rapportée (initial ≤ 0) : une valeur rapportée reste la
             # référence (reprise après pause, check-in manuel…).
             if initial <= 0:
-                started_ts = value.get("started_timestamp")
+                # V131.3 — priorité started_at, repli updated_at (le
+                # scrobbler envoie updated_at à chaque event y compris le
+                # "start" → c'est un bon point de départ quand started_at
+                # est absent). Retour utilisateur : « le point de reprise
+                # n'est pas bien récupéré, ça met 0% ».
+                started_ts = value.get("started_timestamp") or value.get("updated_timestamp")
                 if started_ts and started_ts <= now_timestamp:
                     minutes_since_start = max(now_timestamp - started_ts, 0) / 60
                     initial = min(minutes_since_start / runtime * 100, 100.0)
