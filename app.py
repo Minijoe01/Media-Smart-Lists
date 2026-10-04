@@ -691,6 +691,17 @@ st.markdown(
     .cast-name { font-size: .68rem; font-weight: 700; color: var(--am-text); line-height: 1.15; overflow-wrap: anywhere; }
     .cast-role { font-size: .62rem; color: var(--am-text-muted); line-height: 1.15; overflow-wrap: anywhere; }
     .cast-initials { font-size: 1.05rem; font-weight: 800; color: var(--am-text-muted); }
+    /* V136 — carte acteur CLIQUABLE (fiche TMDB) : même look, surbrillance
+       douce au survol (cercle qui se soulève). */
+    .cast-link { text-decoration: none; color: inherit; }
+    .cast-link .cast-face {
+        transition: transform .16s ease, box-shadow .16s ease;
+    }
+    .cast-link:hover .cast-face {
+        transform: translateY(-3px) scale(1.05);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, .45);
+    }
+    .cast-link:hover .cast-name { color: #fff; }
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
     .cinema-section-title {
         font-size: .8rem;
@@ -1238,28 +1249,40 @@ st.markdown(
        (.media-list-card) — les autres boutons de l'app ne bougent pas.
        (Un HTML statique ne peut pas déclencher Python : le bouton
        Streamlit reste obligé pour ouvrir la fiche.) */
+    /* V136 — FUSION : le bouton est SOUDÉ à sa carte (plus d'écart) —
+       une seule tuile avec un pied cliquable, fini l'effet « deux tuiles ».
+       (Rendre la carte entière cliquable reste impossible en Streamlit :
+       abandonné en V130 — trop fragile.) */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) .media-list-card {
+        border-radius: 13px 13px 0 0 !important;
+        margin-bottom: 0 !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
+        + div[data-testid="stElementContainer"] {
+        margin-top: 0 !important;  /* la marge basse de la carte est déjà à 0 */
+    }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
         background: rgba(8, 55, 50, .62) !important;
         border: 1px solid rgba(0, 163, 146, .45) !important;
+        border-top: 1px solid rgba(0, 163, 146, .28) !important;
         border-left: 3px solid var(--am-yellow) !important;
-        border-radius: 13px !important;
+        border-radius: 0 0 13px 13px !important;
         color: var(--am-text) !important;
         font-weight: 600 !important;
         box-shadow: none !important;
-        transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease !important;
+        transition: background .16s ease, border-color .16s ease, box-shadow .16s ease !important;
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover {
-        background: rgba(0, 163, 146, .12) !important;
+        background: rgba(0, 163, 146, .14) !important;
         border-color: rgba(0, 163, 146, .55) !important;
         border-left-color: var(--am-yellow) !important;
-        transform: translateY(-2px);
-        box-shadow: 0 8px 22px rgba(0, 163, 146, .18) !important;
+        box-shadow: inset 0 0 18px rgba(0, 163, 146, .12) !important;
         color: #fff !important;
     }
 
@@ -1492,6 +1515,7 @@ def navigation() -> str:
                     cookies.remove("msl_mdblist_data_loaded")
                 except Exception:
                     pass
+                _forget_saved_session()  # V136 : plus de restauration auto après déconnexion
                 st.session_state.pop("_normalized_dataset", None)
                 st.session_state.pop("_source_genre_cache", None)
                 st.rerun()
@@ -1570,6 +1594,7 @@ def _render_connected_mdblist() -> None:
                 "_mdblist_calendar_cache",
             ):
                 st.session_state.pop(key, None)
+            _forget_saved_session()  # V136 : plus de restauration auto après déconnexion
             st.session_state["pending_source"] = "mdblist"
             st.rerun()
 
@@ -1941,7 +1966,8 @@ def _sections() -> dict:
 def _media_title(item: dict) -> str:
     if not isinstance(item, dict):
         return "Titre inconnu"
-    for key in ("title", "name"):
+    # V136 — titre FRANÇAIS en priorité à l'affichage (repli titre original).
+    for key in ("title_fr", "title", "name"):
         if item.get(key):
             return str(item[key])
     for key in ("movie", "show", "episode"):
@@ -1984,7 +2010,8 @@ def _genres(item: dict) -> list[str]:
 def _poster_url(item: dict) -> str:
     if not isinstance(item, dict):
         return ""
-    value = item.get("poster") or item.get("poster_path") or ""
+    # V136 — affiche FRANÇAISE en priorité (repli affiche par défaut).
+    value = item.get("poster_fr") or item.get("poster") or item.get("poster_path") or ""
     if not value:
         for key in ("movie", "show", "episode"):
             nested = item.get(key)
@@ -2556,7 +2583,15 @@ def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
     def _get() -> "requests.Response":
         return requests.get(
             f"https://api.themoviedb.org/3/{kind}/{tmdb}",
-            params={"api_key": key, "language": "en-US", "append_to_response": "credits,keywords"},
+            # V136 — fr-FR + images : le payload fournit désormais AUSSI le
+            # TITRE FRANÇAIS et l'AFFICHE FRANÇAISE (repli affiche par défaut)
+            # pour tout l'app (cartes + fiche).
+            params={
+                "api_key": key,
+                "language": "fr-FR",
+                "append_to_response": "credits,keywords,images",
+                "include_image_language": "fr,en,null",
+            },
             timeout=8,
         )
 
@@ -2598,7 +2633,7 @@ def _fetch_tmdb_details_fr(kind: str, tmdb: int, key: str) -> dict:
             params={
                 "api_key": key,
                 "language": "fr-FR",
-                "append_to_response": "images,credits",  # V135 : + casting (visages) — même appel
+                "append_to_response": "images,credits,videos",  # V135 : credits · V136 : videos (bande-annonce)
                 "include_image_language": "fr,en,null",
             },
             timeout=10,
@@ -2662,8 +2697,15 @@ def _extract_dominant_color(image_url: str) -> tuple[int, int, int] | None:
         return None
 
 
-def _apply_tmdb_payload(media: dict, payload: dict) -> None:
-    """Remplit genres, studios et acteurs d'un média depuis une réponse TMDB."""
+def _apply_tmdb_payload(media: dict, payload: dict, french: bool = False) -> None:
+    """Remplit genres, studios et acteurs d'un média depuis une réponse TMDB.
+
+    V136 — `french=True` (enrichissement principal, payload fr-FR) : stocke
+    aussi le TITRE FRANÇAIS (`title_fr`, affichage uniquement — le titre
+    original reste `title`, utilisé par les correspondances internes) et
+    l'AFFICHE FRANÇAISE (`poster_fr`, repli automatique sur l'affiche par
+    défaut si absente).
+    """
     # Genres (uniquement si absents) — TRADUITS EN FRANÇAIS : la fiche est
     # récupérée en en-US, et les genres anglais (« Documentary ») polluaient
     # le dataset déjà normalisé en français (The Last Dance « documentary »).
@@ -2737,6 +2779,30 @@ def _apply_tmdb_payload(media: dict, payload: dict) -> None:
         poster_path = str(payload.get("poster_path") or "").strip()
         if poster_path:
             media["poster"] = poster_path
+    # V136 — TITRE FR + AFFICHE FR (uniquement si le payload est français —
+    # l'enrichissement principal). Le titre original (`title`) reste intact :
+    # il sert de clé de correspondance dans les moteurs (statistiques,
+    # progressions…). `_media_title` préfère `title_fr` à l'affichage.
+    if french:
+        fr_title = str(payload.get("title") or payload.get("name") or "").strip()
+        if fr_title and fr_title != (media.get("title") or media.get("name")):
+            media["title_fr"] = fr_title
+        images_block = payload.get("images") if isinstance(payload.get("images"), dict) else {}
+        posters_list = images_block.get("posters") or []
+        fr_poster = ""
+        for wanted_lang in ("fr", None):
+            for poster in posters_list:
+                if (
+                    isinstance(poster, dict)
+                    and poster.get("iso_639_1") == wanted_lang
+                    and poster.get("file_path")
+                ):
+                    fr_poster = str(poster["file_path"])
+                    break
+            if fr_poster:
+                break
+        if fr_poster and fr_poster != media.get("poster"):
+            media["poster_fr"] = fr_poster
     # V124 — backdrop (image panoramique TMDB) si absent : fond discret des
     # cartes + bannière de la fiche cinéma. Déjà présent dans la réponse
     # (AUCUN appel supplémentaire).
@@ -2893,7 +2959,7 @@ def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
                 # réessayé au prochain enrichissement, sans rien « figer ».
                 return
             if payload:
-                _apply_tmdb_payload(m, payload)
+                _apply_tmdb_payload(m, payload, french=True)
             # MOTS-CLÉS TMDB (sport, superhero, biography…) : stockés sur le
             # média → le filtre des listes les utilise pour les genres sans
             # équivalent TMDB (ex. « Sport » trouve The Last Dance dans tes
@@ -2955,6 +3021,8 @@ def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
                 continue
             if not show.get("poster") and source_media.get("poster"):
                 show["poster"] = source_media["poster"]
+                if source_media.get("title_fr"):
+                    show["title_fr"] = source_media["title_fr"]  # V136 : titre FR
             if not show.get("genres") and source_media.get("genres"):
                 show["genres"] = source_media["genres"]
             if not show.get("status") and source_media.get("status"):
@@ -3019,6 +3087,101 @@ def _enrichment_state() -> dict:
 
 
 _ENRICH_STATE = _enrichment_state()
+
+
+@st.cache_resource(show_spinner=False)
+def _session_snapshots() -> dict:
+    """V136 — Instantanés de session par utilisateur (page active + filtres
+    « Que regarder ? »), partagés entre sessions tant que le conteneur vit.
+
+    Sert à la RESTAURATION AUTOMATIQUE (retour d'arrière-plan sur GSM) :
+    Android met l'app en arrière-plan puis la rouvre → NOUVELLE session
+    Streamlit (session_state vide) → « LISTES NON CHARGÉES », filtres
+    perdus, retour obligatoire au Tableau de bord (retour utilisateur).
+    Or le dataset enrichi VIT ENCORE dans `_ENRICH_STATE` (mémoire du
+    processus) : on peut tout restaurer SANS AUCUN appel réseau ni API.
+    """
+    return {"page": {}, "filters": {}}
+
+
+def _dataset_cache_key_cookie() -> str:
+    """Clé de dataset mémorisée en cookie (30 j) — lecture hors-ligne."""
+    try:
+        return str(cookies.get("msl_dataset_cache_key") or "").strip()
+    except Exception:
+        return ""
+
+
+def _remember_dataset_key(key: str) -> None:
+    """Mémorise la clé du dataset chargé (session + cookie 30 j)."""
+    st.session_state["_dataset_cache_key"] = key
+    try:
+        cookies.set("msl_dataset_cache_key", key, expires=datetime.now() + timedelta(days=30))
+    except Exception:
+        pass
+
+
+def _forget_saved_session() -> None:
+    """Oublie tout (déconnexion) : cookie, instantanés, clé de session."""
+    try:
+        cookies.remove("msl_dataset_cache_key")
+    except Exception:
+        pass
+    st.session_state.pop("_dataset_cache_key", None)
+    try:
+        snap = _session_snapshots()
+        snap["page"].clear()
+        snap["filters"].clear()
+    except Exception:
+        pass
+
+
+def _save_session_snapshot() -> None:
+    """Mémorise la page active + les filtres « Que regarder ? » de CETTE
+    session (appelé en fin de script à chaque rendu — 20 clés, très léger)."""
+    try:
+        key = st.session_state.get("_dataset_cache_key") or _dataset_cache_key_cookie()
+        if not key:
+            return
+        snap = _session_snapshots()
+        snap["page"][key] = st.session_state.get("page_active")
+        snap["filters"][key] = {
+            k: st.session_state[k] for k in _BOOKMARK_KEYS if k in st.session_state
+        }
+    except Exception:
+        pass
+
+
+def _auto_restore_session() -> None:
+    """V136 — Restaure AUTOMATIQUEMENT les données d'une session précédente.
+
+    Cas GSM : l'app passe en arrière-plan → Android ferme la page → au
+    retour, NOUVELLE session (état vide). Si le dataset enrichi vit encore
+    dans `_ENRICH_STATE`, on le restaure SANS AUCUN appel réseau, avec la
+    page active et les filtres d'avant. Sinon (conteneur redémarré), on ne
+    fait rien : l'utilisateur charge normalement depuis le Tableau de bord.
+    """
+    if st.session_state.get("_normalized_dataset") or st.session_state.get("_msl_auto_restore_tried"):
+        return
+    st.session_state["_msl_auto_restore_tried"] = True
+    try:
+        key = st.session_state.get("_dataset_cache_key") or _dataset_cache_key_cookie()
+    except Exception:
+        return
+    if not key:
+        return
+    data = _ENRICH_STATE["datasets"].get(key)
+    if not isinstance(data, dict) or data.get("schema_version") != NORMALIZED_SCHEMA_VERSION:
+        return
+    st.session_state["_normalized_dataset"] = data
+    st.session_state["_dataset_cache_key"] = key
+    snap = _session_snapshots()
+    saved_page = snap["page"].get(key)
+    if saved_page in PAGES:
+        st.session_state["page_active"] = saved_page
+    for k, v in (snap["filters"].get(key) or {}).items():
+        st.session_state.setdefault(k, v)
+    st.session_state["_msl_restored_from_memory"] = True
 
 
 def _enrich_in_background(cache_key: str, data: dict) -> None:
@@ -3113,6 +3276,9 @@ def load_mdblist_dataset() -> None:
         )
         return
     st.session_state["_normalized_dataset"] = data
+    # V136 — mémorise la clé du dataset (session + cookie) pour la
+    # restauration automatique au retour d'arrière-plan (GSM).
+    _remember_dataset_key(key)
     # Marqueur cookie : permet de recharger depuis le cache après un F5.
     try:
         cookies.set("msl_mdblist_data_loaded", "1", expires=datetime.now() + timedelta(days=30))
@@ -3420,7 +3586,6 @@ def _render_cinema_detail_body(row: dict) -> None:
     """
     item = row.get("item") or {}
     raw_title = _media_title(item)
-    title = escape(raw_title)
     backdrop = str(item.get("backdrop") or "").strip()
     ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
     try:
@@ -3440,7 +3605,51 @@ def _render_cinema_detail_body(row: dict) -> None:
     # tagline (phrase d'accroche), budget/recettes (films), diffuseur et
     # créateurs (séries). Sur PC il y a la place pour les afficher.
     tagline = str(fr_payload.get("tagline") or "").strip()
-    poster = escape(_poster_url(item), quote=True)
+    # V136 — TITRE FRANÇAIS (repli titre existant) + AFFICHE FRANÇAISE
+    # (fr > neutre > affiche par défaut). Le titre original reste affiché
+    # en pastille discrète quand il diffère.
+    fr_title = str(fr_payload.get("title") or fr_payload.get("name") or "").strip()
+    display_title = fr_title or raw_title
+    title = escape(display_title)
+    original_title_html = ""
+    if fr_title and fr_title.casefold() != raw_title.casefold():
+        original_title_html = (
+            f'<span class="mc-year" data-tooltip="Titre original">🎞️ {escape(raw_title)}</span>'
+        )
+    fr_poster_path = ""
+    fr_images = fr_payload.get("images") if isinstance(fr_payload.get("images"), dict) else {}
+    for wanted_lang in ("fr", None):
+        for poster_entry in (fr_images.get("posters") or []):
+            if (
+                isinstance(poster_entry, dict)
+                and poster_entry.get("iso_639_1") == wanted_lang
+                and poster_entry.get("file_path")
+            ):
+                fr_poster_path = str(poster_entry["file_path"])
+                break
+        if fr_poster_path:
+            break
+    if fr_poster_path:
+        poster = escape(f"https://image.tmdb.org/t/p/w500{fr_poster_path}", quote=True)
+    else:
+        poster = escape(_poster_url(item), quote=True)
+    # V136 — BANDE-ANNONCE : trailer YouTube VF (repli VO) dans le même
+    # appel TMDB. Si aucune bande-annonce : pas de section (zéro place).
+    trailer_key = ""
+    videos_block = fr_payload.get("videos") if isinstance(fr_payload.get("videos"), dict) else {}
+    for wanted_lang in ("fr", "en", None):
+        for video in (videos_block.get("results") or []):
+            if (
+                isinstance(video, dict)
+                and video.get("site") == "YouTube"
+                and str(video.get("type") or "") == "Trailer"
+                and video.get("key")
+                and (video.get("iso_639_1") == wanted_lang if wanted_lang else True)
+            ):
+                trailer_key = str(video["key"])
+                break
+        if trailer_key:
+            break
 
     # ── Couleur dominante ──
     dominant_rgb = None
@@ -3650,6 +3859,8 @@ def _render_cinema_detail_body(row: dict) -> None:
         revenue_txt = _fmt_money(fr_payload.get("revenue"))
         if revenue_txt:
             meta_bits.append(f'<span class="mc-year" data-tooltip="Recettes mondiales">🎟️ {revenue_txt}</span>')
+    if original_title_html:
+        meta_bits.append(original_title_html)
     chips_html = f'<div class="cinema-chips">{"".join(meta_bits)}</div>'
 
     # V134 — Tagline (phrase d'accroche) juste sous les pastilles
@@ -3666,17 +3877,23 @@ def _render_cinema_detail_body(row: dict) -> None:
         f' · friction {friction_val}/100</div>'
     )
 
-    # Synopsis (texte doux — V131.3)
+    # Synopsis (texte doux — V131.3) — V136 : titre de section
     synopsis_html = ""
     if synopsis:
-        synopsis_html = f'<p class="cinema-synopsis">{escape(synopsis)}</p>' 
+        synopsis_html = (
+            f'<p class="cinema-section-title">Synopsis</p>'
+            f'<p class="cinema-synopsis">{escape(synopsis)}</p>'
+        )
 
     # Pastilles score
     signals = row.get("signals") or []
     pills_html = ""
     if signals:
         pills = "".join(_signal_pill(s) for s in signals)
-        pills_html = f'<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.25rem 0;">{pills}</div>'
+        pills_html = (
+            f'<p class="cinema-section-title">Pourquoi ce score ?</p>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.25rem 0;">{pills}</div>'
+        )
 
     # Casting — V135 : DISTRIBUTION EN CERCLES avec les visages TMDB
     # (acteurs + rôle dans CE contenu, réalisateur en tête si dispo).
@@ -3693,6 +3910,7 @@ def _render_cinema_detail_body(row: dict) -> None:
             "name": str(member["name"]).strip(),
             "role": str(member.get("character") or "").strip(),
             "photo": str(member.get("profile_path") or "").strip(),
+            "tmdb_id": int(member.get("id") or 0) or 0,  # V136 : lien fiche TMDB
         })
         if len(cast_members) >= 8:
             break
@@ -3707,10 +3925,11 @@ def _render_cinema_detail_body(row: dict) -> None:
                 "name": str(member["name"]).strip(),
                 "role": "Réalisation",
                 "photo": str(member.get("profile_path") or "").strip(),
+                "tmdb_id": int(member.get("id") or 0) or 0,
             }
             break
     if not director_member and directors:
-        director_member = {"name": str(directors[0]), "role": "Réalisation", "photo": ""}
+        director_member = {"name": str(directors[0]), "role": "Réalisation", "photo": "", "tmdb_id": 0}
 
     def _cast_card(member: dict) -> str:
         name = escape(member["name"])
@@ -3726,10 +3945,19 @@ def _render_cinema_detail_body(row: dict) -> None:
         else:
             initials = "".join(w[0] for w in member["name"].split()[:2]).upper()
             face = f'<span class="cast-initials">{escape(initials)}</span>'
-        return (
-            f'<div class="cast-card"><div class="cast-face">{face}</div>'
-            f'<span class="cast-name">{name}</span>{role_html}</div>'
+        inner = (
+            f'<div class="cast-face">{face}</div>'
+            f'<span class="cast-name">{name}</span>{role_html}'
         )
+        # V136 — la carte acteur est CLIQUABLE → fiche TMDB de l'acteur
+        person_id = int(member.get("tmdb_id") or 0)
+        if person_id:
+            return (
+                f'<a class="cast-card cast-link" target="_blank" rel="noopener noreferrer"'
+                f' href="https://www.themoviedb.org/person/{person_id}"'
+                f' title="Voir la fiche de {name} sur TMDB">{inner}</a>'
+            )
+        return f'<div class="cast-card">{inner}</div>'
 
     casting_html = ""
     if director_member or cast_members:
@@ -3748,8 +3976,20 @@ def _render_cinema_detail_body(row: dict) -> None:
             cast_bits.append("👥 " + escape(", ".join(map(str, people[:6]))))
         casting_html = f'<p class="cinema-casting">{" · ".join(cast_bits)}</p>'
 
-    # Liens (déjà HTML via _content_links_html)
-    links_html = _content_links_html(ids, raw_title, is_show=(row.get("type") == "Série"))
+    # V136 — bande-annonce (iframe YouTube, lazy) — après la distribution
+    trailer_html = ""
+    if trailer_key:
+        trailer_html = (
+            f'<p class="cinema-section-title">Bande-annonce</p>'
+            f'<div style="width:100%;margin:.15rem 0 .25rem;">'
+            f'<iframe src="https://www.youtube.com/embed/{escape(trailer_key)}?rel=0" '
+            f'style="width:100%;aspect-ratio:16/9;border:0;border-radius:10px;background:rgba(0,0,0,.35);" '
+            f'loading="lazy" allowfullscreen title="Bande-annonce"></iframe></div>'
+        )
+
+    # Liens (déjà HTML via _content_links_html) — V136 : recherche JustWatch
+    # avec le TITRE FRANÇAIS (meilleurs résultats sur JustWatch France).
+    links_html = _content_links_html(ids, display_title, is_show=(row.get("type") == "Série"))
 
     # Ce CSS est injecté DANS le markdown du dialog : il n'existe que
     # pendant que la fiche est ouverte (retiré du DOM à la fermeture) —
@@ -3811,6 +4051,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"{synopsis_html}"
         f"{pills_html}"
         f"{casting_html}"
+        f"{trailer_html}"
         f"{links_html}"
         f"</div></div></div>",
         unsafe_allow_html=True,
@@ -9193,6 +9434,7 @@ def _handle_source_action(action: str) -> None:
             cookies.remove("msl_mdblist_data_loaded")
         except Exception:
             pass
+        _forget_saved_session()  # V136 : plus de restauration auto après déconnexion
         for key in (
             "_normalized_dataset",
             "_source_genre_cache",
@@ -9372,6 +9614,7 @@ def _render_zip_import_screen() -> None:
                         data = cached_zip
                         st.session_state["_normalized_dataset"] = data
                         st.session_state.pop("_source_genre_cache", None)
+                        _remember_dataset_key(zip_key)  # V136 : restauration auto GSM
                         enrich_msg += " · données déjà enrichies TMDB (mémoire du serveur) réutilisées"
                     elif not _ENRICH_STATE["in_flight"].get(zip_key):
                         import threading as _threading
@@ -9380,6 +9623,7 @@ def _render_zip_import_screen() -> None:
                             target=_enrich_in_background, args=(zip_key, data), daemon=True
                         ).start()
                         tmdb_enrich_started = True
+                        _remember_dataset_key(zip_key)  # V136 : restauration auto GSM
                 if tmdb_enrich_started:
                     enrich_msg += (
                         " · 🎬 enrichissement TMDB lancé en arrière-plan : genres, acteurs, "
@@ -10316,6 +10560,7 @@ try:
 except Exception:
     pass
 
+_auto_restore_session()  # V136 — retour d'arrière-plan GSM : données+page+filtres restaurés sans appel API
 page = navigation()
 header()
 if page == "🏠 Tableau de bord":
@@ -10343,4 +10588,5 @@ elif page == "📦 Migration Trakt → MDBList":
 else:
     placeholder(page)
 
+_save_session_snapshot()  # V136 — mémorise page + filtres pour la prochaine session (GSM)
 st.caption(f"{APP_NAME} · {APP_VERSION} · aucun accès Trakt requis")

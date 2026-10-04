@@ -58,7 +58,8 @@ def available_progress_genres(rows: Iterable[dict[str, Any]]) -> list[str]:
 
 def _title(row: dict[str, Any]) -> str:
     show = row.get("show") if isinstance(row.get("show"), dict) else {}
-    return str(show.get("title") or show.get("name") or "").strip()
+    # V136 — titre FRANÇAIS en priorité (repli titre original).
+    return str(show.get("title_fr") or show.get("title") or show.get("name") or "").strip()
 
 
 def _timestamp(value: Any) -> float | None:
