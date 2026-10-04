@@ -702,6 +702,73 @@ st.markdown(
         box-shadow: 0 8px 20px rgba(0, 0, 0, .45);
     }
     .cast-link:hover .cast-name { color: #fff; }
+    /* V137 — FICHE ACTEUR (dialog intégrée) : en-tête photo ronde + bio
+       FR + crédits croisés avec TON historique. */
+    .actor-head {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        padding: .8rem 1rem .4rem;
+    }
+    .actor-photo {
+        width: 96px;
+        height: 96px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid var(--am-yellow);
+        box-shadow: 0 8px 22px rgba(0, 0, 0, .5);
+        flex-shrink: 0;
+    }
+    .actor-name { font-size: 1.3rem; font-weight: 900; color: #fff; margin: 0; line-height: 1.2; }
+    .actor-meta { color: var(--am-text-muted); font-size: .82rem; margin-top: .15rem; line-height: 1.4; }
+    .actor-bio {
+        font-size: .82rem !important;
+        color: #b0ccc8 !important;
+        line-height: 1.55 !important;
+        margin: .5rem 1rem .2rem !important;
+    }
+    .actor-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: .45rem;
+        padding: .15rem 1rem .3rem;
+    }
+    .actor-credit {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        background: rgba(8, 55, 50, .55);
+        border: 1px solid rgba(0, 163, 146, .35);
+        border-radius: 10px;
+        padding: 4px 10px 4px 4px;
+        max-width: 290px;
+    }
+    .actor-credit img {
+        width: 34px;
+        height: 50px;
+        border-radius: 6px;
+        object-fit: cover;
+        flex-shrink: 0;
+        background: rgba(0, 0, 0, .3);
+    }
+    .actor-credit .noimg {
+        width: 34px; height: 50px; border-radius: 6px; flex-shrink: 0;
+        display: flex; align-items: center; justify-content: center;
+        background: rgba(0, 0, 0, .3); font-size: .9rem;
+    }
+    .actor-credit .t { font-size: .74rem; font-weight: 700; color: var(--am-text); line-height: 1.15; }
+    .actor-credit .d { font-size: .63rem; color: var(--am-text-muted); line-height: 1.25; }
+    .actor-section-title {
+        font-size: .8rem; font-weight: 800; letter-spacing: .04em;
+        color: var(--am-yellow); text-transform: uppercase;
+        margin: .9rem 1rem .25rem;
+    }
+    .actor-count {
+        display: inline-block; font-size: .68rem; font-weight: 800;
+        color: var(--am-yellow); background: rgba(255, 225, 0, .1);
+        border: 1px solid rgba(255, 225, 0, .4); border-radius: 999px;
+        padding: 0 .45rem; margin-left: .35rem; vertical-align: middle;
+    }
     .cinema-chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
     .cinema-section-title {
         font-size: .8rem;
@@ -1261,6 +1328,15 @@ st.markdown(
         + div[data-testid="stElementContainer"] {
         margin-top: 0 !important;  /* la marge basse de la carte est déjà à 0 */
     }
+    /* V137 — tuiles resserrées : l'écart entre deux cartes successives est
+       réduit (retour utilisateur), et la carte remonte vers l'élément
+       précédent pour compacter les listes. */
+    .media-list-card {
+        margin: .18rem 0 !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) {
+        margin-top: -0.55rem !important;
+    }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
@@ -1268,10 +1344,13 @@ st.markdown(
         background: rgba(8, 55, 50, .62) !important;
         border: 1px solid rgba(0, 163, 146, .45) !important;
         border-top: 1px solid rgba(0, 163, 146, .28) !important;
-        border-left: 3px solid var(--am-yellow) !important;
+        border-left: 4px solid var(--am-yellow) !important;  /* V137 : 4px, exactement comme la tuile */
         border-radius: 0 0 13px 13px !important;
         color: var(--am-text) !important;
+        font-size: .85rem !important;
         font-weight: 600 !important;
+        padding: .14rem .6rem !important;   /* V137 : pied de tuile plus bas */
+        min-height: 30px !important;        /* V137 : neutralise min-height:48px Streamlit */
         box-shadow: none !important;
         transition: background .16s ease, border-color .16s ease, box-shadow .16s ease !important;
     }
@@ -3153,17 +3232,24 @@ def _save_session_snapshot() -> None:
 
 
 def _auto_restore_session() -> None:
-    """V136 — Restaure AUTOMATIQUEMENT les données d'une session précédente.
+    """V136/V137 — Restaure AUTOMATIQUEMENT les données d'une session précédente.
 
     Cas GSM : l'app passe en arrière-plan → Android ferme la page → au
-    retour, NOUVELLE session (état vide). Si le dataset enrichi vit encore
-    dans `_ENRICH_STATE`, on le restaure SANS AUCUN appel réseau, avec la
-    page active et les filtres d'avant. Sinon (conteneur redémarré), on ne
-    fait rien : l'utilisateur charge normalement depuis le Tableau de bord.
+    retour, NOUVELLE session Streamlit (état vide).
+
+    V137 — deux améliorations sur la V136 :
+    1. ON RÉESSAIE À CHAQUE RUN tant que les données manquent : le
+       contrôleur de cookies peut ne PAS être prêt au 1er run d'une session
+       (handshake JS) → la V136 ne tentait qu'une fois et ratait la
+       restauration si le cookie n'était pas encore lisible.
+    2. Si la mémoire du serveur a le dataset : restauration instantanée,
+       zéro appel réseau. SINON (conteneur redémarré) mais que l'utilisateur
+       était connecté et avait chargé ses données (cookie 30 j) : on
+       relance LE CHARGEMENT AUTOMATIQUEMENT — plus d'aller-retour manuel
+       vers le Tableau de bord (les caches serveur servent ce qu'ils ont).
     """
-    if st.session_state.get("_normalized_dataset") or st.session_state.get("_msl_auto_restore_tried"):
+    if st.session_state.get("_normalized_dataset"):
         return
-    st.session_state["_msl_auto_restore_tried"] = True
     try:
         key = st.session_state.get("_dataset_cache_key") or _dataset_cache_key_cookie()
     except Exception:
@@ -3171,17 +3257,38 @@ def _auto_restore_session() -> None:
     if not key:
         return
     data = _ENRICH_STATE["datasets"].get(key)
-    if not isinstance(data, dict) or data.get("schema_version") != NORMALIZED_SCHEMA_VERSION:
+    if isinstance(data, dict) and data.get("schema_version") == NORMALIZED_SCHEMA_VERSION:
+        st.session_state["_normalized_dataset"] = data
+        st.session_state["_dataset_cache_key"] = key
+        snap = _session_snapshots()
+        saved_page = snap["page"].get(key)
+        if saved_page in PAGES:
+            st.session_state["page_active"] = saved_page
+        for k, v in (snap["filters"].get(key) or {}).items():
+            st.session_state.setdefault(k, v)
+        st.session_state["_msl_restored_from_memory"] = True
+        if not st.session_state.get("_msl_restore_toasted"):
+            st.session_state["_msl_restore_toasted"] = True
+            try:
+                st.toast("🔄 Session restaurée — tes données, ta page et tes filtres sont de retour")
+            except Exception:
+                pass
         return
-    st.session_state["_normalized_dataset"] = data
-    st.session_state["_dataset_cache_key"] = key
-    snap = _session_snapshots()
-    saved_page = snap["page"].get(key)
-    if saved_page in PAGES:
-        st.session_state["page_active"] = saved_page
-    for k, v in (snap["filters"].get(key) or {}).items():
-        st.session_state.setdefault(k, v)
-    st.session_state["_msl_restored_from_memory"] = True
+    # Mémoire vide (serveur redémarré) → rechargement AUTOMATIQUE si
+    # l'utilisateur était connecté et avait déjà chargé ses données.
+    # (Jamais pour les ZIP : le fichier local est nécessaire.)
+    try:
+        already_loaded = str(cookies.get("msl_mdblist_data_loaded") or "") == "1"
+    except Exception:
+        already_loaded = False
+    if (
+        already_loaded
+        and not key.startswith("zip_")
+        and mdb_oauth.is_connected()
+        and not st.session_state.get("_msl_auto_load_tried")
+    ):
+        st.session_state["_msl_auto_load_tried"] = True
+        load_mdblist_dataset()  # sert les caches serveur, sinon API MDBList
 
 
 def _enrich_in_background(cache_key: str, data: dict) -> None:
@@ -3949,13 +4056,26 @@ def _render_cinema_detail_body(row: dict) -> None:
             f'<div class="cast-face">{face}</div>'
             f'<span class="cast-name">{name}</span>{role_html}'
         )
-        # V136 — la carte acteur est CLIQUABLE → fiche TMDB de l'acteur
+        # V137 — la carte acteur est CLIQUABLE → FICHE ACTEUR INTÉGRÉE
+        # (lien ?acteur=ID, comme les signets : la page se recharge et la
+        # fiche s'ouvre automatiquement). La fiche TMDB reste accessible
+        # depuis la fiche acteur.
         person_id = int(member.get("tmdb_id") or 0)
         if person_id:
+            from urllib.parse import urlencode as _urlencode
+            try:
+                params = dict(st.query_params)
+            except Exception:
+                params = {}
+            params["acteur"] = str(person_id)
+            href = "?" + _urlencode(params)
+            # ⚠️ target="_self" OBLIGATOIRE : Streamlit force target="_blank"
+            # sur tous les <a> du HTML markdown (vérifié dans Chromium) —
+            # sans cet attribut explicite, la fiche acteur s'ouvrirait dans
+            # un NOUVEL onglet au lieu de remplacer la page.
             return (
-                f'<a class="cast-card cast-link" target="_blank" rel="noopener noreferrer"'
-                f' href="https://www.themoviedb.org/person/{person_id}"'
-                f' title="Voir la fiche de {name} sur TMDB">{inner}</a>'
+                f'<a class="cast-card cast-link" href="{escape(href, quote=True)}" target="_self"'
+                f' title="Voir la fiche de {name}">{inner}</a>'
             )
         return f'<div class="cast-card">{inner}</div>'
 
@@ -4048,8 +4168,8 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"{chips_html}"
         f"{tagline_html}"
         f"{score_html}"
-        f"{synopsis_html}"
         f"{pills_html}"
+        f"{synopsis_html}"
         f"{casting_html}"
         f"{trailer_html}"
         f"{links_html}"
@@ -4067,7 +4187,285 @@ def _cinema_detail_dialog() -> None:
 def _open_cinema_detail(row: dict) -> None:
     """Ouvre la fiche cinéma d'une carte (bouton 🎬)."""
     st.session_state["_cinema_detail_row"] = row
+    # V137 — mémorise la fiche ouverte (cache_resource, survit aux
+    # rechargements de page) : le bouton « ← Revenir au film » de la fiche
+    # acteur fonctionne même après la navigation ?acteur=…
+    try:
+        key = st.session_state.get("_dataset_cache_key") or "_anon"
+        _session_snapshots()["last_fiche_row"] = {"key": key, "row": row}
+    except Exception:
+        pass
     _cinema_detail_dialog()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# V137 — FICHE ACTEUR INTÉGRÉE (dialog) : photo, bio FR, et surtout
+# le CROISEMENT avec TON historique (« déjà vus avec cet acteur »).
+# Ouverte via les cercles de la fiche film (lien ?acteur=ID) — un lien
+# HTML ne pouvant pas déclencher Python, on passe par l'URL (comme les
+# signets) : la page se recharge et la fiche s'ouvre automatiquement.
+# ═══════════════════════════════════════════════════════════════════
+
+def _actor_dialog_chrome_css() -> str:
+    """Habillage de la fenêtre fiche acteur : même verre vert opaque que
+    la fiche film (couleur neutre du thème — pas de couleur du film ici)."""
+    return (
+        "<style>"
+        '[data-testid="stDialog"]{background:rgba(1,8,7,.62)!important;}'
+        '[data-testid="stDialog"]>div{'
+        "background:linear-gradient(180deg,rgb(6,34,30) 0%,rgb(6,34,30) 55%,rgb(3,22,19) 100%)!important;"
+        "border:1px solid rgba(0,163,146,.30)!important;"
+        "box-shadow:0 26px 90px rgba(0,0,0,.60)!important;"
+        "overflow:hidden!important;}"
+        '[data-testid="stDialog"] h2{display:none!important;}'
+        '[data-testid="stDialog"] section>div{padding:0 0 10px!important;}'
+        '[data-testid="stDialog"] button[aria-label="Close"]{'
+        "z-index:2000!important;top:10px!important;right:10px!important;"
+        "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
+        "padding:5px!important;}"
+        "</style>"
+    )
+
+
+def _render_actor_detail_body(person_id: int) -> None:
+    """Corps de la fiche acteur : en-tête, bio FR, crédits croisés avec
+    TES listes (✅ déjà vus · 📌 dans tes listes · 🎬 à découvrir)."""
+    api_key = _tmdb_api_key()
+    if not api_key or not person_id:
+        st.markdown(
+            '<div class="accent-callout">Fiche acteur indisponible (clé TMDB absente).</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    try:
+        person = _fetch_person_details(person_id, api_key) or {}
+        movie_credits = _fetch_person_credits("movie", person_id, api_key) or {}
+        tv_credits = _fetch_person_credits("tv", person_id, api_key) or {}
+    except Exception:
+        st.markdown(
+            '<div class="accent-callout">Fiche acteur momentanément indisponible (TMDB).</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    if not person.get("name"):
+        st.markdown('<div class="accent-callout">Acteur introuvable sur TMDB.</div>', unsafe_allow_html=True)
+        return
+
+    name = escape(str(person["name"]))
+    dept_raw = str(person.get("known_for_department") or "").strip().lower()
+    dept = {"acting": "Interprétation", "directing": "Réalisation", "writing": "Scénario",
+            "production": "Production", "sound": "Son", "camera": "Image"}.get(dept_raw, dept_raw or "Cinéma")
+    photo = str(person.get("profile_path") or "").strip()
+    bio = str(person.get("biography") or "").strip()
+
+    # ── crédits (films + séries), dédoublonnés par id TMDB ──
+    credits: dict[int, dict] = {}
+    for credit in (movie_credits.get("cast") or []):
+        if not isinstance(credit, dict) or not credit.get("id"):
+            continue
+        title = str(credit.get("title") or "").strip()
+        if not title:
+            continue
+        cid = int(credit["id"])
+        credits[cid] = {
+            "id": cid, "title": title, "kind": "Film",
+            "role": str(credit.get("character") or "").strip(),
+            "poster": str(credit.get("poster_path") or "").strip(),
+            "date": str(credit.get("release_date") or "").strip(),
+            "votes": int(credit.get("vote_count") or 0),
+        }
+    for credit in (tv_credits.get("cast") or []):
+        if not isinstance(credit, dict) or not credit.get("id"):
+            continue
+        title = str(credit.get("name") or "").strip()
+        if not title:
+            continue
+        cid = int(credit["id"])
+        if cid in credits:  # déjà compté côté film (rare) : on garde le film
+            continue
+        credits[cid] = {
+            "id": cid, "title": title, "kind": "Série",
+            "role": str(credit.get("character") or "").strip(),
+            "poster": str(credit.get("poster_path") or "").strip(),
+            "date": str(credit.get("first_air_date") or "").strip(),
+            "votes": int(credit.get("vote_count") or 0),
+        }
+
+    # ── croisement avec TES données (ids TMDB vus / en listes) ──
+    watched_ids: set[int] = set()
+    watchlist_ids: set[int] = set()
+    dataset = _dataset()
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+    for section, target in ((sections.get("watched") or {}, watched_ids),
+                            (sections.get("watchlist") or {}, watchlist_ids)):
+        for bucket in ("movies", "shows"):
+            for entry in (section.get(bucket) or []):
+                media = _unwrap_media(entry)
+                if not media:
+                    continue
+                tmdb = _media_tmdb_id(media)
+                if tmdb:
+                    target.add(tmdb)
+
+    vus = sorted(
+        (c for c in credits.values() if c["id"] in watched_ids),
+        key=lambda c: c["date"], reverse=True,
+    )
+    listes = sorted(
+        (c for c in credits.values() if c["id"] in watchlist_ids and c["id"] not in watched_ids),
+        key=lambda c: c["date"], reverse=True,
+    )
+    decouvrir = sorted(
+        (c for c in credits.values() if c["id"] not in watched_ids and c["id"] not in watchlist_ids),
+        key=lambda c: c["votes"], reverse=True,
+    )
+
+    def _credit_html(c: dict) -> str:
+        year = c["date"][:4] if len(c["date"]) >= 4 else ""
+        if c["poster"]:
+            img = (
+                f'<img src="https://image.tmdb.org/t/p/w92{escape(c["poster"], quote=True)}"'
+                f' alt="" loading="lazy">'
+            )
+        else:
+            img = '<span class="noimg">🎬</span>'
+        role = f" · {escape(c['role'])}" if c["role"] else ""
+        return (
+            f'<div class="actor-credit">{img}<div>'
+            f'<div class="t">{escape(c["title"])}</div>'
+            f'<div class="d">{c["kind"]}{(" · " + year) if year else ""}{role}</div>'
+            f"</div></div>"
+        )
+
+    head_photo = (
+        f'<img class="actor-photo" src="https://image.tmdb.org/t/p/w185{escape(photo, quote=True)}"'
+        f' alt="{name}" loading="lazy">' if photo else
+        '<div class="actor-photo" style="display:flex;align-items:center;justify-content:center;'
+        'font-size:2rem;">🎭</div>'
+    )
+    tmdb_link = (
+        f'<a class="link-pill" href="https://www.themoviedb.org/person/{person_id}"'
+        f' target="_blank" rel="noopener noreferrer" title="Fiche TMDB">Fiche TMDB</a>'
+    )
+    has_data = bool(watched_ids or watchlist_ids)
+
+    st.markdown(_actor_dialog_chrome_css(), unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="actor-head">{head_photo}<div style="min-width:0;">'
+        f'<p class="actor-name">{name}</p>'
+        f'<p class="actor-meta">{escape(dept)} · {len(credits)} titre(s) au compteur</p>'
+        f'<div style="margin-top:.35rem;">{tmdb_link}</div>'
+        f"</div></div>",
+        unsafe_allow_html=True,
+    )
+    if bio:
+        shown = bio if len(bio) <= 520 else bio[:bio.find(" ", 480) if bio.find(" ", 480) > 0 else 480] + "…"
+        st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
+    if not has_data:
+        st.markdown(
+            '<div class="accent-callout" style="margin:0 1rem;">Charge tes données depuis le Tableau '
+            "de bord pour voir ce que tu as <strong>déjà vu</strong> avec cet acteur.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        if vus:
+            extra = f'<span class="actor-count">{len(vus)}</span>'
+            shown = vus[:30]
+            more = f'<p class="actor-meta" style="margin:.2rem 1rem;">+ {len(vus) - 30} autre(s)…</p>' if len(vus) > 30 else ""
+            st.markdown(
+                f'<p class="actor-section-title">✅ Déjà vus avec cet acteur {extra}</p>'
+                f'<div class="actor-grid">{"".join(_credit_html(c) for c in shown)}</div>{more}',
+                unsafe_allow_html=True,
+            )
+        if listes:
+            extra = f'<span class="actor-count">{len(listes)}</span>'
+            shown = listes[:30]
+            more = f'<p class="actor-meta" style="margin:.2rem 1rem;">+ {len(listes) - 30} autre(s)…</p>' if len(listes) > 30 else ""
+            st.markdown(
+                f'<p class="actor-section-title">📌 Dans tes listes {extra}</p>'
+                f'<div class="actor-grid">{"".join(_credit_html(c) for c in shown)}</div>{more}',
+                unsafe_allow_html=True,
+            )
+        if decouvrir:
+            extra = f'<span class="actor-count">{len(decouvrir)}</span>'
+            st.markdown(
+                f'<p class="actor-section-title">🎬 À découvrir avec cet acteur {extra}</p>'
+                f'<div class="actor-grid">{"".join(_credit_html(c) for c in decouvrir[:12])}</div>',
+                unsafe_allow_html=True,
+            )
+        if not vus and not listes:
+            st.markdown(
+                '<p class="actor-meta" style="margin:.4rem 1rem;">Tu n\'as encore rien vu avec cet '
+                "acteur dans ton historique — regarde « À découvrir » ci-dessus 😉</p>",
+                unsafe_allow_html=True,
+            )
+    # Bouton retour film (si la fiche film est mémorisée).
+    # ⚠️ Mécanisme Streamlit 1.60 : un clic de widget DANS un dialog ne
+    # relance QUE le dialog (rerun scopé) — on ne peut pas y ouvrir un
+    # autre dialog (« Dialogs may not be nested »). Donc :
+    # 1. le clic pose un drapeau (callback on_click) ;
+    # 2. le rerun scopé re-rend le dialog, voit le drapeau et force un
+    #    rerun COMPLET (st.rerun(scope="app")) ;
+    # 3. le script principal consomme le drapeau (_handle_actor_param)
+    #    et ouvre la fiche film hors de tout dialog.
+    if st.session_state.get("_cinema_detail_row"):
+        if st.session_state.get("_open_film_after_actor"):
+            st.rerun(scope="app")
+
+        def _back_to_film() -> None:
+            st.session_state["_open_film_after_actor"] = True
+
+        st.button(
+            "← Revenir au film",
+            key="actor_back_to_film",
+            use_container_width=True,
+            on_click=_back_to_film,
+        )
+
+
+@st.dialog(" ", width="large")
+def _actor_detail_dialog(person_id: int) -> None:
+    """Fenêtre modale : fiche acteur (V137)."""
+    _render_actor_detail_body(person_id)
+
+
+def _handle_actor_param() -> None:
+    """Ouvre la fiche acteur demandée par l'URL (?acteur=ID), comme les
+    signets. ⚠️ Supprimer le paramètre déclenche un RERUN qui effacerait le
+    dialog du run en cours → pattern en deux temps (prouvé par les
+    signets) : run 1 = on mémorise l'ID + on nettoie l'URL + rerun ;
+    run 2 = le dialog s'ouvre sur une page propre. On restaure aussi la
+    fiche film ouverte (mémoire du serveur) pour le bouton « ← Revenir au
+    film »."""
+    param = str(st.query_params.get("acteur") or "").strip()
+    if param:
+        try:
+            person_id = int(param)
+        except ValueError:
+            person_id = 0
+        # ⚠️ On ne supprime PAS le paramètre d'URL : modifier st.query_params
+        # déclenche des reruns en cascade qui refermaient le dialog à
+        # peine ouvert (constaté dans Chromium). À la place : un garde-fou
+        # de session — le dialog s'ouvre UNE fois par session pour un ID
+        # donné, même si le paramètre reste dans l'URL. Un rechargement
+        # complet (nouvelle session) le ré-ouvre — c'est même souhaitable.
+        consumed = st.session_state.get("_actor_params_consumed") or set()
+        if person_id and person_id not in consumed:
+            consumed.add(person_id)
+            st.session_state["_actor_params_consumed"] = consumed
+            if not st.session_state.get("_cinema_detail_row"):
+                try:
+                    snap = _session_snapshots()
+                    last = snap.get("last_fiche_row")
+                    if isinstance(last, dict) and isinstance(last.get("row"), dict):
+                        st.session_state["_cinema_detail_row"] = last["row"]
+                except Exception:
+                    pass
+            _actor_detail_dialog(person_id)
+    # « ← Revenir au film » depuis la fiche acteur : le callback on_click a
+    # posé le drapeau AVANT ce run → on rouvre la fiche film maintenant.
+    if st.session_state.pop("_open_film_after_actor", None):
+        _cinema_detail_dialog()
 
 
 def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
@@ -4746,6 +5144,28 @@ def _fetch_person_credits(kind: str, person_id: int, key: str) -> dict:
         raise RuntimeError(f"TMDB person/{person_id}/{kind}_credits a répondu HTTP {response.status_code}")
     try:
         return response.json()
+    except ValueError:
+        raise
+
+
+@st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : fiche personne
+def _fetch_person_details(person_id: int, key: str) -> dict:
+    """Détails d'une personne TMDB en FRANÇAIS (photo, bio, métier) —
+    V137 : fiche acteur intégrée. 404 → dict vide (mis en cache)."""
+    try:
+        response = requests.get(
+            f"https://api.themoviedb.org/3/person/{person_id}",
+            params={"api_key": key, "language": "fr-FR"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        raise
+    if response.status_code == 404:
+        return {}
+    if response.status_code != 200:
+        raise RuntimeError(f"TMDB person/{person_id} a répondu HTTP {response.status_code}")
+    try:
+        return response.json() or {}
     except ValueError:
         raise
 
@@ -10588,5 +11008,6 @@ elif page == "📦 Migration Trakt → MDBList":
 else:
     placeholder(page)
 
+_handle_actor_param()  # V137 — fiche acteur demandée par l'URL (?acteur=ID)
 _save_session_snapshot()  # V136 — mémorise page + filtres pour la prochaine session (GSM)
 st.caption(f"{APP_NAME} · {APP_VERSION} · aucun accès Trakt requis")
