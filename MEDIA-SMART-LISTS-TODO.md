@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 4 octobre 2026 · Dernière version déployée : V139.
+> Dernière mise à jour : 4 octobre 2026 · Dernière version déployée : V140.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -453,14 +453,16 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 
 ## V139 (4 octobre 2026) — ajouté par l'agent
 
-### Décisions utilisateur en attente
-- [ ] **Maquette couleurs des pastilles/texte** (fichiers `maquette-couleurs-v3.png/.html`) :
-      choisir Actuel (jaune + gris, recommandé) / Tout-accent / Compromis intelligent
-      (accent seulement si couleur assez foncée). Rien appliqué dans l'app.
-- [ ] **Barres de progression en vague** (`maquette-vagues-v3.png/.html`) : choisir
-      Option A (tout en vague) ou B (vague sur le vu + reste plat façon Spotify) ;
-      où l'appliquer (séries en cours / films en cours / % tuiles / barre fiche) ;
-      animation continue ou au survol. Rien appliqué dans l'app.
+### Décisions utilisateur PRISES (04/10/2026 — appliquées en V140)
+- [x] **Couleurs : TOUT-ACCENT** choisi (texte des pastilles + synopsis + casting
+      dans la couleur du film, accent éclairci pour la lisibilité).
+- [x] **Barres : Option B** (vague sur le vu + reste plat façon Spotify), animée —
+      appliquée à la barre de la fiche (couleur d'accent) et aux tuiles
+      « Que regarder ? » (vert/jaune, statique). ⚠️ ROLLBACK FACILE : constante
+      `WAVE_BARS = True` en tête de `_wave_bar_html` dans app.py → `False` pour
+      revenir aux barres plates d'avant (les deux codes coexistent).
+- [ ] À réévaluer après test : si les vagues prennent trop de place à l'écran,
+      repasser `WAVE_BARS` à False (demande utilisateur).
 
 ### Réflexion ouverte (demande utilisateur 04/10/2026)
 - [ ] **Accès à la fiche des contenus VUS récemment (< 1 an)** : un contenu vu il y a
@@ -485,3 +487,13 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] Sections « La saga » (volets + badges ✅ Vu / 📂 nom de liste / 📌 Watchlist /
       🌐 Hors de tes listes) et « Similaires » (recommandations TMDB croisées).
 - [x] Bouton « Voir la fiche » : MAJUSCULES + Manrope 900.
+
+### Fait en V140
+- [x] Heatmap épisodes : contraste RELATIF (min-max de la série, comme les vraies
+      heatmaps) — quelques dixièmes d'écart se voient maintenant ; curseur normal
+      (le « ? » était le curseur d'aide, pas un texte).
+- [x] Bouton « VOIR LA FICHE » : style .mc-type (petit, très gras, majuscules espacées).
+- [x] Cartes Similaires/Saga : titres limités à 2 lignes, badges alignés en bas.
+- [x] Statistiques → « Détail des visionnages » : lignes CLIQUABLES → fiche du contenu.
+- [x] « Que regarder ? » : case « 👁️ Inclure les vus récemment (moins d'un an) » →
+      ils remontent dans « Déjà vu mais ça correspond » (fiches consultables).

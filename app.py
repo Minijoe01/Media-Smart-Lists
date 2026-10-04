@@ -731,21 +731,38 @@ st.markdown(
     .ep-cells { display: flex; gap: 3px; }
     /* V139 — SIMILAIRES / SAGA : mini-cartes + badges d'état */
     .sim-strip { display: flex; gap: .55rem; overflow-x: auto; padding: .45rem .1rem .35rem; scrollbar-width: thin; }
-    .sim-card { flex: 0 0 auto; width: 84px; text-align: center; }
+    /* V140 — cartes à hauteur FIXE : titre limité à 2 lignes, badge
+       toujours aligné en bas (retour utilisateur : les dates/pastilles
+       étaient décalées quand un titre était long). */
+    .sim-card { flex: 0 0 auto; width: 84px; text-align: center;
+                display: flex; flex-direction: column; align-items: center; }
     .sim-card img { width: 84px; height: 126px; border-radius: 9px; object-fit: cover; box-shadow: 0 8px 18px rgba(0, 0, 0, .45); }
     .sim-noimg { display: flex; width: 84px; height: 126px; border-radius: 9px; align-items: center;
                  justify-content: center; background: rgba(0, 0, 0, .35); font-size: 1.6rem; }
     .sim-card .t { font-size: .7rem; font-weight: 800; color: var(--am-text); margin-top: .28rem;
-                   line-height: 1.15; overflow-wrap: anywhere; }
-    .sim-card .d { font-size: .63rem; color: var(--am-text-muted); margin-top: 1px; }
+                   line-height: 1.15; overflow-wrap: anywhere;
+                   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+                   overflow: hidden; min-height: 2.3em; max-width: 100%; }
+    .sim-card .d { font-size: .63rem; color: var(--am-text-muted); margin-top: 1px; min-height: 1em; }
     .sim-badge {
-        display: inline-block; margin-top: .28rem; font-size: .58rem; font-weight: 800;
+        display: inline-block; margin-top: auto; font-size: .58rem; font-weight: 800;
         border-radius: 999px; padding: .1rem .4rem; max-width: 84px; overflow: hidden;
         text-overflow: ellipsis; white-space: nowrap; vertical-align: top;
     }
     .sim-badge.vu { background: rgba(0, 163, 146, .2); border: 1px solid rgba(0, 163, 146, .55); color: #7ce0d4; }
     .sim-badge.liste { background: rgba(255, 225, 0, .1); border: 1px solid rgba(255, 225, 0, .5); color: var(--am-yellow); }
     .sim-badge.hors { background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .18); color: var(--am-text-muted); }
+    /* V140 — animation des vagues : translation d'EXACTEMENT une
+       longueur d'onde → boucle parfaite sans couture. */
+    @keyframes msl-wave-drift {
+        from { transform: translateX(0px); }
+        to { transform: translateX(-139.13px); }
+    }
+    .msl-wave-drift { animation: msl-wave-drift 2.8s linear infinite; }
+    /* V140 — curseur NORMAL sur les cellules : le cursor:help des
+       info-bulles affichait un point d'interrogation qui perturbait
+       (retour utilisateur) — l'info-bulle suffit. */
+    .ep-cell, .ep-cell[data-tooltip] { cursor: default !important; }
     .ep-cell {
         min-width: 24px; height: 24px; border-radius: 6px;
         font-size: .58rem; font-weight: 800; color: rgba(255, 255, 255, .94);
@@ -1408,10 +1425,10 @@ st.markdown(
         border-radius: 0 0 13px 13px !important;
         color: var(--am-text) !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .95rem !important;
-        font-weight: 900 !important;
+        font-size: .74rem !important;
+        font-weight: 800 !important;
         text-transform: uppercase !important;
-        letter-spacing: .07em !important;
+        letter-spacing: .09em !important;
         padding: .14rem .6rem !important;   /* V137 : pied de tuile plus bas */
         min-height: 30px !important;        /* V137 : neutralise min-height:48px Streamlit */
         box-shadow: none !important;
@@ -3743,6 +3760,117 @@ _CINEMA_STATUS_FR = {
 }
 
 
+# V140 — BARRES DE PROGRESSION EN VAGUE (décision utilisateur : Option B,
+# « vague sur le vu + reste plat façon Spotify », animée).
+# ⚠️ Pour REVENIR aux barres plates d'avant : passer WAVE_BARS à False
+# (les deux codes coexistent — rollback en une ligne, comme demandé).
+WAVE_BARS = True
+
+# longueur d'onde FIXE (unités du viewBox) → boucle d'animation sans couture
+_WAVE_WAVELENGTH = 139.13
+
+
+def _wave_bar_html(
+    pct: float,
+    played_color: str,
+    rest_color: str,
+    height: int = 26,
+    width: int = 640,
+    animated: bool = True,
+    key: str = "",
+) -> str:
+    """Barre « LIGNE EN VAGUE » — Option B : la partie jouée est une vague
+    épaisse (animée en continu si animated), le reste un trait PLAT, un
+    point blanc marque la position. Code couleur : vert = déjà vu,
+    jaune = reste à voir (ou couleur d'accent dans la fiche)."""
+    import math as _math
+
+    pct = max(0.0, min(100.0, float(pct or 0)))
+    y = height // 2
+    amp = max(2.0, height * 0.12)  # vague DISCRÈTE (retour utilisateur)
+    px = width * pct / 100.0
+    stroke_w = max(3.5, height * 0.17)
+    uid = f"{key}_{int(pct)}_{height}_{width}".replace("-", "m")
+
+    def _pts(x0: float, x1: float, steps: int = 110) -> str:
+        out = []
+        span = max(x1 - x0, 0.01)
+        for i in range(steps + 1):
+            x = x0 + span * i / steps
+            yy = y + amp * _math.sin(2 * _math.pi * x / _WAVE_WAVELENGTH)
+            out.append(f"{x:.1f},{yy:.1f}")
+        return "M" + " L".join(out)
+
+    if animated and px > 4:
+        played = (
+            f'<clipPath id="wvc{uid}"><rect x="0" y="0" width="{px:.1f}" height="{height}"/></clipPath>'
+            f'<g clip-path="url(#wvc{uid})">'
+            f'<path class="msl-wave-drift" d="{_pts(0, px * 3)}" fill="none" stroke="{played_color}"'
+            f' stroke-width="{stroke_w:.1f}" stroke-linecap="round"/></g>'
+        )
+    elif px > 1:
+        played = (
+            f'<path d="{_pts(0, px)}" fill="none" stroke="{played_color}"'
+            f' stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>'
+        )
+    else:
+        played = ""
+    rest = (
+        f'<path d="M{px:.1f},{y} L{width},{y}" fill="none" stroke="{rest_color}"'
+        f' stroke-width="2.6" stroke-linecap="round" opacity=".75"/>'
+    )
+    dot = (
+        f'<circle cx="{px:.1f}" cy="{y}" r="{max(3.4, height * 0.15):.1f}" fill="#fff"'
+        f' stroke="#001412" stroke-width="1.3"/>'
+        if px > 2 else ""
+    )
+    return (
+        f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none"'
+        f' style="width:100%;height:{height}px;display:block;">{played}{rest}{dot}</svg>'
+    )
+
+
+def _history_fiche_row(history_row: dict) -> dict | None:
+    """Construit une ligne « fiche cinéma » depuis une ligne d'historique
+    (Statistiques → Détail des visionnages, V140 : lignes cliquables).
+    Retrouve le média complet dans le dataset par identifiant TMDB —
+    sinon repart de la ligne elle-même."""
+    if not isinstance(history_row, dict):
+        return None
+    ids = history_row.get("ids") if isinstance(history_row.get("ids"), dict) else {}
+    try:
+        tmdb = int(ids.get("tmdb") or 0) or None
+    except (TypeError, ValueError):
+        tmdb = None
+    media = None
+    kind = ""
+    if tmdb:
+        for candidate, candidate_kind in _all_media(_dataset()):
+            if _media_tmdb_id(candidate) == tmdb:
+                media, kind = candidate, candidate_kind
+                break
+    if media is None:
+        media = dict(history_row)
+        kind = "tv" if history_row.get("type") in ("Épisode", "Série") else "movie"
+    is_show = str(kind).startswith("tv") or history_row.get("type") in ("Épisode", "Série")
+    note = None
+    try:
+        score_avg = float(media.get("score_average") or 0)
+        if score_avg:
+            note = round(score_avg / 10, 1)
+    except (TypeError, ValueError):
+        note = None
+    return {
+        "item": media,
+        "key": f"hist_{tmdb or id(history_row)}",
+        "type": "Série" if is_show else "Film",
+        "genres": media.get("genres") or history_row.get("genres") or [],
+        "note": note,
+        "runtime": media.get("runtime"),
+        "source": "Historique",
+    }
+
+
 def _seen_watchlist_listname_ids() -> tuple[set, set, dict]:
     """(ids TMDB vus, ids en watchlist, {id: nom de la liste qui le
     contient}) — sert aux sections Similaires / Saga de la fiche."""
@@ -3976,10 +4104,16 @@ def _render_cinema_detail_body(row: dict) -> None:
     # barre de score, liens, cercles acteurs, titre de section.
     ar, ag, ab = a_rgb
     a2r, a2g, a2b = a2_rgb
+    # V140 — « TOUT-ACCENT » (décision utilisateur sur maquette v3) : le
+    # TEXTE des pastilles + synopsis + casting prend la couleur du film
+    # (accent éclairci pour la lisibilité). La barre, les cercles, liens et
+    # titres de section étaient déjà accentués.
+    a3_rgb = tuple(int(c + (255 - c) * 0.35) for c in a_rgb)  # accent + 35% blanc
     accent_css = (
         f".cinema-chips .mc-year,.cinema-chips .mc-note{{"
         f"background:rgba({ar},{ag},{ab},.14)!important;"
-        f"border:1px solid rgba({ar},{ag},{ab},.38)!important;}}"
+        f"border:1px solid rgba({ar},{ag},{ab},.38)!important;"
+        f"color:rgb({a2r},{a2g},{a2b})!important;}}"
         f".cinema-info .progress-bar-container{{background:rgba(255,255,255,.10)!important;}}"
         f".cinema-info .progress-bar-fill{{"
         f"background:linear-gradient(90deg,rgb({ar},{ag},{ab}),rgb({a2r},{a2g},{a2b}))!important;}}"
@@ -3989,6 +4123,9 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"border-color:rgba({ar},{ag},{ab},.65)!important;}}"
         f".cinema-info .cinema-section-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
         f".cinema-info .cast-face{{border-color:rgba({ar},{ag},{ab},.55)!important;}}"
+        f".cinema-info .cinema-synopsis{{color:rgb({a2r},{a2g},{a2b})!important;}}"
+        f".cinema-info .cinema-casting{{color:rgb({a3_rgb[0]},{a3_rgb[1]},{a3_rgb[2]})!important;}}"
+        f".cinema-info .cinema-tagline{{color:rgb({a3_rgb[0]},{a3_rgb[1]},{a3_rgb[2]})!important;}}"
     )
 
     # ── Construire tous les fragments HTML ──
@@ -4125,13 +4262,25 @@ def _render_cinema_detail_body(row: dict) -> None:
     # Score bar (HTML, pas st.progress)
     score_val = int(round(row.get("score", 0)))
     friction_val = int(row.get("friction", 0))
-    score_html = (
-        f'<div class="progress-bar-container" style="margin:.4rem 0 .2rem;">'
-        f'<div class="progress-bar-fill" style="width:{max(0, min(score_val, 100))}%;"></div></div>'
-        f'<div style="font-size:.78rem;color:#9fc4c0;margin-bottom:.3rem;">'
-        f'<strong style="color:#fff;font-size:.9rem;">{score_val}/100</strong>'
-        f' · friction {friction_val}/100</div>'
-    )
+    if WAVE_BARS:
+        # V140 — barre de score en VAGUE (Option B) à la couleur d'accent
+        # du film, animée. WAVE_BARS = False → retour à la barre plate.
+        score_html = (
+            f'<div style="margin:.5rem 0 .35rem;">'
+            f'<div style="font-size:.78rem;color:#9fc4c0;margin-bottom:.3rem;">'
+            f'<strong style="color:#fff;font-size:.9rem;">{score_val}/100</strong>'
+            f' · friction {friction_val}/100</div>'
+            f'{_wave_bar_html(score_val, f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})", "rgba(255,255,255,.30)", height=26, key="fiche")}'
+            f'</div>'
+        )
+    else:
+        score_html = (
+            f'<div class="progress-bar-container" style="margin:.4rem 0 .2rem;">'
+            f'<div class="progress-bar-fill" style="width:{max(0, min(score_val, 100))}%;"></div></div>'
+            f'<div style="font-size:.78rem;color:#9fc4c0;margin-bottom:.3rem;">'
+            f'<strong style="color:#fff;font-size:.9rem;">{score_val}/100</strong>'
+            f' · friction {friction_val}/100</div>'
+        )
 
     # Synopsis (texte doux — V131.3) — V136 : titre de section
     synopsis_html = ""
@@ -4277,6 +4426,20 @@ def _render_cinema_detail_body(row: dict) -> None:
                 if season_payload:
                     seasons_payloads.append((season_number, season_payload))
             if seasons_payloads:
+                # V140 — CONTRASTE RELATIF (retour utilisateur : « c'est
+                # quelques dixièmes d'écart souvent ») : la plage de notes
+                # de CETTE série est étalée sur TOUT le dégradé, comme les
+                # vraies heatmaps (GitHub, Trakt…). Le moins bien noté =
+                # le plus sombre, le mieux noté = le plus clair, et chaque
+                # dixième d'écart se VOIT. Le halo ≥ 8.5 reste ABSOLU.
+                all_episode_votes = [
+                    float(e.get("vote_average") or 0)
+                    for _, sp in seasons_payloads
+                    for e in (sp.get("episodes") or [])
+                    if isinstance(e, dict)
+                ]
+                votes_min = min(all_episode_votes) if all_episode_votes else 0.0
+                votes_span = max((max(all_episode_votes) - votes_min) if all_episode_votes else 1.0, 0.001)
                 season_cards = []
                 heat_rows = []
                 for season_number, season_payload in seasons_payloads:
@@ -4305,11 +4468,9 @@ def _render_cinema_detail_body(row: dict) -> None:
                         episode_vote = float(episode.get("vote_average") or 0)
                         ep_num = episode.get("episode_number")
                         ep_num_txt = str(ep_num) if ep_num else "?"
-                        # V139 — CONTRASTE FORT (retour utilisateur daltonien) :
-                        # les notes d'épisodes vivent surtout entre 6 et 9 →
-                        # on étale cette plage sur TOUT le dégradé sombre→clair.
-                        t_ratio = max(0.0, min(1.0, (episode_vote - 5.5) / (9.2 - 5.5)))
-                        t_ratio = t_ratio ** 0.65 if t_ratio > 0 else 0.0
+                        # V140 — normalisation RELATIVE (min-max de la série)
+                        t_ratio = max(0.0, min(1.0, (episode_vote - votes_min) / votes_span))
+                        t_ratio = t_ratio ** 0.8 if t_ratio > 0 else 0.0
                         cell_rgb = (
                             int(d_rgb[0] + (a2_rgb[0] - d_rgb[0]) * t_ratio),
                             int(d_rgb[1] + (a2_rgb[1] - d_rgb[1]) * t_ratio),
@@ -4593,8 +4754,15 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">'
         f'<span class="score-badge" data-tooltip="{escape(friction_tip, quote=True)}">Friction {friction_val}/100</span>{score_inline}'
         f'</div>'
-        f'<div class="progress-bar-container"><div class="progress-bar-fill" '
-        f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
+        + (
+            _wave_bar_html(
+                float(row.get("score", 0)), "#00A392", "#FFE100",
+                height=16, width=320, animated=False, key=f"tile{row.get('key') or id(row)}",
+            )
+            if WAVE_BARS else
+            f'<div class="progress-bar-container"><div class="progress-bar-fill" '
+            f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
+        )
         + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
         + f'</div>{score_col}</div>'
     )
@@ -5289,6 +5457,7 @@ def _perfect_recommendation(
     search_text: str | None = None, duration_min: str = "Aucune",
     time_filter: str = "Aucune limite", status_filter: str = "Tous les statuts",
     preset: str = "Aucun preset", selected_styles: list | None = None,
+    include_recently_watched: bool = False,
 ) -> tuple[list[dict], list[dict]]:
     """Reco « Hors de mes listes » — GRAND BASSIN TMDB + TOUS les critères en ET.
 
@@ -5442,7 +5611,13 @@ def _perfect_recommendation(
     seen_recently: set[str] = set()
     seen_long_ago: dict[str, datetime | None] = {}
     for tid, when in watched_when.items():
-        if when is not None and (_now_ref - when).days <= 365:
+        # V140 — toggle « 👁️ Vus récemment » (Que regarder) : quand il est
+        # actif, les contenus vus il y a MOINS d'un an rejoignent la section
+        # « Déjà vu mais ça correspond » (ils sont normalement exclus — on
+        # ne recommande pas ce qu'on vient de voir — mais leurs fiches sont
+        # consultables ainsi, demande utilisateur).
+        recently = when is not None and (_now_ref - when).days <= 365
+        if recently and not include_recently_watched:
             seen_recently.add(tid)
         else:
             seen_long_ago[tid] = when
@@ -6587,6 +6762,16 @@ def render_watchlist_page() -> None:
             "💡 Un preset combine plusieurs critères d'un coup (durée, type, note, saga…). "
             "Une envie simple ? → 🏷️ Genres ou 🎭 Styles."
         )
+        # V140 — inclure les contenus VUS il y a moins d'un an : ils
+        # apparaissent alors dans « Déjà vu mais ça correspond » (fiches
+        # consultables — demandé pour accéder aux fiches des vus récents).
+        st.checkbox(
+            "👁️ Inclure les vus récemment (moins d'un an)",
+            key="qr_include_recent",
+            help="Normalement exclus (on ne recommande pas ce qu'on vient de voir). "
+                 "Coche pour les faire remonter dans « Déjà vu mais ça correspond » "
+                 "et consulter leurs fiches.",
+        )
         excluded_genres = st.multiselect(
             "🚫 Genres à exclure",
             genre_titles,
@@ -7055,6 +7240,7 @@ def render_watchlist_page() -> None:
         duration_min, time_filter, status_filter, cast_mode, preset,
         tuple(selected_styles or []),
         str((_dataset() or {}).get("loaded_at") or ""),
+        bool(st.session_state.get("qr_include_recent")),  # V140 : toggle vus récemment
     )
     if st.session_state.get("_outside_sig") == _outside_sig:
         _perfect_results = st.session_state.get("_outside_results")
@@ -7085,6 +7271,7 @@ def render_watchlist_page() -> None:
                     status_filter=status_filter,
                     preset=preset,
                     selected_styles=selected_styles if selected_styles else None,
+                    include_recently_watched=bool(st.session_state.get("qr_include_recent")),
                 )
                 st.session_state["_outside_results"] = _perfect_results
                 st.session_state["_outside_sig"] = _outside_sig
@@ -9488,7 +9675,31 @@ def render_basic_stats_page() -> None:
             )
         st.markdown(f"#### Détail des visionnages ({len(visible)})")
         if table:
-            st.dataframe(table, width="stretch", hide_index=True)
+            st.caption("🖱️ Clique sur une ligne pour ouvrir sa fiche (bannière, saisons, casting…)")
+            _hist_event = st.dataframe(
+                table,
+                width="stretch",
+                hide_index=True,
+                on_select="rerun",
+                selection_mode="single-row",
+                key="stats_history_df",
+            )
+            _sel_rows: list = []
+            try:
+                _sel_rows = list(_hist_event.selection.get("rows") or [])
+            except Exception:
+                _sel_rows = []
+            if _sel_rows:
+                _idx = int(_sel_rows[0])
+                if 0 <= _idx < min(len(visible), display_limit):
+                    # une seule ouverture par changement de ligne (la
+                    # sélection PERSISTE entre les reruns — sans ce garde,
+                    # la fiche se rouvrirait à chaque interaction)
+                    if st.session_state.get("_stats_hist_last_idx") != _idx:
+                        st.session_state["_stats_hist_last_idx"] = _idx
+                        _fiche_candidate = _history_fiche_row(visible[_idx])
+                        if _fiche_candidate:
+                            _open_cinema_detail(_fiche_candidate)
         else:
             st.caption("Aucun visionnage ne correspond à ces filtres.")
         if len(visible) > display_limit:
