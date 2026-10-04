@@ -702,6 +702,39 @@ st.markdown(
         box-shadow: 0 8px 20px rgba(0, 0, 0, .45);
     }
     .cast-link:hover .cast-name { color: #fff; }
+    /* V138 — OÙ LE REGARDER : logos plateformes (FR) */
+    .prov-strip { display: flex; flex-wrap: wrap; gap: .5rem; padding: .15rem 0 .25rem; }
+    .prov-logo {
+        width: 46px; height: 46px; border-radius: 50%;
+        background: rgba(0, 0, 0, .38); padding: 5px;
+        border: 1px solid rgba(255, 255, 255, .16);
+        transition: transform .16s ease, border-color .16s ease;
+    }
+    .prov-logo:hover { transform: translateY(-3px) scale(1.06); border-color: rgba(255, 225, 0, .5); }
+    /* V138 — SAISONS : cartes affiches + heatmap des notes d'épisodes */
+    .season-strip { display: flex; gap: .55rem; overflow-x: auto; padding: .45rem .1rem .35rem; scrollbar-width: thin; }
+    .season-card { flex: 0 0 auto; width: 88px; text-align: center; }
+    .season-poster img {
+        width: 88px; height: 132px; border-radius: 9px; object-fit: cover;
+        box-shadow: 0 8px 18px rgba(0, 0, 0, .45);
+    }
+    .season-noimg {
+        display: flex; width: 88px; height: 132px; border-radius: 9px;
+        align-items: center; justify-content: center;
+        background: rgba(0, 0, 0, .35); font-size: 1.7rem;
+    }
+    .season-card .t { font-size: .72rem; font-weight: 800; color: var(--am-text); margin-top: .3rem; }
+    .season-card .d { font-size: .64rem; color: var(--am-text-muted); }
+    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: .4rem 0 .25rem; overflow-x: auto; }
+    .ep-row { display: flex; gap: .45rem; align-items: center; }
+    .ep-season { font-size: .64rem; font-weight: 800; color: var(--am-text-muted); width: 24px; flex-shrink: 0; }
+    .ep-cells { display: flex; gap: 3px; }
+    .ep-cell {
+        min-width: 21px; height: 21px; border-radius: 5px;
+        font-size: .58rem; font-weight: 800; color: rgba(255, 255, 255, .94);
+        display: flex; align-items: center; justify-content: center;
+        cursor: help; flex-shrink: 0;
+    }
     /* V137 — FICHE ACTEUR (dialog intégrée) : en-tête photo ronde + bio
        FR + crédits croisés avec TON historique. */
     .actor-head {
@@ -789,7 +822,7 @@ st.markdown(
         margin-top: .4rem;
         padding: .28rem .5rem;
     }
-    .score-badge[data-tooltip], .mc-note[data-tooltip], .mc-type[data-tooltip],
+    .ep-cell[data-tooltip], .score-badge[data-tooltip], .mc-note[data-tooltip], .mc-type[data-tooltip],
     .mc-year[data-tooltip], .media-list-pct[data-tooltip], .mc-inline-pct[data-tooltip],
     .mc-chip[data-tooltip] {
         position: relative; cursor: help;
@@ -825,6 +858,7 @@ st.markdown(
         text-align: left;
         white-space: normal;
     }
+    .ep-cell[data-tooltip]:hover::after,
     .score-badge[data-tooltip]:hover::after,
     .mc-note[data-tooltip]:hover::after,
     .mc-type[data-tooltip]:hover::after,
@@ -1328,14 +1362,23 @@ st.markdown(
         + div[data-testid="stElementContainer"] {
         margin-top: 0 !important;  /* la marge basse de la carte est déjà à 0 */
     }
+    /* V138 — TUILE ET PIED UNIS au survol : quand la tuile se soulève,
+       son bouton « Voir la fiche » se soulève AVEC elle (sinon elle avait
+       l'air de se « détacher » — retour utilisateur). */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card):hover
+        + div[data-testid="stElementContainer"] button[kind="secondary"],
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card):hover
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
+        transform: translateY(-2px);
+    }
     /* V137 — tuiles resserrées : l'écart entre deux cartes successives est
        réduit (retour utilisateur), et la carte remonte vers l'élément
        précédent pour compacter les listes. */
     .media-list-card {
-        margin: .18rem 0 !important;
+        margin: .1rem 0 !important;
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) {
-        margin-top: -0.55rem !important;
+        margin-top: -0.75rem !important;
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
@@ -1347,12 +1390,14 @@ st.markdown(
         border-left: 4px solid var(--am-yellow) !important;  /* V137 : 4px, exactement comme la tuile */
         border-radius: 0 0 13px 13px !important;
         color: var(--am-text) !important;
-        font-size: .85rem !important;
-        font-weight: 600 !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .92rem !important;
+        font-weight: 800 !important;
+        letter-spacing: .02em !important;
         padding: .14rem .6rem !important;   /* V137 : pied de tuile plus bas */
         min-height: 30px !important;        /* V137 : neutralise min-height:48px Streamlit */
         box-shadow: none !important;
-        transition: background .16s ease, border-color .16s ease, box-shadow .16s ease !important;
+        transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease !important;
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,
@@ -2712,7 +2757,7 @@ def _fetch_tmdb_details_fr(kind: str, tmdb: int, key: str) -> dict:
             params={
                 "api_key": key,
                 "language": "fr-FR",
-                "append_to_response": "images,credits,videos",  # V135 : credits · V136 : videos (bande-annonce)
+                "append_to_response": "images,credits,videos,watch/providers",  # V138 : + plateformes FR
                 "include_image_language": "fr,en,null",
             },
             timeout=10,
@@ -3248,6 +3293,18 @@ def _auto_restore_session() -> None:
        relance LE CHARGEMENT AUTOMATIQUEMENT — plus d'aller-retour manuel
        vers le Tableau de bord (les caches serveur servent ce qu'ils ont).
     """
+    # V138 — page mémorisée dans l'URL par les liens acteurs : appliquée
+    # UNE fois par session, dès le 1er run (l'arrière-plan reste la page
+    # où l'utilisateur était, pas le Tableau de bord).
+    try:
+        page_param = str(st.query_params.get("page") or "").strip()
+    except Exception:
+        page_param = ""
+    if page_param and not st.session_state.get("_msl_page_param_done"):
+        st.session_state["_msl_page_param_done"] = True
+        # st.query_params fournit la valeur DÉCODÉE (un seul encodage côté lien)
+        if page_param in PAGES:
+            st.session_state["page_active"] = page_param
     if st.session_state.get("_normalized_dataset"):
         return
     try:
@@ -3835,6 +3892,8 @@ def _render_cinema_detail_body(row: dict) -> None:
             f"{m_str} 100%)"
         )
     else:
+        m_rgb = (6, 34, 30)
+        d_rgb = (3, 22, 19)
         m_str = "rgb(6,34,30)"
         d_str = "rgb(3,22,19)"
         a_rgb = (0, 199, 179)     # accent vert Aston (fallback sans backdrop)
@@ -4068,6 +4127,11 @@ def _render_cinema_detail_body(row: dict) -> None:
             except Exception:
                 params = {}
             params["acteur"] = str(person_id)
+            # V138 — la page courante voyage dans l'URL : lisible dès le
+            # 1er run après le rechargement (les cookies, eux, ne sont
+            # prêts qu'au 2e) → l'arrière-plan reste là où tu étais.
+            # ⚠️ valeur BRUTE : _urlencode l'encode une seule fois.
+            params["page"] = str(st.session_state.get("page_active") or "")
             href = "?" + _urlencode(params)
             # ⚠️ target="_self" OBLIGATOIRE : Streamlit force target="_blank"
             # sur tous les <a> du HTML markdown (vérifié dans Chromium) —
@@ -4095,6 +4159,96 @@ def _render_cinema_detail_body(row: dict) -> None:
         if people:
             cast_bits.append("👥 " + escape(", ".join(map(str, people[:6]))))
         casting_html = f'<p class="cinema-casting">{" · ".join(cast_bits)}</p>'
+
+    # V138 — OÙ LE REGARDER : logos des plateformes FR (même appel TMDB).
+    providers_html = ""
+    wp_block = fr_payload.get("watch/providers") if isinstance(fr_payload.get("watch/providers"), dict) else {}
+    fr_wp = (wp_block.get("results") or {}).get("FR")
+    fr_wp = fr_wp if isinstance(fr_wp, dict) else {}
+    prov_seen: set = set()
+    prov_list = []
+    for bucket in ("flatrate", "rent", "buy"):
+        for prov in (fr_wp.get(bucket) or []):
+            if not isinstance(prov, dict) or not prov.get("logo_path"):
+                continue
+            prov_pid = prov.get("provider_id")
+            if prov_pid in prov_seen:
+                continue
+            prov_seen.add(prov_pid)
+            prov_list.append({"name": str(prov.get("provider_name") or ""), "logo": str(prov["logo_path"])})
+    if prov_list:
+        prov_logos = "".join(
+            f'<img src="https://image.tmdb.org/t/p/w92{escape(p["logo"], quote=True)}" class="prov-logo" '
+            f'alt="{escape(p["name"])}" title="{escape(p["name"])}" loading="lazy">'
+            for p in prov_list[:8]
+        )
+        providers_html = (
+            f'<p class="cinema-section-title">Où le regarder</p>'
+            f'<div class="prov-strip">{prov_logos}</div>'
+        )
+
+    # V138 — SAISONS (séries) : affiches + notes par saison + HEATMAP des
+    # notes d'épisodes (couleur = accent du film). 1 appel TMDB par saison,
+    # mémorisé 30 jours.
+    seasons_html = ""
+    if row.get("type") == "Série" and api_key and tmdb_id:
+        season_count = _media_seasons(item) or 0
+        if 0 < season_count <= 12:
+            seasons_payloads = []
+            for season_number in range(1, season_count + 1):
+                try:
+                    season_payload = _fetch_tv_season(tmdb_id, season_number, api_key)
+                except Exception:
+                    season_payload = {}
+                if season_payload:
+                    seasons_payloads.append((season_number, season_payload))
+            if seasons_payloads:
+                season_cards = []
+                heat_rows = []
+                for season_number, season_payload in seasons_payloads:
+                    episodes = [e for e in (season_payload.get("episodes") or []) if isinstance(e, dict)]
+                    season_poster = str(season_payload.get("poster_path") or "").strip()
+                    if season_poster:
+                        season_img = (
+                            f'<img src="https://image.tmdb.org/t/p/w185{escape(season_poster, quote=True)}"'
+                            f' alt="Saison {season_number}" loading="lazy">'
+                        )
+                    else:
+                        season_img = '<span class="season-noimg">📺</span>'
+                    season_vote = float(season_payload.get("vote_average") or 0)
+                    note_txt = f"⭐ {season_vote:.1f}" if season_vote else "⭐ —"
+                    season_cards.append(
+                        f'<div class="season-card"><div class="season-poster">{season_img}</div>'
+                        f'<div class="t">Saison {season_number}</div>'
+                        f'<div class="d">{note_txt} · {len(episodes)} ép.</div></div>'
+                    )
+                    cells = []
+                    for episode in episodes:
+                        episode_vote = float(episode.get("vote_average") or 0)
+                        t_ratio = max(0.0, min(1.0, episode_vote / 10.0))
+                        cell_rgb = (
+                            int(d_rgb[0] + (a2_rgb[0] - d_rgb[0]) * t_ratio),
+                            int(d_rgb[1] + (a2_rgb[1] - d_rgb[1]) * t_ratio),
+                            int(d_rgb[2] + (a2_rgb[2] - d_rgb[2]) * t_ratio),
+                        )
+                        tip = (
+                            f"E{episode.get('episode_number', '?')} · {episode_vote:.1f}/10"
+                            + (f" · {episode.get('name')}" if episode.get("name") else "")
+                        )
+                        cells.append(
+                            f'<span class="ep-cell" style="background:rgb({cell_rgb[0]},{cell_rgb[1]},{cell_rgb[2]});"'
+                            f' data-tooltip="{escape(tip, quote=True)}">{episode.get("episode_number", "?")}</span>'
+                        )
+                    if cells:
+                        heat_rows.append(
+                            f'<div class="ep-row"><span class="ep-season">S{season_number}</span>'
+                            f'<div class="ep-cells">{"".join(cells)}</div></div>'
+                        )
+                seasons_html = (
+                    f'<p class="cinema-section-title">Saisons & notes des épisodes</p>'
+                    f'<div class="season-strip">{"".join(season_cards)}</div>'
+                    f'<div class="ep-heatmap">{"".join(heat_rows)}</div>'
+                )
 
     # V136 — bande-annonce (iframe YouTube, lazy) — après la distribution
     trailer_html = ""
@@ -4171,7 +4325,9 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"{pills_html}"
         f"{synopsis_html}"
         f"{casting_html}"
+        f"{seasons_html}"
         f"{trailer_html}"
+        f"{providers_html}"
         f"{links_html}"
         f"</div></div></div>",
         unsafe_allow_html=True,
@@ -4414,6 +4570,7 @@ def _render_actor_detail_body(person_id: int) -> None:
 
         def _back_to_film() -> None:
             st.session_state["_open_film_after_actor"] = True
+            st.session_state.pop("_actor_dialog_active_id", None)
 
         st.button(
             "← Revenir au film",
@@ -4423,9 +4580,21 @@ def _render_actor_detail_body(person_id: int) -> None:
         )
 
 
-@st.dialog(" ", width="large")
+def _dismiss_actor_dialog() -> None:
+    """Fermeture (croix / clic dehors) : on arrête de re-rendre la fiche
+    acteur — elle reste fermée."""
+    st.session_state.pop("_actor_dialog_active_id", None)
+
+
+@st.dialog(" ", width="large", on_dismiss=_dismiss_actor_dialog)
 def _actor_detail_dialog(person_id: int) -> None:
-    """Fenêtre modale : fiche acteur (V137)."""
+    """Fenêtre modale : fiche acteur (V137).
+
+    V138 : re-rendue à CHAQUE run tant que `_actor_dialog_active_id` est
+    posé (le handshake des cookies déclenche un rerun juste après le
+    chargement de la page — en V137, ce rerun fermait la fiche à peine
+    ouverte, et la fiche affichait « charge tes données » car le dataset
+    n'était pas encore restauré). `on_dismiss` arrête proprement."""
     _render_actor_detail_body(person_id)
 
 
@@ -4461,11 +4630,18 @@ def _handle_actor_param() -> None:
                         st.session_state["_cinema_detail_row"] = last["row"]
                 except Exception:
                     pass
-            _actor_detail_dialog(person_id)
+            # V138 — drapeau ACTIF : le dialog est re-rendu à chaque run
+            # (voir ci-dessous) jusqu'à sa fermeture (on_dismiss).
+            st.session_state["_actor_dialog_active_id"] = person_id
     # « ← Revenir au film » depuis la fiche acteur : le callback on_click a
     # posé le drapeau AVANT ce run → on rouvre la fiche film maintenant.
     if st.session_state.pop("_open_film_after_actor", None):
         _cinema_detail_dialog()
+    # V138 — tant que la fiche acteur est « active », on la re-rend :
+    # elle survit aux reruns (handshake cookies, actualisations…).
+    active_actor = st.session_state.get("_actor_dialog_active_id")
+    if active_actor:
+        _actor_detail_dialog(int(active_actor))
 
 
 def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
@@ -5164,6 +5340,29 @@ def _fetch_person_details(person_id: int, key: str) -> dict:
         return {}
     if response.status_code != 200:
         raise RuntimeError(f"TMDB person/{person_id} a répondu HTTP {response.status_code}")
+    try:
+        return response.json() or {}
+    except ValueError:
+        raise
+
+
+@st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours : saisons TV
+def _fetch_tv_season(tmdb: int, season: int, key: str) -> dict:
+    """Détails d'une SAISON TV (épisodes, notes, affiche) — V138 : fiche
+    série (affiches par saison, notes, heatmap des épisodes). 404 → dict
+    vide (mis en cache)."""
+    try:
+        response = requests.get(
+            f"https://api.themoviedb.org/3/tv/{tmdb}/season/{season}",
+            params={"api_key": key, "language": "fr-FR"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        raise
+    if response.status_code == 404:
+        return {}
+    if response.status_code != 200:
+        raise RuntimeError(f"TMDB tv/{tmdb}/season/{season} a répondu HTTP {response.status_code}")
     try:
         return response.json() or {}
     except ValueError:
