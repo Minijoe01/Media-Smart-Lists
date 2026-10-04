@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 17 août 2026 · Dernière version déployée : V50.
+> Dernière mise à jour : 4 octobre 2026 · Dernière version déployée : V139.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -229,6 +229,133 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       - filtre « Durée minimum » (≥1h → ≥3h) ;
       - genres MULTIPLES ET/OU (multiselect + recherche intégrée).
 - [x] **V57 — test unitaire** `TestRecommendationPresets` (14 tests OK).
+- [x] **V111 — nettoyage des presets** (validation utilisateur) : les
+      presets qui ne dupliquaient qu'un genre ou un style sont supprimés
+      (Envie de rire, Envie de frissons, Adrénaline, Polars & thrillers,
+      Science-fiction, Romance, Documentaires, Soirée en famille) —
+      25 presets restants, uniquement des COMBINAISONS ; « Cinéma du
+      monde » reste (pays ≠ USA + note, pas un doublon). Preset déménagé
+      de « Tri & affichage » vers « Sélection de contenu » (sous les
+      styles — un preset filtre, il ne trie pas) ; icône 🏷️ sur Genres,
+      💡 sur le preset ; signets anciens assainis (preset disparu ignoré
+      proprement, le reste du signet s'applique).
+- [x] **V112 — icône devant chaque genre + 5 filtres** : `GENRE_EMOJI`
+      (41 genres) affiché via `format_func` (valeur intacte → signets et
+      filtres inchangés) sur les 4 sélecteurs de genres (Que regarder ?
+      inclusion/exclusion, Progression Fantôme, Statistiques) ; icônes
+      📂 Source · 📽️ Type · 👥 Acteurs · 🎬 Réalisateur · 🏢 Studios.
+      Enquête « presets encore visibles » : GitHub était déjà à jour
+      (25 presets vérifiés sur main) — observation faite avant la fin du
+      Reboot ; remède Reboot + Clear cache + Ctrl+F5.
+- [x] **V113 — peplum + mockumentaire élargi + DOCUMENTATION** : style
+      « Aventure - 🛡️ Peplum » (mot-clé TMDB peplum=187305, vérifié :
+      Troie/Hercule/Astérix le portent) ; « Parodie / spoof » élargi à
+      parody+spoof (Naked Gun vérifié : parody 9755) ; « Mockumentaire »
+      élargi à 6 mots-clés (mockumentary, pseudo-documentary 276164 =
+      Blair Witch/Cloverfield/Paranormal Activity, pseudo documentary,
+      fake/false/faux documentary) → 91 styles. README.md réécrit
+      (mode d'emploi « Que regarder ? » : 3 familles de critères +
+      différence, scoring chouchous/sagas détaillé, hors-listes,
+      signets) ; guide-alkodiques.md aligné (ton communauté).
+- [x] **V114 — corrections d'audit utilisateur (styles + scoring)** :
+      Peplum = peplum + « sword and sandal » (Gladiator II porte le terme
+      ANGLAIS, pas « peplum ») ; Parodie = parody + spoof + « satirical »
+      (OSS 117 porte satirical, ni parody ni spoof) ; Mockumentaire
+      REVENU au mot-clé unique « mockumentary » (les variantes
+      pseudo/fake/faux documentary = found footage horreur — Blair Witch,
+      PA — pas des mockumentaires ; The Office, The Paper, Cunk on Earth,
+      Death to 2020 portent TOUS « mockumentary », vérifié) ; NOUVEAU
+      style « Comédie - 🌶️ Ado épicée » (teen comedy + sex comedy +
+      teenage sexuality, les 3 sur la fiche d'American Pie) → 92 styles.
+      Scoring : malus « 👎 Tes ratages ici » PROPORTIONNEL (≥ 2 notes
+      ≤ 3/10 ET ≥ 25 % des notés du genre — un grand fan de comédie avec
+      3 navets sur 200 n'est plus pénalisé) ; nouveau profil
+      « genre_rating_counts ». README + guide alignés (92 styles, 🌶️,
+      barème ratages). 19/19 tests (4 nouveaux).
+- [x] **V115 — films homonymes (Wrapped) + V14 non déployée + règle docs** :
+      constat GitHub : la V114 n'a JAMAIS été uploadée (aucun marqueur sur
+      main) → V115 regroupe tout. Bug signalé : le Rendez-vous annuel
+      fusionnait les films homonymes (« Mortal Kombat · 2 visionnages » =
+      1995 + 2024) et sous-comptait les films (titre unique) → tops et
+      compteurs par couple (titre, année), année affichée seulement si
+      ambiguïté ; idem séries. NOUVELLE RÈGLE : toute modif future du
+      README/guide part du fichier COURANT du GitHub utilisateur (il
+      édite lui-même — nouvelles captures déjà en place) ; workspace
+      synchronisé ; la V113 postée sur les forums reste valable (deltas
+      20/20 tests.
+- [x] **V116 — ZIP sans MDBList : enrichissement TMDB pour tous** (retour
+      d'un utilisateur du forum : menus vides + message trompeur sur la
+      clé TMDB) : l'import ZIP lance désormais l'enrichissement TMDB en
+      arrière-plan (clé de cache = hash du ZIP, réimport instantané) ;
+      `_apply_tmdb_payload` complète pays/score/ratings/statut si absents
+      (jamais d'écrasement) ; message profil reformulé quand la clé est
+      là. Diagnostic : export Trakt = titres/ids/dates seulement, et le
+      thread TMDB n'était lancé que dans le chemin MDBList. Pas un
+      problème Linux/macOS/clavier. Réponses fournies au propriétaire :
+      fichier guide à poster (V114), accroche About FR/EN + topics,
+      réponse forum prête à coller (dont hébergement local : reverse
+      proxy nginx + WebSockets, Node.js inutile).
+- [x] **V117 — posters ZIP, barre de progression TMDB, En cours vs
+      Fantôme, film à 0 %** (4 signalements utilisateur) :
+      `_apply_tmdb_payload` remplit le poster si absent (les ZIP
+      n'avaient aucune affiche dans les listes) ; canal `progress`
+      {done,total,error} dans _ENRICH_STATE → vraie barre
+      st.progress auto-rafraîchie sur « Que regarder ? » (2,5 s) et le
+      tableau de bord (4 s + rerun), PLAFOND DE 100 s SUPPRIMÉ (la page
+      s'affichait à moitié enrichie → scores faux) et erreur du thread
+      affichée (mort silencieuse avant) ; bloc « 🔴 Lecture en cours
+      maintenant » DÉMÉNAGÉ de Fantôme vers « ▶️ En cours de lecture »
+      (fantôme = reprises en pause, per la logique utilisateur) avec
+      actualisation auto à l'arrivée (cache > 5 min, 1 appel) ;
+      film à 0 % : garde anti-fraction (0<p≤1 → ×100) + estimation
+      depuis started_at quand le scrobbler ne rapporte pas la
+      progression (Kodi sans interval). 23/23 tests
+      (TestNowPlayingProgress). Dossier video-textes/ : 3 blocs-notes
+      + présentateur HTML plein écran pour la vidéo de démonstration.
+- [x] **V119 — 6 correctifs (retours utilisateur + testeur externe + CI)** :
+      UNE seule barre de progression (mention discrète au milieu, barre
+      auto-actualisée en fin de page) ; séries Up Next ZIP : total
+      d'épisodes + poster + % complétés par post-passe d'enrichissement
+      (0 appel réseau) ; roulette vs hors-listes : modes exclusifs
+      (chaque clic purge les résultats de l'autre mode) ; signets
+      inter-comptes : `_sanitize_bookmark_filters` valide contre les
+      options réelles + bannière « ignoré car absent de tes données »
+      (Streamlit ignorait silencieusement — testé) ; libellé « Listes
+      personnelles » fournisseur-aware ; CI réparé : tests/test_core.py
+      du repo obsolète depuis V111 (cause de l'exit 1) + ci.yml
+      checkout@v5/setup-python@v6 (Node 24). 23/23 tests.
+- [x] **V120 — CI réparé pour de bon + 5 retours du testeur externe** :
+      CI : le test_core.py V119 avait été déposé à la RACINE du repo au
+      lieu de tests/ (vérifié GitHub : racine = 23 tests, tests/ = ancien
+      14) — procédure A/B fournie. Roulette : pool vide → la carte du
+      tirage précédent restait « collée » → pop + callout explicite +
+      badge de mode sur « Le hasard a choisi ». Calendrier ZIP :
+      `_apply_tmdb_payload` remplit release_date/first_air_date (testé
+      de bout en bout via build_local_calendar_events). Graphe
+      évolution : axisPointer shadow→line (bande grise figée = bug
+      iframe ECharts). « Note moyenne » : description « aucune note
+      perso dans la sélection » quand vide. % >100 : comptage des
+      épisodes DISTINCTS (saison+numéro) dans _build_upnext_from_watched
+      (rewatches exclus — 10 ≠ 12 vérifié) + clamp 100 dans le
+      post-passe. 23/23 tests.
+- [x] **V121 — notes Trakt (vrai bug), calendrier local, fragments** :
+      CAUSE des notes vides trouvée : l'export Trakt répartit les notes par
+      type+pagination (ratings-movies-1.json, ratings-seasons-1.json…) et le
+      parseur n'attendait que ratings-\d+ → toutes ignorées. Motifs élargis +
+      notes de saison attribuées à la série (réimport nécessaire). Roulette
+      découverte : pool vide diagnostiqué (genre à affinité ≥ 30 = zone de
+      confort → message dédié). Calendrier : _render_calendar_body mutualisé,
+      vue LOCALE immédiate (0 appel, dates TMDB) sans clic sur « Charger ».
+      Scintillement « vue fantôme » : boucles sleep+st.rerun remplacées par
+      @st.fragment (QR 2,5 s + dashboard 4 s, deux branches) — seule la barre
+      se rafraîchit, un seul rerun complet à la fin. 23/23 tests.
+- [x] **V122 — calendrier V121 cassé par la refactor** (rapport
+      utilisateur : cartes + légende puis plus rien, même après le clic) :
+      le bloc filtres+affichage (101 lignes) s'était retrouvé imbriqué dans
+      le `with st.expander(diag)` — avec un diag vide (ZIP sans MDBList),
+      tout était sauté. Mon test V121 passait car j'avais fourni un diag
+      rempli. Désindenté ; vérifié sur les 3 chemins (locale immédiate,
+      cache sans diag, cache avec diag). 23/23 tests.
 
 ### Reste à faire (idées en attente)
 - [ ] Wordmark avec logo-tuile dans le header natif Streamlit (optionnel,
@@ -275,29 +402,86 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 
 ## À faire — décisions actées (V89, 25 août 2026)
 
-### Bouton « ➕ Watch » (ajout à la Watchlist MDBList) — spécification gelée
-- [ ] Pastille TRÈS discrète « ➕ Watch », **dans la carte**, à côté des liens
-      TMDB / MDBL (rangée des liens existante), libellé court « Watch ».
-- [ ] Affichée **uniquement** sur les contenus « hors de mes listes »
-      (sections parfaites + presque) et seulement si connecté à MDBList.
-- [ ] Ne doit PAS créer de saut de ligne disgracieux sur GSM (le bouton
-      précédent en colonne dédiée a été retiré pour ça en V88).
-- Piste technique retenue : lien HTML dans `_content_links_html` déclenchant
-  un paramètre d'URL (ex. `?watch=<tmdb_id>`), traité au chargement suivant
-  (ajout via `add_watchlist_items`, toast de confirmation, nettoyage du
-  paramètre + restauration de la page). Alternative : composant léger.
-- V88→V89 : le bouton colonne-droite a été retiré (lisibilité, GSM, stabilité).
+### Bouton « ➕ Ajouter une découverte » — RÉALISÉ (V99-V100)
+- [x] Popover au-dessus des sections hors-listes (parfaites + presque) :
+      choix du contenu → « 📌 Ma Watchlist » OU « 🗂️ une de mes listes
+      statiques » → ajout (une écriture, réversible). Uniquement hors-listes
+      et connecté MDBList. Thème Aston Martin appliqué au bouton/panneau
+      (V100). Décision assumée : pas de bouton DANS la carte HTML (les
+      widgets Streamlit ne s'y insèrent pas ; le popover offre le même flux
+      sans casser le GSM — leçon V87/V88).
 
 ### Mobile / PWA — en place depuis la V89
-- [x] Manifest + icônes (192/512/maskable/apple-touch) + thème : « Ajouter à
-      l'écran d'accueil » ouvre l'app en plein écran SANS barre Chrome
-      (Android) / Safari (iOS, via l'icône d'accueil).
-- [ ] À tester sur le GSM de l'utilisateur après déploiement.
-- [ ] (Optionnel plus tard) service worker pour un lancement hors-ligne
-      plus rapide — pas indispensable à l'installation.
+- [x] Manifest + icônes + plein écran : fonctionnel (validé utilisateur).
+- [x] Icône/nom du raccourci : CLOS sans solution (le manifest injecté par
+      Streamlit Cloud gagne ; cosmétique uniquement — décision utilisateur).
+- [ ] (Optionnel) service worker pour un lancement hors-ligne plus rapide.
+
+### Ascenseur intelligent — v2 (V100)
+- [x] Changement de page → haut de page ; retour sur une page visitée →
+      position restaurée (sessionStorage). v2 : détection du VRAI conteneur
+      qui défile + double canal d'injection (st.iframe + composant HTML).
+- [ ] À faire valider sur PC + GSM par l'utilisateur (v1 sans effet ?).
+
+### Documentation
+- [ ] README à remettre à jour (styles & ambiances, mots-clés TMDB,
+      enrichissement en arrière-plan, ajout aux listes, pagination des
+      propositions, « Mes contenus notés »…).
+- [ ] guide-alkodiques.md (tuto non publié) : à aligner sur la V100.
+- [ ] Captures d'écran GitHub OBSOLÈTES (signalé par l'utilisateur) :
+      à refaire — Tableau de bord, Que regarder ? (avec le guide + styles),
+      Statistiques (compteurs + Mes contenus notés), Fantôme (suppression),
+      hors-listes (parfaites/presque + popover ➕).
 
 ### Idées UI en réserve
-- [ ] Raccourcis de filtres « mémorisables » (signets de recherche).
-- [ ] Mode sombre/clair ? (probablement inutile : thème sombre assumé).
-- [ ] Compression du grand bloc CSS dans un fichier statique si Streamlit
-      le permet proprement.
+- [ ] Raccourcis de filtres « mémorisables » (signets de recherche) —
+      demandé un jour puis repoussé par l'utilisateur (« on fera plus tard »).
+- [ ] Légende d'une ligne « qu'est-ce qu'une progression fantôme ».
+- [ ] Compression du grand bloc CSS dans un fichier statique.
+- [x] **V124 — Habillage cinéma (inspiration FlickTrove, demande
+      utilisateur)** : backdrop stocké dans _apply_tmdb_payload (0 appel —
+      champ déjà présent) ; _fetch_tmdb_logo lazy (1 appel au 1er clic 🎬,
+      cache 30 j, fr > en > null) ; fiche cinéma @st.dialog(width=large) :
+      bannière backdrop w780 + dégradé + clear logo bas-gauche (ou titre),
+      affiche, chips, score expliqué, casting, liens ; cartes : classe
+      cinema-backdrop + voile rgba(3,29,25) .97→.66 gauche→droite (deviné,
+      pas dominant) + bouton 🎬 (clé cin_{key}{_hl} anti-collision).
+      Rollback = re-upload app.py V122. 23/23 tests.
+
+
+---
+
+## V139 (4 octobre 2026) — ajouté par l'agent
+
+### Décisions utilisateur en attente
+- [ ] **Maquette couleurs des pastilles/texte** (fichiers `maquette-couleurs-v3.png/.html`) :
+      choisir Actuel (jaune + gris, recommandé) / Tout-accent / Compromis intelligent
+      (accent seulement si couleur assez foncée). Rien appliqué dans l'app.
+- [ ] **Barres de progression en vague** (`maquette-vagues-v3.png/.html`) : choisir
+      Option A (tout en vague) ou B (vague sur le vu + reste plat façon Spotify) ;
+      où l'appliquer (séries en cours / films en cours / % tuiles / barre fiche) ;
+      animation continue ou au survol. Rien appliqué dans l'app.
+
+### Réflexion ouverte (demande utilisateur 04/10/2026)
+- [ ] **Accès à la fiche des contenus VUS récemment (< 1 an)** : un contenu vu il y a
+      moins d'un an n'apparaît ni dans « Que regarder ? » (logique — pas envie de le
+      revoir tout de suite) ni dans « Hors de mes listes » (réservé aux vus > 1 an).
+      Pourtant l'utilisateur veut parfois consulter leur fiche (saisons, heatmap,
+      notes d'épisodes…). Pistes à discuter :
+      - filtre « Vus récemment » (toggle) sur « Que regarder ? » ;
+      - section « Vus récemment » sur le Tableau de bord (affiches cliquables → fiche) ;
+      - accès depuis Statistiques → « Mes contenus notés » (déjà listés) ;
+      - depuis « En cours de lecture » une fois terminé (historique récent).
+- [ ] Bouton « ➕ Ajouter à une liste » depuis les sections Similaires/Saga de la fiche
+      (le popover d'ajout existe déjà pour les découvertes — à brancher si simple).
+
+### Fait en V139
+- [x] Fiche acteur intégrée RETIRÉE (fiabilité) → retour aux liens TMDB sur les cercles.
+- [x] Heatmap épisodes : contraste fort (luminance étalée 5.5→9.2 + gamma), halo jaune
+      sur les épisodes ≥ 8.5 (lisibilité daltonien), info-bulle SxE · note décimale ·
+      titre (CSS + title natif).
+- [x] Affiches de saison = liens vers la saison TMDB.
+- [x] « 💛 Ta note » dans la fiche (depuis la section notes du dataset).
+- [x] Sections « La saga » (volets + badges ✅ Vu / 📂 nom de liste / 📌 Watchlist /
+      🌐 Hors de tes listes) et « Similaires » (recommandations TMDB croisées).
+- [x] Bouton « Voir la fiche » : MAJUSCULES + Manrope 900.
