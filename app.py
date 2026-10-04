@@ -736,6 +736,9 @@ st.markdown(
        étaient décalées quand un titre était long). */
     .sim-card { flex: 0 0 auto; width: 84px; text-align: center;
                 display: flex; flex-direction: column; align-items: center; }
+    .sim-link { color: inherit; transition: transform .16s ease; }
+    .sim-link:hover { transform: translateY(-3px); }
+    .sim-link:hover img { box-shadow: 0 12px 24px rgba(0, 0, 0, .55); }
     .sim-card img { width: 84px; height: 126px; border-radius: 9px; object-fit: cover; box-shadow: 0 8px 18px rgba(0, 0, 0, .45); }
     .sim-noimg { display: flex; width: 84px; height: 126px; border-radius: 9px; align-items: center;
                  justify-content: center; background: rgba(0, 0, 0, .35); font-size: 1.6rem; }
@@ -751,7 +754,13 @@ st.markdown(
     }
     .sim-badge.vu { background: rgba(0, 163, 146, .2); border: 1px solid rgba(0, 163, 146, .55); color: #7ce0d4; }
     .sim-badge.liste { background: rgba(255, 225, 0, .1); border: 1px solid rgba(255, 225, 0, .5); color: var(--am-yellow); }
-    .sim-badge.hors { background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .18); color: var(--am-text-muted); }
+    .sim-badge.hors { background: linear-gradient(135deg, rgba(45, 156, 219, .30), rgba(0, 0, 0, .55)); border: 1px solid rgba(45, 156, 219, .65); color: #fff; }  /* V141 : même bleu que .mc-outside des tuiles */
+    /* V141 — liens de la fiche SANS soulignement (retour utilisateur :
+       le souligné donnait l'impression que tout le texte était cliquable).
+       Un léger changement de couleur au survol signale le clic. */
+    [data-testid="stDialog"] a { text-decoration: none !important; }
+    .cinema-info a:hover, .cast-link:hover { filter: brightness(1.18); }
+    /* V141 — TUILE/VOIR LA FICHE : bouton un peu plus petit et plus gras. */
     /* V140 — animation des vagues : translation d'EXACTEMENT une
        longueur d'onde → boucle parfaite sans couture. */
     @keyframes msl-wave-drift {
@@ -1425,10 +1434,10 @@ st.markdown(
         border-radius: 0 0 13px 13px !important;
         color: var(--am-text) !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .74rem !important;
-        font-weight: 800 !important;
+        font-size: .68rem !important;
+        font-weight: 900 !important;
         text-transform: uppercase !important;
-        letter-spacing: .09em !important;
+        letter-spacing: .1em !important;
         padding: .14rem .6rem !important;   /* V137 : pied de tuile plus bas */
         min-height: 30px !important;        /* V137 : neutralise min-height:48px Streamlit */
         box-shadow: none !important;
@@ -3830,6 +3839,61 @@ def _wave_bar_html(
     )
 
 
+def _fiche_status_pill(tmdb_id: int | None) -> str:
+    """Pastille d'état du contenu dans SA propre fiche (V141) :
+    ✅ Vu le dd/mm/aaaa · 📂 nom de ta liste · 📌 Watchlist · 🌐 Hors de tes
+    listes — mêmes styles que les badges Similaires/Saga."""
+    if not tmdb_id:
+        return ""
+    dataset = _dataset()
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+    if not sections:
+        return ""
+    # dernier visionnage (VU même sans date — un contenu vu reste vu)
+    is_watched = False
+    watched_date = None
+    for bucket in ("movies", "shows", "episodes"):
+        for entry in ((sections.get("watched") or {}).get(bucket) or []):
+            media = _unwrap_media(entry)
+            if not media or _media_tmdb_id(media) != tmdb_id:
+                continue
+            is_watched = True
+            raw = None
+            if isinstance(entry, dict):
+                raw = entry.get("last_watched_at") or entry.get("watched_at")
+            if raw is None and isinstance(media, dict):
+                raw = media.get("last_watched_at") or media.get("watched_at")
+            if raw is not None and watched_date is None:
+                try:
+                    watched_date = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
+                except (TypeError, ValueError):
+                    watched_date = None
+    if is_watched:
+        if watched_date is not None:
+            return (
+                f'<span class="sim-badge vu" style="margin-top:0;">✅ Vu le {watched_date.strftime("%d/%m/%Y")}</span>'
+            )
+        return '<span class="sim-badge vu" style="margin-top:0;">✅ Vu</span>' 
+    # dans une de mes listes ?
+    for user_list in (sections.get("user_lists") or []):
+        if not isinstance(user_list, dict):
+            continue
+        for bucket in ("movies", "shows", "items"):
+            for entry in (user_list.get(bucket) or []):
+                media = _unwrap_media(entry)
+                if media and _media_tmdb_id(media) == tmdb_id:
+                    return (
+                        f'<span class="sim-badge liste" style="margin-top:0;">📂 {escape(str(user_list.get("name") or "Liste"))}</span>'
+                    )
+    # watchlist ?
+    for bucket in ("movies", "shows"):
+        for entry in ((sections.get("watchlist") or {}).get(bucket) or []):
+            media = _unwrap_media(entry)
+            if media and _media_tmdb_id(media) == tmdb_id:
+                return '<span class="sim-badge liste" style="margin-top:0;">📌 Watchlist</span>'
+    return '<span class="sim-badge hors" style="margin-top:0;">🌐 Hors de tes listes</span>'
+
+
 def _history_fiche_row(history_row: dict) -> dict | None:
     """Construit une ligne « fiche cinéma » depuis une ligne d'historique
     (Statistiques → Détail des visionnages, V140 : lignes cliquables).
@@ -3902,9 +3966,10 @@ def _seen_watchlist_listname_ids() -> tuple[set, set, dict]:
     return watched, listed, list_names
 
 
-def _sim_card(entry: dict, watched: set, listed: set, list_names: dict) -> str:
+def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: str = "movie") -> str:
     """Mini-carte « Similaires / Saga » : affiche + titre + année + badge
-    (✅ Vu · 📂 nom de ta liste · 📌 Watchlist · 🌐 Hors de tes listes)."""
+    (✅ Vu · 📂 nom de ta liste · 📌 Watchlist · 🌐 Hors de tes listes).
+    V141 : la carte entière est un LIEN vers la fiche TMDB du contenu."""
     entry_id = int(entry.get("id") or 0)
     title = escape(str(entry.get("title") or entry.get("name") or "?"))
     date = str(entry.get("release_date") or entry.get("first_air_date") or "")
@@ -3925,6 +3990,14 @@ def _sim_card(entry: dict, watched: set, listed: set, list_names: dict) -> str:
         badge = '<span class="sim-badge liste">📌 Watchlist</span>'
     else:
         badge = '<span class="sim-badge hors">🌐 Hors de tes listes</span>'
+    tmdb_href = f"https://www.themoviedb.org/{kind}/{entry_id}" if entry_id else ""
+    if tmdb_href:
+        return (
+            f'<a class="sim-card sim-link" href="{escape(tmdb_href, quote=True)}"'
+            f' target="_blank" rel="noopener noreferrer" title="Voir « {title} » sur TMDB">{img}'
+            f'<div class="t">{title}</div>'
+            f'<div class="d">{year}</div>{badge}</a>'
+        )
     return (
         f'<div class="sim-card">{img}'
         f'<div class="t">{title}</div>'
@@ -4131,7 +4204,9 @@ def _render_cinema_detail_body(row: dict) -> None:
     # ── Construire tous les fragments HTML ──
     # Bannière
     if backdrop:
-        banner_bg = f"https://image.tmdb.org/t/p/w780{escape(backdrop, quote=True)}"
+        # V141 — w1280 au lieu de w780 : la bannière s'affiche sur toute la
+        # largeur de la fiche (~1250px) — w780 était ÉTIRÉ (qualité perdue).
+        banner_bg = f"https://image.tmdb.org/t/p/w1280{escape(backdrop, quote=True)}"
         if logo:
             logo_html = (
                 f'<img class="cinema-logo" src="https://image.tmdb.org/t/p/w500{escape(logo, quote=True)}"'
@@ -4254,6 +4329,11 @@ def _render_cinema_detail_body(row: dict) -> None:
             meta_bits.append(f'<span class="mc-year" data-tooltip="Recettes mondiales">🎟️ {revenue_txt}</span>')
     if original_title_html:
         meta_bits.append(original_title_html)
+    # V141 — pastille d'ÉTAT du contenu (Vu le … / 📂 liste / 📌 watchlist /
+    # 🌐 hors de mes listes) : même langage que les badges Similaires/Saga.
+    status_pill = _fiche_status_pill(tmdb_id)
+    if status_pill:
+        meta_bits.append(status_pill)
     chips_html = f'<div class="cinema-chips">{"".join(meta_bits)}</div>'
 
     # V134 — Tagline (phrase d'accroche) juste sous les pastilles
@@ -4263,15 +4343,21 @@ def _render_cinema_detail_body(row: dict) -> None:
     score_val = int(round(row.get("score", 0)))
     friction_val = int(row.get("friction", 0))
     if WAVE_BARS:
-        # V140 — barre de score en VAGUE (Option B) à la couleur d'accent
-        # du film, animée. WAVE_BARS = False → retour à la barre plate.
+        # V141 — SCORE ET FRICTION EN VALEUR, à droite de la barre (retour
+        # utilisateur : trop discrets avant). Vague légèrement plus grande
+        # (30px). WAVE_BARS = False → retour à la barre plate.
         score_html = (
-            f'<div style="margin:.5rem 0 .35rem;">'
-            f'<div style="font-size:.78rem;color:#9fc4c0;margin-bottom:.3rem;">'
-            f'<strong style="color:#fff;font-size:.9rem;">{score_val}/100</strong>'
-            f' · friction {friction_val}/100</div>'
-            f'{_wave_bar_html(score_val, f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})", "rgba(255,255,255,.30)", height=26, key="fiche")}'
+            f'<div style="display:flex;align-items:center;gap:.7rem;margin:.5rem 0 .35rem;">'
+            f'<div style="flex:1;min-width:0;">'
+            f'{_wave_bar_html(score_val, f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})", "rgba(255,255,255,.30)", height=30, key="fiche")}'
             f'</div>'
+            f'<div style="text-align:right;flex-shrink:0;line-height:1.05;">'
+            f'<div style="font-family:ManropeMSL,DejaVu Sans,sans-serif;font-weight:900;'
+            f'font-size:1.5rem;color:#fff;">{score_val}<span style="font-size:.72rem;'
+            f'color:#9fc4c0;font-weight:700;">/100</span></div>'
+            f'<div class="sim-badge" style="margin-top:.2rem;" data-tooltip="Facilité de lancement '
+            f'(durée courte, peu d épisodes = friction faible)">⚡ {friction_val}</div>'
+            f'</div></div>'
         )
     else:
         score_html = (
@@ -4438,8 +4524,19 @@ def _render_cinema_detail_body(row: dict) -> None:
                     for e in (sp.get("episodes") or [])
                     if isinstance(e, dict)
                 ]
-                votes_min = min(all_episode_votes) if all_episode_votes else 0.0
-                votes_span = max((max(all_episode_votes) - votes_min) if all_episode_votes else 1.0, 0.001)
+                # V141 — ÉCHELLE HYBRIDE (retour utilisateur : le relatif pur
+                # était illisible pour les séries à notes écartées — Robot
+                # Chicken 1→7.5 — et ne distinguait pas les BONNES des
+                # MAUVAISES séries) :
+                # · note < 5/10 → forcément un mauvais épisode → SOMBRE fixe ;
+                # · note ≥ 5/10 → relatif min-max AU-DESSUS du plancher 5 :
+                #   séries serrées (Mr. Robot 7.8-8.6) → tout l'écart se voit,
+                #   séries écartées → le 7.5 brille, le 5.2 reste sobre, le
+                #   1/10 est au fond. Comparable d'une série à l'autre.
+                votes_hi = max(all_episode_votes) if all_episode_votes else 10.0
+                votes_ok = [v for v in all_episode_votes if v >= 5.0]
+                votes_lo = max(5.0, min(votes_ok) if votes_ok else 5.0)
+                votes_span = max(votes_hi - votes_lo, 0.001)
                 season_cards = []
                 heat_rows = []
                 for season_number, season_payload in seasons_payloads:
@@ -4468,9 +4565,12 @@ def _render_cinema_detail_body(row: dict) -> None:
                         episode_vote = float(episode.get("vote_average") or 0)
                         ep_num = episode.get("episode_number")
                         ep_num_txt = str(ep_num) if ep_num else "?"
-                        # V140 — normalisation RELATIVE (min-max de la série)
-                        t_ratio = max(0.0, min(1.0, (episode_vote - votes_min) / votes_span))
-                        t_ratio = t_ratio ** 0.8 if t_ratio > 0 else 0.0
+                        # V141 — hybride : sous 5/10 → 0 (sombre) ; sinon
+                        # relatif au-dessus du plancher 5.
+                        if episode_vote < 5.0:
+                            t_ratio = 0.0
+                        else:
+                            t_ratio = max(0.0, min(1.0, (episode_vote - votes_lo) / votes_span)) ** 0.8
                         cell_rgb = (
                             int(d_rgb[0] + (a2_rgb[0] - d_rgb[0]) * t_ratio),
                             int(d_rgb[1] + (a2_rgb[1] - d_rgb[1]) * t_ratio),
@@ -4516,7 +4616,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         if len(parts) >= 2:
             watched_ids, listed_ids, list_names_map = _seen_watchlist_listname_ids()
             saga_cards = "".join(
-                _sim_card(part, watched_ids, listed_ids, list_names_map) for part in parts
+                _sim_card(part, watched_ids, listed_ids, list_names_map, kind="movie") for part in parts
             )
             saga_name = escape(str(collection_payload.get("name") or "Saga"))
             saga_html = (
@@ -4540,8 +4640,9 @@ def _render_cinema_detail_body(row: dict) -> None:
         ][:10]
         if len(reco_results) >= 3:
             watched_ids, listed_ids, list_names_map = _seen_watchlist_listname_ids()
+            reco_kind = "tv" if row.get("type") == "Série" else "movie"
             reco_cards = "".join(
-                _sim_card(r, watched_ids, listed_ids, list_names_map) for r in reco_results
+                _sim_card(r, watched_ids, listed_ids, list_names_map, kind=reco_kind) for r in reco_results
             )
             sim_html = (
                 f'<p class="cinema-section-title">Similaires</p>'
@@ -4755,14 +4856,9 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
         f'<span class="score-badge" data-tooltip="{escape(friction_tip, quote=True)}">Friction {friction_val}/100</span>{score_inline}'
         f'</div>'
         + (
-            _wave_bar_html(
-                float(row.get("score", 0)), "#00A392", "#FFE100",
-                height=16, width=320, animated=False, key=f"tile{row.get('key') or id(row)}",
-            )
-            if WAVE_BARS else
             f'<div class="progress-bar-container"><div class="progress-bar-fill" '
             f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
-        )
+        )  # V141 — les tuiles reviennent à la barre DROITE (retour utilisateur) ; la vague ne vit que dans la fiche
         + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
         + f'</div>{score_col}</div>'
     )
@@ -6765,7 +6861,7 @@ def render_watchlist_page() -> None:
         # V140 — inclure les contenus VUS il y a moins d'un an : ils
         # apparaissent alors dans « Déjà vu mais ça correspond » (fiches
         # consultables — demandé pour accéder aux fiches des vus récents).
-        st.checkbox(
+        st.toggle(
             "👁️ Inclure les vus récemment (moins d'un an)",
             key="qr_include_recent",
             help="Normalement exclus (on ne recommande pas ce qu'on vient de voir). "
@@ -7623,6 +7719,14 @@ def render_progress_page() -> None:
                 f'</div>{pct_col}</div>',
                 unsafe_allow_html=True,
             )
+            # V141 — bouton « VOIR LA FICHE » comme sur « Que regarder ? »
+            _up_tmdb = ""
+            try:
+                _up_tmdb = str(int((show_ids.get("tmdb") or 0)) or "")
+            except (TypeError, ValueError):
+                pass
+            if st.button("🎬 Voir la fiche", key=f"cin_up_{_up_tmdb or raw_show_title[:40]}", use_container_width=True, type="secondary"):
+                _open_cinema_detail(_history_fiche_row({"ids": show_ids, "title": raw_show_title, "type": "Série"}) or {"item": show_ref or {}, "type": "Série", "key": f"up_{_up_tmdb}"})
 
         if len(filtered_rows) > display_limit:
             st.caption(
@@ -7963,6 +8067,14 @@ def render_ghost_page() -> None:
             f'</div>{pct_col}</div>',
             unsafe_allow_html=True,
         )
+        # V141 — bouton « VOIR LA FICHE » comme sur « Que regarder ? »
+        _gh_tmdb = ""
+        try:
+            _gh_tmdb = str(int((row_ids.get("tmdb") or 0)) or "")
+        except (TypeError, ValueError):
+            pass
+        if st.button("🎬 Voir la fiche", key=f"cin_gh_{_gh_tmdb or str(row.get('title') or '')[:40]}", use_container_width=True, type="secondary"):
+            _open_cinema_detail(_history_fiche_row(row) or {"item": {"title": row.get("title"), "ids": row_ids}, "type": row.get("type") or "Série", "key": f"gh_{_gh_tmdb}"})
 
     if len(visible) > display_limit:
         st.caption(f"{len(visible) - display_limit} progression(s) supplémentaire(s) masquée(s).")
@@ -9000,6 +9112,14 @@ def _render_calendar_body(rows: list[dict], checked_caption: str,
                     f'</div>{time_pct}</div>',
                     unsafe_allow_html=True,
                 )
+                # V141 — bouton « VOIR LA FICHE » comme sur « Que regarder ? »
+                _cal_tmdb = ""
+                try:
+                    _cal_tmdb = str(int((row_ids.get("tmdb") or 0)) or "")
+                except (TypeError, ValueError):
+                    pass
+                if st.button("🎬 Voir la fiche", key=f"cin_cal_{_cal_tmdb or str(row.get('title') or '')[:40]}", use_container_width=True, type="secondary"):
+                    _open_cinema_detail(_history_fiche_row(row) or {"item": {"title": row.get("title"), "ids": row_ids}, "type": row.get("type") or "Série", "key": f"cal_{_cal_tmdb}"})
         remaining -= len(shown)
 
     rendered = min(len(visible), display_limit)
@@ -9342,6 +9462,8 @@ def _rated_contents_rows(dataset: dict) -> list[dict]:
         return {
             "type": "Film" if kind == "movie" else "Série",
             "title": _media_title(source) or _media_title(media),
+            "ids": (media.get("ids") if isinstance(media.get("ids"), dict) else {})
+            or (source.get("ids") if isinstance(source.get("ids"), dict) else {}),  # V141 : fiche cliquable
             "year": _media_year(source) or _media_year(media),
             "genres": _genres(source) or _genres(media),
             "rating": rating,
@@ -9545,7 +9667,23 @@ def render_basic_stats_page() -> None:
                 }
                 for r in rated_rows
             ]
-            st.dataframe(rated_table, use_container_width=True, hide_index=True)
+            _rated_event = st.dataframe(
+                rated_table, use_container_width=True, hide_index=True,
+                on_select="rerun", selection_mode="single-row", key="stats_rated_df",
+            )
+            _rated_sel: list = []
+            try:
+                _rated_sel = list(_rated_event.selection.get("rows") or [])
+            except Exception:
+                _rated_sel = []
+            if _rated_sel:
+                _ridx = int(_rated_sel[0])
+                if 0 <= _ridx < len(rated_rows):
+                    if st.session_state.get("_stats_rated_last_idx") != _ridx:
+                        st.session_state["_stats_rated_last_idx"] = _ridx
+                        _rated_fiche = _history_fiche_row(rated_rows[_ridx])
+                        if _rated_fiche:
+                            _open_cinema_detail(_rated_fiche)
             import csv as _csv
             import io as _io
             buf = _io.StringIO()

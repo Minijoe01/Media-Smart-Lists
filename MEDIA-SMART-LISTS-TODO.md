@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 4 octobre 2026 · Dernière version déployée : V140.
+> Dernière mise à jour : 4 octobre 2026 · Dernière version déployée : V141.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -497,3 +497,21 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] Statistiques → « Détail des visionnages » : lignes CLIQUABLES → fiche du contenu.
 - [x] « Que regarder ? » : case « 👁️ Inclure les vus récemment (moins d'un an) » →
       ils remontent dans « Déjà vu mais ça correspond » (fiches consultables).
+
+### Fait en V141
+- [x] Tuiles : retour barre plate (la vague ne vit que dans la fiche, 30px).
+- [x] Heatmap ÉCHELLE HYBRIDE : <5/10 = sombre fixe ; ≥5/10 = relatif (plancher 5)
+      → lisibles les séries serrées (Mr. Robot) ET écartées (Robot Chicken).
+- [x] Bouton tuile : .68rem / poids 900.
+- [x] Toggle « vus récemment » : vrai interrupteur (st.toggle).
+- [x] Similaires/Saga : cartes cliquables → fiche TMDB.
+- [x] Liens de la fiche sans soulignement (+ halo au survol).
+- [x] Score/fiction mis en valeur à droite de la vague (gros chiffre Manrope).
+- [x] Pastille « Hors de tes listes » : bleu identique aux tuiles.
+- [x] Pastille d'état dans la fiche : ✅ Vu le dd/mm/aaaa / 📂 liste / 📌 Watchlist / 🌐 hors.
+- [x] Boutons « VOIR LA FICHE » sur En cours de lecture, Progression Fantôme, Calendrier.
+- [x] « Mes contenus notés » (Statistiques) : lignes cliquables → fiche.
+- [x] Bannière en w1280 (fini l'étirement).
+- [ ] Réflexion : rendre cliquables les tableaux « Historique des ajouts » et
+      « audit des listes » (leurs lignes n'ont pas d'identifiants TMDB propres —
+      il faudrait les faire remonter depuis les données sources).
