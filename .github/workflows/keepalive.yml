@@ -1,86 +1,48 @@
 name: Keep-alive Streamlit
 
-# V123.3 — ANTI-VEILLE + RÉVEIL AUTOMATIQUE + WebSocket
+# ═══════════════════════════════════════════════════════════════════
+# V144 — VRAIE VISITE NAVIGATEUR (après échec du curl + WebSocket)
 #
-# Améliorations V123.3 (après retour utilisateur : l'app s'endormait
-# malgré des runs réussis) :
-#   · Fréence : toutes les 4 h au lieu de 12 h (6 visites/jour)
-#   · WebSocket : une simple requête HTTP (curl) ne réinitialise PAS
-#     le compteur de veille Streamlit — il faut une vraie session
-#     (WebSocket). On établit donc une connexion WebSocket brève
-#     après la visite curl, comme le ferait un navigateur.
-#   · Le POST resume reste en secours (si l'app dort vraiment).
+# DIAGNOSTIC du 05/10/2026 (vérifié dans un vrai Chromium) :
+#   · Les 30 runs précédents étaient « success » pendant que l'app
+#     DORMAIT : le curl + WebSocket artisanal NE COMPTE PAS comme une
+#     visite côté Streamlit Cloud.
+#   · Une app endormie affiche « Zzzz … Yes, get this app back up! ».
+#     Le CLIC sur ce bouton la réveille (testé : statut 12 → 5).
+#   · L'app réelle vit dans une IFRAME (title="streamlitApp") : le rendu
+#     de cette iframe prouve qu'une session réelle est établie.
 #
-# Statuts : 5 = RUNNING · 12 = IS_SHUTDOWN (endormie)
-# Planification : toutes les 4 heures = cron "0 */4 * * *"
+# CE WORKFLOW fait exactement ce qu'un humain fait :
+#   1. Ouvre l'app dans un vrai Chromium (Playwright).
+#   2. Si l'app dort → clique « Yes, get this app back up! ».
+#   3. Attend que le MENU de l'app apparaisse dans l'iframe.
+#   4. Vérifie le statut (5 = en ligne) et ÉCHOUE le run sinon :
+#      plus JAMAIS de run vert pendant que l'app dort — un échec
+#      s'affiche en rouge dans l'onglet Actions et t'alerte.
+#
+# Fréquence : toutes les 3 h (marge contre les délais GitHub de 15-60 min ;
+# les visites étant désormais RÉELLES, elles rechargent le compteur
+# d'inactivité à chaque fois). Pour changer : le cron ci-dessous.
+# ═══════════════════════════════════════════════════════════════════
 
 on:
   schedule:
-    - cron: "0 */4 * * *"
+    - cron: "0 */3 * * *"
   workflow_dispatch: {}   # test manuel : onglet Actions → Run workflow
 
 jobs:
   ping:
-    name: Visite (curl + WebSocket) + réveil si besoin
+    name: Vraie visite navigateur + réveil si besoin
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Setup Python pour WebSocket
-        run: pip install websockets
+      - name: Récupérer le dépôt (script de visite)
+        uses: actions/checkout@v5
 
-      - name: Visite et réveil de https://media-smart-lists.streamlit.app
+      - name: Installer Playwright + Chromium
         run: |
-          URL="https://media-smart-lists.streamlit.app/"
-          API="https://media-smart-lists.streamlit.app/api/v2"
-          JAR="/tmp/wake_cookies.txt"
+          pip install playwright
+          python3 -m playwright install chromium --with-deps
 
-          echo "── 1) Visite HTTP (chaîne d'authentification avec cookies)…"
-          page=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 --max-redirs 20 -L -c "$JAR" -b "$JAR" "$URL")
-          echo "   Page : HTTP $page"
-
-          echo "── 2) WebSocket (compte comme une VRAIE session)…"
-          python3 - <<'PYWS'
-          import asyncio, sys
-          try:
-              import websockets
-              async def ws_visit():
-                  uri = "wss://media-smart-lists.streamlit.app/_stcore/stream"
-                  headers = {"Origin": "https://media-smart-lists.streamlit.app"}
-                  async with websockets.connect(uri, extra_headers=headers, open_timeout=30) as ws:
-                      print("   WebSocket connecté ✓")
-                      await asyncio.sleep(3)  # assez pour être enregistré
-                  print("   WebSocket fermé proprement")
-              asyncio.run(ws_visit())
-          except Exception as e:
-              print(f"   ⚠️ WebSocket : {e}")
-              # Pas grave : le POST resume reste en secours
-          PYWS
-
-          echo "── 3) Statut réel de l'app (API Streamlit)…"
-          HDR=$(mktemp)
-          st=$(curl -s -D "$HDR" -o /tmp/app_status.json --max-time 60 -c "$JAR" -b "$JAR" \
-                -H "Accept: application/json" -w "%{http_code}" "$API/app/status")
-          echo "   Statut : HTTP $st → $(cat /tmp/app_status.json 2>/dev/null | head -c 200)"
-          status=$(grep -o '"status":[0-9]*' /tmp/app_status.json 2>/dev/null | head -1 | grep -o '[0-9]*' || true)
-          token=$(grep -i '^x-csrf-token:' "$HDR" | sed 's/^[Xx]-[Cc][Ss][Rr][Ff]-[Tt]oken:[[:space:]]*//' | tr -d '\r')
-
-          if [ "$status" = "5" ]; then
-            echo "✅ App en ligne (statut 5) — visite + WebSocket enregistrés."
-            exit 0
-          fi
-
-          echo "── 4) Réveil (POST resume, comme le bouton « Yes, get this app back up! »)…"
-          wake=$(curl -s -o /dev/null --max-time 120 -X POST -c "$JAR" -b "$JAR" \
-                -H "x-csrf-token: $token" \
-                -H "Accept: application/json" \
-                -H "Content-Type: application/json" \
-                -d '{}' "$API/app/resume" \
-                -w "%{http_code}")
-          echo "   Réveil : HTTP $wake (204 = accepté)"
-          case "$wake" in
-            200|202|204) echo "✅ Réveil accepté." ;;
-            *) echo "⚠️ Réveil refusé (HTTP $wake)" ; exit 1 ;;
-          esac
-
-          sleep 20
-          final=$(curl -s -o /dev/null -w "%{http_code}" --max-time 120 --max-redirs 20 -L -c "$JAR" -b "$JAR" "$URL")
-          echo "   Contrôle final : HTTP $final"
+      - name: Visiter https://media-smart-lists.streamlit.app
+        run: python3 scripts/keepalive_visit.py
