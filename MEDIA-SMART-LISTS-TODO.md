@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 4 octobre 2026 · Dernière version déployée : V141.
+> Dernière mise à jour : 5 octobre 2026 · Dernière version déployée : V145.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -512,6 +512,51 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] Boutons « VOIR LA FICHE » sur En cours de lecture, Progression Fantôme, Calendrier.
 - [x] « Mes contenus notés » (Statistiques) : lignes cliquables → fiche.
 - [x] Bannière en w1280 (fini l'étirement).
-- [ ] Réflexion : rendre cliquables les tableaux « Historique des ajouts » et
-      « audit des listes » (leurs lignes n'ont pas d'identifiants TMDB propres —
-      il faudrait les faire remonter depuis les données sources).
+- [x] (V142) Tableaux « Historique des ajouts » et « audit des listes » rendus
+      CLIQUABLES → fiche (ids remontés : `item` pour l'audit, `ids` ajoutés aux
+      lignes d'ajouts dans list_audit_engine.py).
+
+### Fait en V142
+- [x] Vague fiche : 34px, amplitude doublée (12px), trait FIXE 4.6px (plus épais ni
+      plus fin — juste la vague plus ample).
+- [x] Heatmap : échelle ABSOLUE 5→10 (le relatif rendait le moins bon épisode
+      d'une bonne série — Lizzie Borden 7.7 — très foncé). 7.7 ≈ mi-hauteur.
+- [x] Bouton tuile : copie EXACTE du style .mc-type, couleur gris-vert incluse
+      (les retouches de taille seules étaient imperceptibles).
+- [x] Pastille « ✅ Vu le … » : plus de troncature dans les chips.
+- [x] Affiches de saison : animation au survol (soulèvement, comme Similaires/Saga).
+- [x] Migration Trakt → MDBList : les 4 options binaires sont de vrais toggles.
+
+### Fait en V143
+- [x] Vague fiche : 38px, amplitude 16.8px (22% de la hauteur), trait fixe 4.6px.
+- [x] Heatmap : plancher ABSOLU 5.5→10 (décision utilisateur).
+- [x] Friction : libellée « ⚡ Friction 18 » + info-bulle native.
+- [x] MODE PROGRESSION : fiche ouverte depuis En cours/Fantôme → la barre montre
+      le % DÉJÀ VU (comme la tuile d'origine) + « visionné » ; les fiches sans
+      score NI progression (historique) n'affichent plus de barre du tout.
+- [x] Repli par TITRE+ANNÉE : les fiches/cases fantômes sans ids TMDB
+      (ex. Incredibles 2) retrouvent poster/bannière depuis le dataset enrichi.
+- [x] Bannière UHD : qualité « original » de TMDB.
+- [x] Pastille d'état déplacée dans la BANNIÈRE (bas droite, à côté du type).
+- [ ] DÉCISION EN ATTENTE : tuiles colorées par la couleur dominante du POSTER —
+      maquette `maquette-tuiles-poster-v2.png/.html` (v2 : images intégrées, plus
+      de dépendance réseau — aucune zone vide). Aucun code changé.
+
+### Fait en V145
+- [x] Vague fiche : RETOUR à l'amplitude V142 (18%, 34px) — à 22% les courbes
+      devenaient anguleuses (retour utilisateur).
+- [x] Friction : police légèrement plus grande (.68rem) + padding accru.
+- [x] Incredibles 2 : repli par titre NORMALISÉ (articles/ponctuation enlevés,
+      « The Incredibles 2 » = « Incredibles 2 ») + contenance stricte ≥ 85%.
+- [x] Bannière : retour w1280 (pixel parfait pour ~1250px affichés — l'UHD
+      « original » pesait 3-5× plus lourd sans différence visible).
+- [x] Pastille d'état bannière : MÊME format que le badge Film/Série, placée
+      juste DESSOUS (pile alignée à droite).
+- [x] BUG « Horreur + Séries » : TMDB n'a pas de genre TV « Horreur » → le
+      bassin « hors de mes listes » retombait sur les genres d'affinité SANS
+      contrainte (des drames/crime comme Lioness/MobLand remontaient). Fix :
+      résolution du genre en MOT-CLÉ TMDB (« horror ») pour les séries — le
+      bassin est cherché avec ce mot-clé ET chaque candidate doit le porter.
+      Idem côté contenus de tes listes (groupe élargi au mot-clé).
+- [x] Keep-alive V144 : vraie visite navigateur + clic de réveil + échec
+      bruyant (validé par l'utilisateur : run vert, ~1 min).
