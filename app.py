@@ -604,7 +604,24 @@ st.markdown(
         text-shadow: 0 3px 16px rgba(0, 0, 0, .95), 0 0 40px rgba(0,0,0,.5);
         line-height: 1.2;
     }
-    .cinema-banner .cinema-tag { margin-left: auto; flex-shrink: 0; }
+    .cinema-banner .cinema-tag {
+        margin-left: auto; flex-shrink: 0;
+        display: flex; flex-direction: column; align-items: flex-end; gap: .3rem;
+    }
+    /* V145 — pastille d'état de la bannière : MÊME FORMAT que le badge
+       Film/Série (.source-badge), juste DESSOUS, avec SA couleur d'état. */
+    .banner-status {
+        display: inline-block;
+        font-size: .72rem;
+        font-weight: 800;
+        padding: .24rem .6rem;
+        border-radius: 999px;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+    .banner-status.vu { background: linear-gradient(135deg, rgba(0, 163, 146, .18), rgba(0, 0, 0, .32)); border: 1px solid rgba(0, 163, 146, .65); color: #7ce0d4; }
+    .banner-status.liste { background: linear-gradient(135deg, rgba(255, 225, 0, .10), rgba(0, 0, 0, .32)); border: 1px solid rgba(255, 225, 0, .55); color: var(--am-yellow); }
+    .banner-status.hors { background: linear-gradient(135deg, rgba(45, 156, 219, .22), rgba(0, 0, 0, .32)); border: 1px solid rgba(45, 156, 219, .65); color: #fff; }
     /* V131.3 — LAYOUT ADAPTATIF : PC = poster à gauche + infos à droite.
        GSM = poster CENTRÉ et GRAND en haut, infos en dessous. */
     .cinema-layout {
@@ -3807,10 +3824,10 @@ def _wave_bar_html(
 
     pct = max(0.0, min(100.0, float(pct or 0)))
     y = height // 2
-    # V143 — vague ENCORE PLUS AMPLE : amplitude 22% de la hauteur,
-    # trait toujours FIXE (l'épaisseur ne change pas, seule la vague
-    # ondule davantage — retour utilisateur).
-    amp = max(2.0, height * 0.22)
+    # V145 — RETOUR à l'amplitude V142 (18%) : à 22%, les courbes
+    # devenaient anguleuses (« vilaines, moins arrondies » — retour
+    # utilisateur). 18% = le meilleur compromis rondeur/présence.
+    amp = max(2.0, height * 0.18)
     px = width * pct / 100.0
     stroke_w = 4.6
     uid = f"{key}_{int(pct)}_{height}_{width}".replace("-", "m")
@@ -3853,20 +3870,51 @@ def _wave_bar_html(
     )
 
 
+def _normalize_title(t: str) -> str:
+    """Normalise un titre pour la comparaison : minuscules, sans
+    ponctuation, sans articles initiaux (the/le/la/les/l…). « The
+    Incredibles 2 » = « Incredibles 2 » (V145 — Incredibles 2 en
+    progression fantôme ne retrouvait pas son média pour ça)."""
+    import re as _re
+
+    value = str(t or "").strip().casefold()
+    value = _re.sub(r"[^\w\s]", " ", value)
+    value = _re.sub(r"\s+", " ", value).strip()
+    for article in ("the", "le", "la", "les", "l", "un", "une", "a"):
+        if value.startswith(article + " "):
+            value = value[len(article) + 1:]
+            break
+    return value.strip()
+
+
 def _dataset_media_by_title_year(title: str, year=None) -> tuple[dict, str] | tuple[None, str]:
     """Retrouve un média du dataset par TITRE (+ année si fournie) —
     V143 : repli pour les lignes SANS identifiants (playback Trakt,
     progression fantôme…) afin de récupérer poster/bannière des données
-    enrichies. Priorité aux médias qui ont un poster ou une bannière."""
-    title_key = str(title or "").strip().casefold()
+    enrichies. Priorité aux médias qui ont un poster ou une bannière.
+    V145 : comparaison NORMALISÉE (sans articles) + repli par
+    contenance (l'un des titres contient l'autre)."""
+    title_key = _normalize_title(title)
     if not title_key:
         return None, ""
     best = None
     best_kind = ""
     for candidate, candidate_kind in _all_media(_dataset()):
-        candidate_title = str(_media_title(candidate) or "").strip().casefold()
-        if candidate_title != title_key:
+        candidate_title = _normalize_title(_media_title(candidate))
+        if not candidate_title:
             continue
+        if candidate_title != title_key:
+            # repli par contenance (titres longs vs courts) — strict :
+            # le titre court doit couvrir ≥ 80% du long (« The Batman » ≈
+            # « Batman » ✓, mais « Alien » ≠ « Aliens », « It » ≠ « It
+            # Chapter Two »). Priorité à l'égalité EXACTE ci-dessous.
+            shorter, longer = sorted([candidate_title, title_key], key=len)
+            if not (len(shorter) >= 5 and longer.startswith(shorter)
+                    and len(shorter) / len(longer) >= 0.8):
+                # seconde chance : égalité exacte sur les titres déjà
+                # normalisés → conservée pour la boucle ci-dessous
+                if candidate_title != title_key:
+                    continue
         if year and candidate.get("year") and str(candidate.get("year")) != str(year):
             continue
         if candidate.get("poster") or candidate.get("backdrop"):
@@ -3908,9 +3956,9 @@ def _fiche_status_pill(tmdb_id: int | None) -> str:
     if is_watched:
         if watched_date is not None:
             return (
-                f'<span class="sim-badge vu" style="margin-top:0;">✅ Vu le {watched_date.strftime("%d/%m/%Y")}</span>'
+                f'<span class="banner-status vu">✅ Vu le {watched_date.strftime("%d/%m/%Y")}</span>'
             )
-        return '<span class="sim-badge vu" style="margin-top:0;">✅ Vu</span>' 
+        return '<span class="banner-status vu">✅ Vu</span>'
     # dans une de mes listes ?
     for user_list in (sections.get("user_lists") or []):
         if not isinstance(user_list, dict):
@@ -3920,15 +3968,15 @@ def _fiche_status_pill(tmdb_id: int | None) -> str:
                 media = _unwrap_media(entry)
                 if media and _media_tmdb_id(media) == tmdb_id:
                     return (
-                        f'<span class="sim-badge liste" style="margin-top:0;">📂 {escape(str(user_list.get("name") or "Liste"))}</span>'
+                        f'<span class="banner-status liste">📂 {escape(str(user_list.get("name") or "Liste"))}</span>'
                     )
     # watchlist ?
     for bucket in ("movies", "shows"):
         for entry in ((sections.get("watchlist") or {}).get(bucket) or []):
             media = _unwrap_media(entry)
             if media and _media_tmdb_id(media) == tmdb_id:
-                return '<span class="sim-badge liste" style="margin-top:0;">📌 Watchlist</span>'
-    return '<span class="sim-badge hors" style="margin-top:0;">🌐 Hors de tes listes</span>'
+                return '<span class="banner-status liste">📌 Watchlist</span>'
+    return '<span class="banner-status hors">🌐 Hors de tes listes</span>'
 
 
 def _history_fiche_row(history_row: dict) -> dict | None:
@@ -4252,11 +4300,12 @@ def _render_cinema_detail_body(row: dict) -> None:
     # ── Construire tous les fragments HTML ──
     # Bannière
     if backdrop:
-        # V143 — QUALITÉ MAXIMALE (« original » = UHD natif de TMDB) :
-        # w780 était étiré, w1280 correct — l'utilisateur demande l'UHD.
-        # (Pourquoi pas avant ? le poids : original peut peser plusieurs Mo.
-        # Une seule image par fiche, servie par le CDN TMDB.)
-        banner_bg = f"https://image.tmdb.org/t/p/original{escape(backdrop, quote=True)}"
+        # V145 — RETOUR au w1280 (décision qualité/rapidité avec
+        # l'utilisateur) : la bannière s'affiche sur ~1250px → w1280 est
+        # le PIXEL PARFAIT (aucune différence visible avec l'UHD à cette
+        # taille, mais 3-5× plus léger). L'UHD (« original », testé en
+        # V143) ne sert que si la fiche s'affichait plus grand.
+        banner_bg = f"https://image.tmdb.org/t/p/w1280{escape(backdrop, quote=True)}"
         if logo:
             logo_html = (
                 f'<img class="cinema-logo" src="https://image.tmdb.org/t/p/w500{escape(logo, quote=True)}"'
@@ -4425,13 +4474,14 @@ def _render_cinema_detail_body(row: dict) -> None:
         score_html = (
             f'<div style="display:flex;align-items:center;gap:.7rem;margin:.5rem 0 .35rem;">'
             f'<div style="flex:1;min-width:0;">'
-            f'{_wave_bar_html(score_val, f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})", "rgba(255,255,255,.30)", height=38, key="fiche")}'
+            f'{_wave_bar_html(score_val, f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})", "rgba(255,255,255,.30)", height=34, key="fiche")}'
             f'</div>'
             f'<div style="text-align:right;flex-shrink:0;line-height:1.05;">'
             f'<div style="font-family:ManropeMSL,DejaVu Sans,sans-serif;font-weight:900;'
             f'font-size:1.5rem;color:#fff;">{score_val}<span style="font-size:.72rem;'
             f'color:#9fc4c0;font-weight:700;">/100</span></div>'
-            f'<div class="sim-badge" style="margin-top:.2rem;"'
+            f'<div class="sim-badge" style="margin-top:.2rem;font-size:.68rem;'
+            f' padding:.14rem .55rem;"'
             f' title="Friction = facilité de lancement. Durée courte, peu d épisodes : score élevé = facile à commencer.">'
             f'⚡ Friction {friction_val}</div>'
             f'</div></div>' 
@@ -5094,6 +5144,18 @@ GENRE_TMDB_APPROX = {
 # recherche hors-listes interroge le mot-clé : les résultats sont VRAIMENT
 # du sport, pas des drames approximatifs. Repli sur le genre approché
 # ci-dessus si le mot-clé est introuvable.
+# V145 — Genres cinéma SANS équivalent TV chez TMDB (Horreur, Thriller,
+# Romance… n'existent pas comme genres TV) : sur les SÉRIES, ces genres
+# vivent en MOTS-CLÉS TMDB. Sans ça, filtrer « Horreur » + « Séries »
+# retombait sur les genres d'affinité sans contrainte → des drames/crime
+# (Lioness, MobLand) remontaient (retour utilisateur).
+GENRE_KEYWORD_EQUIV = {
+    "Horreur": "horror",
+    "Téléfilm": "tv movie",
+    # Thriller / Romance / les autres : le mot-clé TMDB porte le même nom
+    # (résolu automatiquement en minuscules).
+}
+
 GENRE_TMDB_KEYWORD = {
     # ⚠️ Noms EXACTS des mots-clés TMDB : le mot-clé sport est « sports »
     # (id 6075, lien fourni par l'utilisateur), pas « sport » — c'est pour
@@ -5655,6 +5717,10 @@ def _perfect_recommendation(
     « 📚 Suite d'une saga entamée » ne renvoie QUE des suites de tes sagas.
     """
     sel_search = str(search_text or "").strip()
+    # V145 — genres cinéma sans genre TV (Horreur…) résolus en mots-clés
+    # pour le bassin SÉRIES (défini ici : utilisé par la vérification
+    # finale quelle que soit la branche — recherche ou bassin).
+    tv_only_kw: dict[str, list[int]] = {}
     # Genres sans équivalent TMDB → MOTS-CLÉS TMDB (ex. « sports » → The Last
     # Dance, F1…). Repli automatique sur le genre approché si introuvable.
     # Les STYLES du catalogue sont résolus pareil (mindfuck, heist…).
@@ -5876,6 +5942,18 @@ def _perfect_recommendation(
     else:
         for media_type in types:
             genre_map = GENRE_FR_TO_TMDB_TV if media_type == "tv" else GENRE_FR_TO_TMDB
+            # V145 — genres cinéma sans genre TV (Horreur…) : pour les
+            # SÉRIES on les résout en MOTS-CLÉS TMDB (« horror »), le
+            # bassin est cherché avec ce mot-clé ET la vérification finale
+            # l'exige sur chaque candidate (voir tv_only_kw ci-dessous).
+            if media_type == "tv":
+                for g in query_genres:
+                    if (g in GENRE_FR_TO_TMDB and g not in genre_map
+                            and g not in keyword_resolved and g not in tv_only_kw):
+                        kw_name = GENRE_KEYWORD_EQUIV.get(g) or g.casefold()
+                        ids = _resolve_group([kw_name])
+                        if ids:
+                            tv_only_kw[g] = ids
             gids = [str(genre_map[g]) for g in query_genres
                     if g in genre_map and g not in keyword_resolved]
             sep = "," if genre_mode == "Tous (ET)" else "|"
@@ -5928,10 +6006,16 @@ def _perfect_recommendation(
                 "api_key": api_key, "language": "fr-FR",
                 "vote_count.gte": 100, "vote_average.gte": 5.5,
             }
-            if keyword_resolved:
+            _kw_pool = dict(keyword_resolved)
+            if media_type == "tv" and tv_only_kw:
+                # V145 — les genres cinéma non-TV participent AUSSI au
+                # bassin séries via leurs mots-clés (Horreur → horror).
+                for _g, _ids in tv_only_kw.items():
+                    _kw_pool.setdefault(_g, _ids)
+            if _kw_pool:
                 # Tous les ids de mots-clés, OR entre eux : le classement
                 # client exige ensuite CHAQUE groupe (ET entre critères).
-                all_kw_ids = sorted({k for ids in keyword_resolved.values() for k in ids})
+                all_kw_ids = sorted({k for ids in _kw_pool.values() for k in ids})
                 base["with_keywords"] = "|".join(str(k) for k in all_kw_ids)
             if year_range:
                 date_field = "primary_release_date" if media_type == "movie" else "first_air_date"
@@ -6084,6 +6168,13 @@ def _perfect_recommendation(
         for g, kw_ids in keyword_resolved.items():
             if not (set(kw_ids) & item_keyword_ids):
                 missed.append(f"sans {g.lower()} (mot-clé TMDB)")
+        # V145 — genres cinéma sans genre TV (Horreur…) : sur les SÉRIES,
+        # le genre est exigé via son MOT-CLÉ TMDB (horror) — plus jamais
+        # de drame/crime sous un filtre « Horreur ».
+        if kind == "tv" and tv_only_kw:
+            for g, kw_ids in tv_only_kw.items():
+                if not (set(kw_ids) & item_keyword_ids):
+                    missed.append(f"sans {g.lower()} (mot-clé série)")
         if included_countries and country not in included_countries:
             missed.append(f"pays non inclus ({country.upper() or '?'})")
         if year_range and not (year_range[0] <= year <= year_range[1]):
@@ -7154,6 +7245,12 @@ def render_watchlist_page() -> None:
             kwq = GENRE_TMDB_KEYWORD.get(g)
             if kwq:
                 grp.add(str(kwq).casefold())
+            # V145 — genres cinéma sans genre TV (Horreur → mot-clé
+            # « horror ») : les séries de TES listes portent ce mot-clé,
+            # pas le genre « Horreur » (inexistant en TV).
+            kw_equiv = GENRE_KEYWORD_EQUIV.get(g)
+            if kw_equiv:
+                grp.add(str(kw_equiv).casefold())
             genre_groups.append(grp)
 
         def _match_genre(media):
