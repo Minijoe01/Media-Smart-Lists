@@ -1,0 +1,48 @@
+name: Keep-alive Streamlit
+
+# ═══════════════════════════════════════════════════════════════════
+# V144 — VRAIE VISITE NAVIGATEUR (après échec du curl + WebSocket)
+#
+# DIAGNOSTIC du 05/10/2026 (vérifié dans un vrai Chromium) :
+#   · Les 30 runs précédents étaient « success » pendant que l'app
+#     DORMAIT : le curl + WebSocket artisanal NE COMPTE PAS comme une
+#     visite côté Streamlit Cloud.
+#   · Une app endormie affiche « Zzzz … Yes, get this app back up! ».
+#     Le CLIC sur ce bouton la réveille (testé : statut 12 → 5).
+#   · L'app réelle vit dans une IFRAME (title="streamlitApp") : le rendu
+#     de cette iframe prouve qu'une session réelle est établie.
+#
+# CE WORKFLOW fait exactement ce qu'un humain fait :
+#   1. Ouvre l'app dans un vrai Chromium (Playwright).
+#   2. Si l'app dort → clique « Yes, get this app back up! ».
+#   3. Attend que le MENU de l'app apparaisse dans l'iframe.
+#   4. Vérifie le statut (5 = en ligne) et ÉCHOUE le run sinon :
+#      plus JAMAIS de run vert pendant que l'app dort — un échec
+#      s'affiche en rouge dans l'onglet Actions et t'alerte.
+#
+# Fréquence : toutes les 3 h (marge contre les délais GitHub de 15-60 min ;
+# les visites étant désormais RÉELLES, elles rechargent le compteur
+# d'inactivité à chaque fois). Pour changer : le cron ci-dessous.
+# ═══════════════════════════════════════════════════════════════════
+
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch: {}   # test manuel : onglet Actions → Run workflow
+
+jobs:
+  ping:
+    name: Vraie visite navigateur + réveil si besoin
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Récupérer le dépôt (script de visite)
+        uses: actions/checkout@v5
+
+      - name: Installer Playwright + Chromium
+        run: |
+          pip install playwright
+          python3 -m playwright install chromium --with-deps
+
+      - name: Visiter https://media-smart-lists.streamlit.app
+        run: python3 scripts/keepalive_visit.py
