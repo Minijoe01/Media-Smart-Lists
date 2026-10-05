@@ -714,10 +714,14 @@ st.markdown(
     /* V138 — SAISONS : cartes affiches + heatmap des notes d'épisodes */
     .season-strip { display: flex; gap: .55rem; overflow-x: auto; padding: .45rem .1rem .35rem; scrollbar-width: thin; }
     .season-card { flex: 0 0 auto; width: 88px; text-align: center; }
+    .season-poster { display: block; transition: transform .16s ease; }
+    .season-poster:hover { transform: translateY(-3px); }
     .season-poster img {
         width: 88px; height: 132px; border-radius: 9px; object-fit: cover;
         box-shadow: 0 8px 18px rgba(0, 0, 0, .45);
+        transition: box-shadow .16s ease;
     }
+    .season-poster:hover img { box-shadow: 0 12px 26px rgba(0, 0, 0, .6); }
     .season-noimg {
         display: flex; width: 88px; height: 132px; border-radius: 9px;
         align-items: center; justify-content: center;
@@ -752,6 +756,10 @@ st.markdown(
         border-radius: 999px; padding: .1rem .4rem; max-width: 84px; overflow: hidden;
         text-overflow: ellipsis; white-space: nowrap; vertical-align: top;
     }
+    /* V142 — dans les CHIPS de la fiche, la pastille d'état s'étend
+       librement : « ✅ Vu le 07/04/2026 » n'est plus tronqué (seules les
+       mini-cartes Similaires/Saga gardent la limite de largeur). */
+    .cinema-chips .sim-badge, .cinema-banner .sim-badge { max-width: none !important; }
     .sim-badge.vu { background: rgba(0, 163, 146, .2); border: 1px solid rgba(0, 163, 146, .55); color: #7ce0d4; }
     .sim-badge.liste { background: rgba(255, 225, 0, .1); border: 1px solid rgba(255, 225, 0, .5); color: var(--am-yellow); }
     .sim-badge.hors { background: linear-gradient(135deg, rgba(45, 156, 219, .30), rgba(0, 0, 0, .55)); border: 1px solid rgba(45, 156, 219, .65); color: #fff; }  /* V141 : même bleu que .mc-outside des tuiles */
@@ -1432,10 +1440,13 @@ st.markdown(
         border-top: 1px solid rgba(0, 163, 146, .28) !important;
         border-left: 4px solid var(--am-yellow) !important;  /* V137 : 4px, exactement comme la tuile */
         border-radius: 0 0 13px 13px !important;
-        color: var(--am-text) !important;
+        /* V142 — copie EXACTE du style .mc-type (le « 🎬 FILM » des tuiles),
+           couleur gris-vert incluse — les précédentes retouches de taille
+           (.74 → .68rem) étaient imperceptibles (retour utilisateur). */
+        color: var(--am-text-muted) !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .68rem !important;
-        font-weight: 900 !important;
+        font-size: .7rem !important;
+        font-weight: 800 !important;
         text-transform: uppercase !important;
         letter-spacing: .1em !important;
         padding: .14rem .6rem !important;   /* V137 : pied de tuile plus bas */
@@ -3796,9 +3807,12 @@ def _wave_bar_html(
 
     pct = max(0.0, min(100.0, float(pct or 0)))
     y = height // 2
-    amp = max(2.0, height * 0.12)  # vague DISCRÈTE (retour utilisateur)
+    # V143 — vague ENCORE PLUS AMPLE : amplitude 22% de la hauteur,
+    # trait toujours FIXE (l'épaisseur ne change pas, seule la vague
+    # ondule davantage — retour utilisateur).
+    amp = max(2.0, height * 0.22)
     px = width * pct / 100.0
-    stroke_w = max(3.5, height * 0.17)
+    stroke_w = 4.6
     uid = f"{key}_{int(pct)}_{height}_{width}".replace("-", "m")
 
     def _pts(x0: float, x1: float, steps: int = 110) -> str:
@@ -3837,6 +3851,29 @@ def _wave_bar_html(
         f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none"'
         f' style="width:100%;height:{height}px;display:block;">{played}{rest}{dot}</svg>'
     )
+
+
+def _dataset_media_by_title_year(title: str, year=None) -> tuple[dict, str] | tuple[None, str]:
+    """Retrouve un média du dataset par TITRE (+ année si fournie) —
+    V143 : repli pour les lignes SANS identifiants (playback Trakt,
+    progression fantôme…) afin de récupérer poster/bannière des données
+    enrichies. Priorité aux médias qui ont un poster ou une bannière."""
+    title_key = str(title or "").strip().casefold()
+    if not title_key:
+        return None, ""
+    best = None
+    best_kind = ""
+    for candidate, candidate_kind in _all_media(_dataset()):
+        candidate_title = str(_media_title(candidate) or "").strip().casefold()
+        if candidate_title != title_key:
+            continue
+        if year and candidate.get("year") and str(candidate.get("year")) != str(year):
+            continue
+        if candidate.get("poster") or candidate.get("backdrop"):
+            return candidate, candidate_kind
+        if best is None:
+            best, best_kind = candidate, candidate_kind
+    return best, best_kind
 
 
 def _fiche_status_pill(tmdb_id: int | None) -> str:
@@ -3914,6 +3951,13 @@ def _history_fiche_row(history_row: dict) -> dict | None:
                 media, kind = candidate, candidate_kind
                 break
     if media is None:
+        # V143 — repli par TITRE + ANNÉE : les lignes sans identifiants
+        # (ex. Incredibles 2 en progression fantôme) retrouvent leur
+        # média enrichi → poster et bannière dans la fiche.
+        media, kind = _dataset_media_by_title_year(
+            str(history_row.get("title") or ""), history_row.get("year")
+        )
+    if media is None:
         media = dict(history_row)
         kind = "tv" if history_row.get("type") in ("Épisode", "Série") else "movie"
     is_show = str(kind).startswith("tv") or history_row.get("type") in ("Épisode", "Série")
@@ -3924,7 +3968,7 @@ def _history_fiche_row(history_row: dict) -> dict | None:
             note = round(score_avg / 10, 1)
     except (TypeError, ValueError):
         note = None
-    return {
+    fiche_row = {
         "item": media,
         "key": f"hist_{tmdb or id(history_row)}",
         "type": "Série" if is_show else "Film",
@@ -3933,6 +3977,10 @@ def _history_fiche_row(history_row: dict) -> dict | None:
         "runtime": media.get("runtime"),
         "source": "Historique",
     }
+    # V143 — % de progression (fiche ouverte depuis En cours / Fantôme)
+    if history_row.get("progress_pct") is not None:
+        fiche_row["progress_pct"] = history_row.get("progress_pct")
+    return fiche_row
 
 
 def _seen_watchlist_listname_ids() -> tuple[set, set, dict]:
@@ -4204,9 +4252,11 @@ def _render_cinema_detail_body(row: dict) -> None:
     # ── Construire tous les fragments HTML ──
     # Bannière
     if backdrop:
-        # V141 — w1280 au lieu de w780 : la bannière s'affiche sur toute la
-        # largeur de la fiche (~1250px) — w780 était ÉTIRÉ (qualité perdue).
-        banner_bg = f"https://image.tmdb.org/t/p/w1280{escape(backdrop, quote=True)}"
+        # V143 — QUALITÉ MAXIMALE (« original » = UHD natif de TMDB) :
+        # w780 était étiré, w1280 correct — l'utilisateur demande l'UHD.
+        # (Pourquoi pas avant ? le poids : original peut peser plusieurs Mo.
+        # Une seule image par fiche, servie par le CDN TMDB.)
+        banner_bg = f"https://image.tmdb.org/t/p/original{escape(backdrop, quote=True)}"
         if logo:
             logo_html = (
                 f'<img class="cinema-logo" src="https://image.tmdb.org/t/p/w500{escape(logo, quote=True)}"'
@@ -4222,7 +4272,12 @@ def _render_cinema_detail_body(row: dict) -> None:
             # d'accentuation de la fiche (plus de coupure bannière/fiche).
             f'<div class="cinema-bg-fade" style="background-image:{banner_fade};"></div>'
             f'<div class="cinema-bottom">{logo_html}'
-            f'<span class="cinema-tag"><span class="source-badge">{escape(str(row.get("type") or ""))}</span></span>'
+            f'<span class="cinema-tag"><span class="source-badge">{escape(str(row.get("type") or ""))}</span>'
+            # V143 — pastille d'ÉTAT dans la bannière (bas droite, à côté
+            # du type) : plus joli qu'au bout des chips — les chips sont
+            # à l'accent du film, la pastille a SA couleur (vert/bleu).
+            f"{_fiche_status_pill(tmdb_id)}"
+            "</span>"
             "</div></div>"
         )
     else:
@@ -4329,11 +4384,8 @@ def _render_cinema_detail_body(row: dict) -> None:
             meta_bits.append(f'<span class="mc-year" data-tooltip="Recettes mondiales">🎟️ {revenue_txt}</span>')
     if original_title_html:
         meta_bits.append(original_title_html)
-    # V141 — pastille d'ÉTAT du contenu (Vu le … / 📂 liste / 📌 watchlist /
-    # 🌐 hors de mes listes) : même langage que les badges Similaires/Saga.
-    status_pill = _fiche_status_pill(tmdb_id)
-    if status_pill:
-        meta_bits.append(status_pill)
+    # V143 — la pastille d'état vit désormais dans la BANNIÈRE (voir
+    # banner_html) ; les chips restent 100 % couleur d'accent.
     chips_html = f'<div class="cinema-chips">{"".join(meta_bits)}</div>'
 
     # V134 — Tagline (phrase d'accroche) juste sous les pastilles
@@ -4342,22 +4394,47 @@ def _render_cinema_detail_body(row: dict) -> None:
     # Score bar (HTML, pas st.progress)
     score_val = int(round(row.get("score", 0)))
     friction_val = int(row.get("friction", 0))
-    if WAVE_BARS:
+    # V143 — MODE PROGRESSION : fiche ouverte depuis « En cours de lecture »
+    # ou « Progression fantôme » → la barre montre le % DÉJÀ VU de la série
+    # (comme la tuile d'origine), pas un score de recommandation.
+    try:
+        progress_pct = float(row.get("progress_pct")) if row.get("progress_pct") is not None else None
+    except (TypeError, ValueError):
+        progress_pct = None
+    if progress_pct is None and not row.get("score"):
+        # fiche sans score NI progression (historique, tableau noté…) :
+        # pas de barre — un « 0/100 » serait absurde.
+        score_html = ""
+    elif WAVE_BARS and progress_pct is not None:
+        score_html = (
+            f'<div style="display:flex;align-items:center;gap:.7rem;margin:.5rem 0 .35rem;">'
+            f'<div style="flex:1;min-width:0;">'
+            f'{_wave_bar_html(progress_pct, f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})", "rgba(255,255,255,.30)", height=38, key="ficheprog")}'
+            f'</div>'
+            f'<div style="text-align:right;flex-shrink:0;line-height:1.05;">'
+            f'<div style="font-family:ManropeMSL,DejaVu Sans,sans-serif;font-weight:900;'
+            f'font-size:1.5rem;color:#fff;">{progress_pct:.0f}<span style="font-size:.72rem;'
+            f'color:#9fc4c0;font-weight:700;">%</span></div>'
+            f'<div style="font-size:.66rem;color:#9fc4c0;font-weight:700;margin-top:.18rem;">visionné</div>'
+            f'</div></div>'
+        )
+    elif WAVE_BARS:
         # V141 — SCORE ET FRICTION EN VALEUR, à droite de la barre (retour
         # utilisateur : trop discrets avant). Vague légèrement plus grande
         # (30px). WAVE_BARS = False → retour à la barre plate.
         score_html = (
             f'<div style="display:flex;align-items:center;gap:.7rem;margin:.5rem 0 .35rem;">'
             f'<div style="flex:1;min-width:0;">'
-            f'{_wave_bar_html(score_val, f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})", "rgba(255,255,255,.30)", height=30, key="fiche")}'
+            f'{_wave_bar_html(score_val, f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})", "rgba(255,255,255,.30)", height=38, key="fiche")}'
             f'</div>'
             f'<div style="text-align:right;flex-shrink:0;line-height:1.05;">'
             f'<div style="font-family:ManropeMSL,DejaVu Sans,sans-serif;font-weight:900;'
             f'font-size:1.5rem;color:#fff;">{score_val}<span style="font-size:.72rem;'
             f'color:#9fc4c0;font-weight:700;">/100</span></div>'
-            f'<div class="sim-badge" style="margin-top:.2rem;" data-tooltip="Facilité de lancement '
-            f'(durée courte, peu d épisodes = friction faible)">⚡ {friction_val}</div>'
-            f'</div></div>'
+            f'<div class="sim-badge" style="margin-top:.2rem;"'
+            f' title="Friction = facilité de lancement. Durée courte, peu d épisodes : score élevé = facile à commencer.">'
+            f'⚡ Friction {friction_val}</div>'
+            f'</div></div>' 
         )
     else:
         score_html = (
@@ -4524,19 +4601,17 @@ def _render_cinema_detail_body(row: dict) -> None:
                     for e in (sp.get("episodes") or [])
                     if isinstance(e, dict)
                 ]
-                # V141 — ÉCHELLE HYBRIDE (retour utilisateur : le relatif pur
-                # était illisible pour les séries à notes écartées — Robot
-                # Chicken 1→7.5 — et ne distinguait pas les BONNES des
-                # MAUVAISES séries) :
-                # · note < 5/10 → forcément un mauvais épisode → SOMBRE fixe ;
-                # · note ≥ 5/10 → relatif min-max AU-DESSUS du plancher 5 :
-                #   séries serrées (Mr. Robot 7.8-8.6) → tout l'écart se voit,
-                #   séries écartées → le 7.5 brille, le 5.2 reste sobre, le
-                #   1/10 est au fond. Comparable d'une série à l'autre.
-                votes_hi = max(all_episode_votes) if all_episode_votes else 10.0
-                votes_ok = [v for v in all_episode_votes if v >= 5.0]
-                votes_lo = max(5.0, min(votes_ok) if votes_ok else 5.0)
-                votes_span = max(votes_hi - votes_lo, 0.001)
+                # V142 — ÉCHELLE ABSOLUE 5→10 (retour utilisateur : avec le
+                # relatif, le MOINS BON épisode d'une BONNE série — Lizzie
+                # Borden 7.7 — passait très foncé, ce qui trompait l'œil).
+                # Standard, lisible et comparable d'une série à l'autre :
+                # · < 5/10 → mauvais → SOMBRE fixe (le fond) ;
+                # · 5 → 10 → dégradé ABSOLU linéaire : 7.7 ≈ mi-hauteur,
+                #   9+ ≈ clair. Une série moyenne ne touche jamais le haut.
+                # V143 — plancher 5.5 (retour utilisateur : « 5.5 reste une
+                # note basse ») : dégradé ABSOLU standard 5.5 → 10.
+                votes_lo = 5.5
+                votes_span = 4.5
                 season_cards = []
                 heat_rows = []
                 for season_number, season_payload in seasons_payloads:
@@ -4565,12 +4640,12 @@ def _render_cinema_detail_body(row: dict) -> None:
                         episode_vote = float(episode.get("vote_average") or 0)
                         ep_num = episode.get("episode_number")
                         ep_num_txt = str(ep_num) if ep_num else "?"
-                        # V141 — hybride : sous 5/10 → 0 (sombre) ; sinon
-                        # relatif au-dessus du plancher 5.
-                        if episode_vote < 5.0:
+                        # V142 — ABSOLU : sous 5/10 → 0 (sombre) ; sinon
+                        # dégradé linéaire 5→10.
+                        if episode_vote <= 5.5:
                             t_ratio = 0.0
                         else:
-                            t_ratio = max(0.0, min(1.0, (episode_vote - votes_lo) / votes_span)) ** 0.8
+                            t_ratio = max(0.0, min(1.0, (episode_vote - votes_lo) / votes_span))
                         cell_rgb = (
                             int(d_rgb[0] + (a2_rgb[0] - d_rgb[0]) * t_ratio),
                             int(d_rgb[1] + (a2_rgb[1] - d_rgb[1]) * t_ratio),
@@ -7726,7 +7801,10 @@ def render_progress_page() -> None:
             except (TypeError, ValueError):
                 pass
             if st.button("🎬 Voir la fiche", key=f"cin_up_{_up_tmdb or raw_show_title[:40]}", use_container_width=True, type="secondary"):
-                _open_cinema_detail(_history_fiche_row({"ids": show_ids, "title": raw_show_title, "type": "Série"}) or {"item": show_ref or {}, "type": "Série", "key": f"up_{_up_tmdb}"})
+                _up_fiche = _history_fiche_row({"ids": show_ids, "title": raw_show_title, "type": "Série", "progress_pct": percent})
+                if not _up_fiche:
+                    _up_fiche = {"item": show_ref or {}, "type": "Série", "key": f"up_{_up_tmdb}", "progress_pct": percent}
+                _open_cinema_detail(_up_fiche)
 
         if len(filtered_rows) > display_limit:
             st.caption(
@@ -8048,6 +8126,16 @@ def render_ghost_page() -> None:
         pct_col = f'<div class="media-list-pct" data-tooltip="Progression visionnée">{progress:.0f}%<span class="sub">vu</span></div>'
         pct_inline = f'<span class="mc-inline-pct" data-tooltip="Progression visionnée">{progress:.0f}%</span>'
         row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+        # V143 — poster de repli : si la ligne fantôme n'a pas d'affiche
+        # (ids TMDB absents du playback), on cherche le média par TITRE
+        # dans le dataset enrichi (ex. Incredibles 2).
+        if not _poster_url(row):
+            _fallback_media, _ = _dataset_media_by_title_year(str(row.get("title") or ""), row.get("year"))
+            if _fallback_media:
+                row = {**row, "poster": _fallback_media.get("poster") or row.get("poster"),
+                       "backdrop": _fallback_media.get("backdrop") or row.get("backdrop"),
+                       "ids": _fallback_media.get("ids") if isinstance(_fallback_media.get("ids"), dict) else row_ids}
+                row_ids = row.get("ids") if isinstance(row.get("ids"), dict) else row_ids
         links_html = _content_links_html(row_ids, str(row.get("title") or ""), is_show=(row.get("type") != "Film"), suffix=pct_inline)
         head = (
             f'<div class="mc-head">'
@@ -8074,7 +8162,10 @@ def render_ghost_page() -> None:
         except (TypeError, ValueError):
             pass
         if st.button("🎬 Voir la fiche", key=f"cin_gh_{_gh_tmdb or str(row.get('title') or '')[:40]}", use_container_width=True, type="secondary"):
-            _open_cinema_detail(_history_fiche_row(row) or {"item": {"title": row.get("title"), "ids": row_ids}, "type": row.get("type") or "Série", "key": f"gh_{_gh_tmdb}"})
+            _gh_fiche = _history_fiche_row({**row, "progress_pct": progress})
+            if not _gh_fiche:
+                _gh_fiche = {"item": {"title": row.get("title"), "ids": row_ids}, "type": row.get("type") or "Série", "key": f"gh_{_gh_tmdb}", "progress_pct": progress}
+            _open_cinema_detail(_gh_fiche)
 
     if len(visible) > display_limit:
         st.caption(f"{len(visible) - display_limit} progression(s) supplémentaire(s) masquée(s).")
@@ -8274,7 +8365,30 @@ def render_static_lists_page() -> None:
         for row in filtered
     ]
     if table:
-        st.dataframe(table, use_container_width=True, hide_index=True)
+        st.caption("🖱️ Clique sur une ligne pour ouvrir sa fiche (bannière, saisons, casting…)")
+        _audit_event = st.dataframe(
+            table, use_container_width=True, hide_index=True,
+            on_select="rerun", selection_mode="single-row", key="audit_rows_df",
+        )
+        _audit_sel: list = []
+        try:
+            _audit_sel = list(_audit_event.selection.get("rows") or [])
+        except Exception:
+            _audit_sel = []
+        if _audit_sel:
+            _aidx = int(_audit_sel[0])
+            if 0 <= _aidx < len(filtered):
+                if st.session_state.get("_audit_rows_last_idx") != _aidx:
+                    st.session_state["_audit_rows_last_idx"] = _aidx
+                    _a_row = filtered[_aidx] or {}
+                    _a_item = _a_row.get("item") if isinstance(_a_row.get("item"), dict) else {}
+                    _a_fiche = _history_fiche_row({
+                        "ids": _a_item.get("ids") if isinstance(_a_item.get("ids"), dict) else {},
+                        "title": _a_row.get("title"),
+                        "type": _a_row.get("type"),
+                    })
+                    if _a_fiche:
+                        _open_cinema_detail(_a_fiche)
     else:
         st.caption("Aucun contenu ne correspond à ces règles.")
 
@@ -8612,7 +8726,24 @@ def render_static_lists_page() -> None:
             for row in visible_additions[:max_additions]
         ]
         if additions_table:
-            st.dataframe(additions_table, use_container_width=True, hide_index=True)
+            st.caption("🖱️ Clique sur une ligne pour ouvrir sa fiche")
+            _add_event = st.dataframe(
+                additions_table, use_container_width=True, hide_index=True,
+                on_select="rerun", selection_mode="single-row", key="additions_df",
+            )
+            _add_sel: list = []
+            try:
+                _add_sel = list(_add_event.selection.get("rows") or [])
+            except Exception:
+                _add_sel = []
+            if _add_sel:
+                _addidx = int(_add_sel[0])
+                if 0 <= _addidx < min(len(visible_additions), max_additions):
+                    if st.session_state.get("_additions_last_idx") != _addidx:
+                        st.session_state["_additions_last_idx"] = _addidx
+                        _add_fiche = _history_fiche_row(visible_additions[_addidx])
+                        if _add_fiche:
+                            _open_cinema_detail(_add_fiche)
         else:
             st.caption("Aucun ajout ne correspond à ces filtres.")
         if len(visible_additions) > max_additions:
@@ -10721,10 +10852,10 @@ def render_migration_page() -> None:
 
     # Choix des sections
     st.markdown("##### Sections à migrer")
-    do_history = st.checkbox("📜 Historique (films + épisodes avec dates)", value=True, key="mig_hist")
-    do_ratings = st.checkbox("⭐ Notes", value=True, key="mig_ratings")
-    do_watchlist = st.checkbox("📌 Watchlist", value=True, key="mig_wl")
-    do_lists = st.checkbox("🗂️ Listes (créées si absentes)", value=True, key="mig_lists")
+    do_history = st.toggle("📜 Historique (films + épisodes avec dates)", value=True, key="mig_hist")
+    do_ratings = st.toggle("⭐ Notes", value=True, key="mig_ratings")
+    do_watchlist = st.toggle("📌 Watchlist", value=True, key="mig_wl")
+    do_lists = st.toggle("🗂️ Listes (créées si absentes)", value=True, key="mig_lists")
 
     # Mode simulation
     st.markdown("##### Mode")
