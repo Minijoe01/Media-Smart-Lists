@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 5 octobre 2026 · Dernière version déployée : V145.
+> Dernière mise à jour : 5 octobre 2026 · Dernière version déployée : V146.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -538,9 +538,8 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       (ex. Incredibles 2) retrouvent poster/bannière depuis le dataset enrichi.
 - [x] Bannière UHD : qualité « original » de TMDB.
 - [x] Pastille d'état déplacée dans la BANNIÈRE (bas droite, à côté du type).
-- [ ] DÉCISION EN ATTENTE : tuiles colorées par la couleur dominante du POSTER —
-      maquette `maquette-tuiles-poster-v2.png/.html` (v2 : images intégrées, plus
-      de dépendance réseau — aucune zone vide). Aucun code changé.
+- [x] DÉCISION PRISE (05/10) : tuiles colorées par le poster → REFUSÉES
+      (« trop arc-en-ciel », l'utilisateur préfère son vert/jaune). Ne pas proposer.
 
 ### Fait en V145
 - [x] Vague fiche : RETOUR à l'amplitude V142 (18%, 34px) — à 22% les courbes
@@ -560,3 +559,20 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       Idem côté contenus de tes listes (groupe élargi au mot-clé).
 - [x] Keep-alive V144 : vraie visite navigateur + clic de réveil + échec
       bruyant (validé par l'utilisateur : run vert, ~1 min).
+
+### Fait en V146
+- [x] BUG « Horreur + Séries » hors-listes (0 résultat) : les mots-clés n'étaient
+      extraits QUE si `keyword_resolved` était rempli → item_kw vide → toutes les
+      séries rejetées. Fix : extraire si `keyword_resolved OR tv_only_kw`.
+- [x] Friction : pastille non tronquée (max-width none) + police .68rem.
+- [x] BOUTON « VOIR LA FICHE » — le VRAI bug enfin trouvé : le <p> INTERNE du
+      bouton Streamlit porte SA PROPRE typo qui écrasait nos styles → le <p> est
+      maintenant ciblé aussi. (C'est pour ça que les changements semblaient
+      invisibles depuis des versions !)
+- [x] Tableaux cliquables : DÉCOCHER une ligne ré-arme le clic (on peut rouvrir
+      la même fiche sans devoir en choisir une autre).
+- [x] FICHE ACTEUR DE RETOUR — dans Statistiques, par BOUTON NATIF « 👤 Fiche »
+      sous chaque carte acteur/réalisateur : dialog SANS AUCUN rechargement
+      (contrairement à la V137). Contenus vus + dans tes listes + à découvrir.
+- [ ] Idées en discussion : réorganisation de la page Statistiques (onglets ?),
+      bloc « anecdote » (TMDB n'en fournit pas — voir ETAPE-146 pour les pistes).
