@@ -856,7 +856,7 @@ st.markdown(
     }
     .season-card .t { font-size: .72rem; font-weight: 800; color: var(--am-text); margin-top: .3rem; }
     .season-card .d { font-size: .64rem; color: var(--am-text-muted); }
-    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: 3.2rem 0 .25rem; overflow-x: auto; }
+    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: 3.2rem .4rem .25rem 3.6rem; overflow-x: auto; }
     .ep-row { display: flex; gap: .45rem; align-items: center; }
     .ep-season { font-size: .64rem; font-weight: 800; color: var(--am-text-muted); width: 24px; flex-shrink: 0; }
     .ep-cells { display: flex; gap: 3px; }
@@ -869,6 +869,21 @@ st.markdown(
        donne à la bulle un espace DANS la boîte visible : elle s'affiche
        intégralement, pour toutes les lignes, sans casser le scroll
        horizontal des saisons longues. */
+    /* V151 — FIX BULLE COUPÉE À GAUCHE (retour utilisateur avec capture) :
+       la bulle est CENTRÉE sur sa cellule (min-width 180px) → pour les
+       premiers épisodes d'une saison, elle débordait à GAUCHE du conteneur
+       scrollable et le texte (« la note ») était coupé par le bord de la
+       fiche. Deux gardes : un padding-left de 3.6rem (l'espace vit dans la
+       boîte visible) ET un ancrage spécifique pour la 1re cellule de chaque
+       rangée — sa bulle part du bord de la cellule vers la droite, donc ne
+       peut PLUS jamais déborder à gauche. */
+    .ep-cell:first-child[data-tooltip]::after {
+        left: -3.1rem;
+        transform: translateY(4px);
+    }
+    .ep-cell:first-child[data-tooltip]:hover::after {
+        transform: translateY(0);
+    }
     /* V139 — SIMILAIRES / SAGA : mini-cartes + badges d'état */
     .sim-strip { display: flex; gap: .55rem; overflow-x: auto; padding: .45rem .1rem .35rem; scrollbar-width: thin; }
     /* V140 — cartes à hauteur FIXE : titre limité à 2 lignes, badge
@@ -5005,7 +5020,10 @@ def _render_cinema_detail_body(row: dict) -> None:
                             int(d_rgb[1] + (a2_rgb[1] - d_rgb[1]) * t_ratio),
                             int(d_rgb[2] + (a2_rgb[2] - d_rgb[2]) * t_ratio),
                         )
-                        # info-bulle SxE · note décimale · titre (CSS + title natif)
+                        # info-bulle SxE · note décimale · titre — bulle CSS
+                        # INSTANTANÉE uniquement (V151 : le title natif, qui
+                        # s'affichait en 2e quelques secondes plus tard, est
+                        # retiré — retour utilisateur).
                         tip = (
                             f"S{season_number}E{ep_num_txt} · {episode_vote:.1f}/10"
                             + (f" · {episode.get('name')}" if episode.get("name") else "")
@@ -5015,7 +5033,7 @@ def _render_cinema_detail_body(row: dict) -> None:
                         halo = "outline:1.5px solid #FFE100;outline-offset:-1.5px;" if episode_vote >= 8.5 else ""
                         cells.append(
                             f'<span class="ep-cell" style="background:rgb({cell_rgb[0]},{cell_rgb[1]},{cell_rgb[2]});{halo}"'
-                            f' data-tooltip="{escape(tip, quote=True)}" title="{escape(tip)}">{ep_num_txt}</span>'
+                            f' data-tooltip="{escape(tip, quote=True)}">{ep_num_txt}</span>'
                         )
                     if cells:
                         heat_rows.append(
@@ -8526,7 +8544,8 @@ def render_pop_page() -> None:
     st.caption(
         "🔒 Confidentialité : seuls titre, année, type, genres, durée et note des "
         "40 candidats partent chez Google — jamais tes notes personnelles ni ton "
-        "historique. Quota gratuit Gemini : ~1 500 requêtes/jour (1 par tirage)."
+        "historique. Quota gratuit Gemini (modèles Flash) : ~1 000 requêtes/jour "
+        "(1 par tirage, 1 par anecdote)."
     )
 
 

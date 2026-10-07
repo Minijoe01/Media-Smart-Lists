@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V150.
+> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V151.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -690,6 +690,30 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       `div.stButton:has(> button)` (boutons SANS wrapper uniquement).
 - [x] README : l'utilisateur préfère le refaire lui-même À LA FIN — plus
       aucun README dans les livraisons (retiré de V150).
+
+### Fait en V151 (retours du 07/10 au soir, 2e vague)
+- [x] 🎯 404 « Modèle gemini-2.5-flash indisponible » (POP + anecdotes) :
+      gemini-2.5-flash est RÉSERVÉ aux projets qui l'utilisaient déjà (les
+      nouveaux projets/projets par défaut reçoivent 404 — vérifié sur les
+      forums Google et la doc Firebase, oct. 2026). CORRECTION DÉFINITIVE :
+      PLUS AUCUN NOM DE MODÈLE EN DUR — l'app LISTE les modèles disponibles
+      POUR TA CLÉ (GET /v1beta/models, 0 quota) et choisit automatiquement
+      le meilleur Flash : alias « gemini-flash-latest » en priorité, sinon
+      stable avant preview, version la plus haute, flash avant flash-lite
+      (cache 6 h par clé, hashée). Message 404 réorienté vers le diagnostic.
+      Diagnostic de clé enrichi : modèle retenu + liste des Flash visibles.
+      8/8 tests unitaires de résolution (dont le cas réel 2.5→3.6).
+- [x] Heatmap : bulle COUPÉE À GAUCHE par le bord de la fiche (retour avec
+      capture) : la bulle centrée (min-width 180px) débordait à gauche du
+      conteneur scrollable pour les premiers épisodes. Fix ×2 : padding-left
+      3.6rem + ancrage spécifique 1re cellule (bulle décalée vers la
+      droite, ne peut plus jamais déborder). Mesures : marge 1re cellule
+      88.8px, bulle à 39.2px du bord, 5 752 px au survol.
+- [x] Heatmap : 2e info-bulle (title natif, celle qui apparaissait quelques
+      secondes après) SUPPRIMÉE — demande utilisateur : seule la bulle
+      CSS instantanée reste.
+- [x] Quota affiché corrigé : ~1 000 requêtes/jour (Flash gratuit 2026),
+      et non ~1 500.
 
 ### PROCHAINES ÉTAPES (validées par l'utilisateur 07/10)
 - [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
