@@ -721,22 +721,36 @@ st.markdown(
     .cast-link:hover .cast-name { color: #fff; }
     /* V146 — bouton « 👤 Fiche » sous les cartes personnes (Statistiques) :
        même style .mc-type que le bouton « VOIR LA FICHE » des tuiles. */
+    /* V147 — FUSION carte+bouton personne (look tuile « Que regarder ») :
+       la carte perd ses coins bas, le bouton ses coins hauts, zéro écart. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card) .people-card {
+        border-radius: 13px 13px 0 0 !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card)
+        + div[data-testid="stElementContainer"] {
+        margin-top: -0.55rem !important;  /* V147 : absorbe le gap de colonne (9px mesurés) */
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card):hover
+        + div[data-testid="stElementContainer"] button[kind="secondary"] {
+        transform: translateY(-2px);
+    }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card)
         + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
         background: rgba(8, 55, 50, .62) !important;
         border: 1px solid rgba(0, 163, 146, .45) !important;
+        border-top: 1px solid rgba(0, 163, 146, .28) !important;
         border-left: 4px solid var(--am-yellow) !important;
-        border-radius: 13px !important;
+        border-radius: 0 0 13px 13px !important;
         color: var(--am-text-muted) !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .7rem !important;
         font-weight: 800 !important;
         text-transform: uppercase !important;
         letter-spacing: .1em !important;
-        padding: .14rem .6rem !important;
-        min-height: 30px !important;
+        padding: .08rem .55rem !important;
+        min-height: 24px !important;
         box-shadow: none !important;
         transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease !important;
     }
@@ -750,6 +764,8 @@ st.markdown(
         font-weight: 800 !important;
         text-transform: uppercase !important;
         letter-spacing: .1em !important;
+        line-height: 1 !important;
+        margin: 0 !important;
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card):hover
         + div[data-testid="stElementContainer"] button[kind="secondary"] {
@@ -1523,6 +1539,8 @@ st.markdown(
         font-weight: 800 !important;
         text-transform: uppercase !important;
         letter-spacing: .1em !important;
+        padding: .08rem .55rem !important;  /* V147 : hauteur compacte (retour utilisateur) */
+        min-height: 24px !important;         /* neutralise le min-height:48px de Streamlit */
     }
     /* V145b — le <p> INTERNE du bouton Streamlit a SA PROPRE typo (c'est
        pour ça que les changements semblaient invisibles !) : on la force
@@ -1537,10 +1555,8 @@ st.markdown(
         font-weight: 800 !important;
         text-transform: uppercase !important;
         letter-spacing: .1em !important;
-        padding: .14rem .6rem !important;   /* V137 : pied de tuile plus bas */
-        min-height: 30px !important;        /* V137 : neutralise min-height:48px Streamlit */
-        box-shadow: none !important;
-        transition: transform .16s ease, background .16s ease, border-color .16s ease, box-shadow .16s ease !important;
+        line-height: 1 !important;   /* V147 : hauteur compacte */
+        margin: 0 !important;
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,
@@ -2801,14 +2817,20 @@ def _render_people_cards(people: list[dict], limit: int = 8, fallback_emoji: str
             'gap:.5rem;margin:.4rem 0;">' + "".join(cards) + '</div>')
 
 
-def _render_people_cards_clickable(people: list[dict], fallback_emoji: str = "🎭", limit: int = 10, columns: int = 4) -> None:
-    """Cartes personnes CLIQUABLES (Statistiques, V146) : chaque carte est
-    suivie d'un bouton natif « 👤 Fiche » qui ouvre la FICHE ACTEUR dans
-    un dialog — bouton Streamlit = AUCUN rechargement de page (contraire
-    à la V137 et sa navigation ?acteur=, retirée)."""
+def _render_people_cards_clickable(
+    people: list[dict], fallback_emoji: str = "🎭", limit: int = 10,
+    columns: int = 4, person_kind: str = "acteur",
+) -> None:
+    """Cartes personnes CLIQUABLES (Statistiques, V146-V147) : chaque carte
+    est FUSIONNÉE à un bouton natif (look tuile) qui ouvre la FICHE ACTEUR
+    ou RÉALISATEUR dans un dialog — bouton Streamlit = AUCUN rechargement
+    de page (contrairement à la V137 et sa navigation ?acteur=)."""
     people = people[:limit]
     if not people:
         return
+    is_director = person_kind == "realisateur"
+    button_label = "🎬 Fiche" if is_director else "👤 Fiche"
+    key_prefix = "director" if is_director else "actor"
     cols = st.columns(columns)
     for i, person in enumerate(people):
         with cols[i % columns]:
@@ -2818,8 +2840,8 @@ def _render_people_cards_clickable(people: list[dict], fallback_emoji: str = "�
             )
             person_id = person.get("id")
             if person_id:
-                if st.button("👤 Fiche", key=f"actor_{person_id}", use_container_width=True, type="secondary"):
-                    _actor_detail_dialog(int(person_id))
+                if st.button(button_label, key=f"{key_prefix}_{person_id}", use_container_width=True, type="secondary"):
+                    _actor_detail_dialog(int(person_id), person_kind)
 
 
 def _render_studio_chips(studios: list[dict], limit: int = 10) -> str:
@@ -3122,8 +3144,9 @@ def _apply_tmdb_payload(media: dict, payload: dict, french: bool = False) -> Non
             order = int(raw_order) if raw_order is not None else 99
         except (TypeError, ValueError):
             order = 99
-        if order >= 10:
-            continue
+        if order >= 20:
+            continue  # V147 : top 20 (avant 10 — Pedro Pascal 11e de 3 contenus
+                     # n'était pas compté : « 9 » côté stats vs « 12 » côté fiche)
         name = str(person.get("name") or "").strip()
         if not name:
             continue
@@ -4568,12 +4591,13 @@ def _render_cinema_detail_body(row: dict) -> None:
             f'<div style="flex:1;min-width:0;">'
             f'{_wave_bar_html(score_val, f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})", "rgba(255,255,255,.30)", height=34, key="fiche")}'
             f'</div>'
-            f'<div style="text-align:right;flex-shrink:0;line-height:1.05;">'
+            f'<div style="display:flex;flex-direction:column;align-items:flex-end;'
+            f'justify-content:center;flex-shrink:0;line-height:1;">'
             f'<div style="font-family:ManropeMSL,DejaVu Sans,sans-serif;font-weight:900;'
-            f'font-size:1.5rem;color:#fff;">{score_val}<span style="font-size:.72rem;'
+            f'font-size:1.5rem;color:#fff;line-height:1;">{score_val}<span style="font-size:.72rem;'
             f'color:#9fc4c0;font-weight:700;">/100</span></div>'
-            f'<div class="sim-badge" style="margin-top:.2rem;font-size:.68rem;'
-            f' padding:.14rem .55rem;max-width:none;white-space:nowrap;"'
+            f'<div class="sim-badge" style="margin-top:.3rem;font-size:.68rem;'
+            f' padding:.14rem .55rem;max-width:none;white-space:nowrap;"' 
             f' title="Friction = facilité de lancement. Durée courte, peu d épisodes : score élevé = facile à commencer.">'
             f'⚡ Friction {friction_val}</div>'
             f'</div></div>' 
@@ -4987,13 +5011,18 @@ def _actor_dialog_chrome_css() -> str:
     )
 
 
-def _render_actor_detail_body(person_id: int) -> None:
-    """Corps de la fiche acteur : en-tête, bio FR, crédits croisés avec
-    TES listes (✅ déjà vus · 📌 dans tes listes · 🎬 à découvrir)."""
+def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> None:
+    """Fiche ACTEUR / RÉALISATEUR (V147) — ouverte depuis Statistiques.
+
+    V147 : fiches séparées (acteur = cast, réalisateur = crew « Director »),
+    contenus vus et en listes SPLITÉS films/séries, badge 📂 nom de la liste
+    sur chaque contenu, carte entière = lien TMDB (comme la fiche film),
+    en-tête retravaillé.
+    """
     api_key = _tmdb_api_key()
     if not api_key or not person_id:
         st.markdown(
-            '<div class="accent-callout">Fiche acteur indisponible (clé TMDB absente).</div>',
+            '<div class="accent-callout">Fiche indisponible (clé TMDB absente).</div>',
             unsafe_allow_html=True,
         )
         return
@@ -5003,166 +5032,150 @@ def _render_actor_detail_body(person_id: int) -> None:
         tv_credits = _fetch_person_credits("tv", person_id, api_key) or {}
     except Exception:
         st.markdown(
-            '<div class="accent-callout">Fiche acteur momentanément indisponible (TMDB).</div>',
+            '<div class="accent-callout">Fiche momentanément indisponible (TMDB).</div>',
             unsafe_allow_html=True,
         )
         return
     if not person.get("name"):
-        st.markdown('<div class="accent-callout">Acteur introuvable sur TMDB.</div>', unsafe_allow_html=True)
+        st.markdown('<div class="accent-callout">Personne introuvable sur TMDB.</div>', unsafe_allow_html=True)
         return
 
-    name = escape(str(person["name"]))
-    dept_raw = str(person.get("known_for_department") or "").strip().lower()
-    dept = {"acting": "Interprétation", "directing": "Réalisation", "writing": "Scénario",
-            "production": "Production", "sound": "Son", "camera": "Image"}.get(dept_raw, dept_raw or "Cinéma")
-    photo = str(person.get("profile_path") or "").strip()
-    bio = str(person.get("biography") or "").strip()
+    is_director = person_kind == "realisateur"
+    role_word = "ce réalisateur" if is_director else "cet acteur"
 
-    # ── crédits (films + séries), dédoublonnés par id TMDB ──
-    credits: dict[int, dict] = {}
-    for credit in (movie_credits.get("cast") or []):
-        if not isinstance(credit, dict) or not credit.get("id"):
-            continue
-        title = str(credit.get("title") or "").strip()
-        if not title:
-            continue
-        cid = int(credit["id"])
-        credits[cid] = {
-            "id": cid, "title": title, "kind": "Film",
-            "role": str(credit.get("character") or "").strip(),
-            "poster": str(credit.get("poster_path") or "").strip(),
-            "date": str(credit.get("release_date") or "").strip(),
-            "votes": int(credit.get("vote_count") or 0),
-        }
-    for credit in (tv_credits.get("cast") or []):
-        if not isinstance(credit, dict) or not credit.get("id"):
-            continue
-        title = str(credit.get("name") or "").strip()
-        if not title:
-            continue
-        cid = int(credit["id"])
-        if cid in credits:  # déjà compté côté film (rare) : on garde le film
-            continue
-        credits[cid] = {
-            "id": cid, "title": title, "kind": "Série",
-            "role": str(credit.get("character") or "").strip(),
-            "poster": str(credit.get("poster_path") or "").strip(),
-            "date": str(credit.get("first_air_date") or "").strip(),
-            "votes": int(credit.get("vote_count") or 0),
-        }
+    def _collect(credits: dict, kind_label: str) -> dict[int, dict]:
+        out: dict[int, dict] = {}
+        if is_director:
+            rows = [c for c in (credits.get("crew") or [])
+                    if isinstance(c, dict) and str(c.get("job") or "").lower() == "director"]
+        else:
+            rows = [c for c in (credits.get("cast") or []) if isinstance(c, dict)]
+        for credit in rows:
+            title = str(credit.get("title") or credit.get("name") or "").strip()
+            if not title or not credit.get("id"):
+                continue
+            cid = int(credit["id"])
+            if cid in out:
+                continue
+            date = str(credit.get("release_date") or credit.get("first_air_date") or "")
+            out[cid] = {
+                "id": cid, "title": title, "kind": kind_label,
+                "role": str(credit.get("character") or credit.get("job") or "").strip(),
+                "poster": str(credit.get("poster_path") or "").strip(),
+                "date": date, "year": date[:4] if len(date) >= 4 else "",
+            }
+        return out
 
-    # ── croisement avec TES données (ids TMDB vus / en listes) ──
-    watched_ids: set[int] = set()
-    watchlist_ids: set[int] = set()
-    dataset = _dataset()
-    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
-    for section, target in ((sections.get("watched") or {}, watched_ids),
-                            (sections.get("watchlist") or {}, watchlist_ids)):
-        for bucket in ("movies", "shows"):
-            for entry in (section.get(bucket) or []):
-                media = _unwrap_media(entry)
-                if not media:
-                    continue
-                tmdb = _media_tmdb_id(media)
-                if tmdb:
-                    target.add(tmdb)
+    film_credits = _collect(movie_credits, "Film")
+    tv_credits_map = _collect(tv_credits, "Série")
+    # les films priment sur les séries en cas d'id partagé (rare)
+    all_credits = dict(tv_credits_map)
+    all_credits.update(film_credits)
 
-    vus = sorted(
-        (c for c in credits.values() if c["id"] in watched_ids),
-        key=lambda c: c["date"], reverse=True,
-    )
-    listes = sorted(
-        (c for c in credits.values() if c["id"] in watchlist_ids and c["id"] not in watched_ids),
-        key=lambda c: c["date"], reverse=True,
-    )
-    decouvrir = sorted(
-        (c for c in credits.values() if c["id"] not in watched_ids and c["id"] not in watchlist_ids),
-        key=lambda c: c["votes"], reverse=True,
-    )
+    # ── croisement avec TES données ──
+    watched_ids, listed_ids, list_names = _seen_watchlist_listname_ids()
 
-    def _credit_html(c: dict) -> str:
-        year = c["date"][:4] if len(c["date"]) >= 4 else ""
-        if c["poster"]:
+    def _bucket(credit: dict) -> str | None:
+        if credit["id"] in watched_ids:
+            return "vu"
+        if credit["id"] in list_names or credit["id"] in listed_ids:
+            return "liste"
+        return None
+
+    def _card(credit: dict, badge: str | None) -> str:
+        name = escape(credit["title"])
+        if credit["poster"]:
             img = (
-                f'<img src="https://image.tmdb.org/t/p/w92{escape(c["poster"], quote=True)}"'
+                f'<img src="https://image.tmdb.org/t/p/w92{escape(credit["poster"], quote=True)}"'
                 f' alt="" loading="lazy">'
             )
         else:
             img = '<span class="noimg">🎬</span>'
-        role = f" · {escape(c['role'])}" if c["role"] else ""
+        if badge == "vu":
+            badge_html = '<span class="sim-badge vu">✅ Vu</span>'
+        elif badge == "liste":
+            where = list_names.get(credit["id"])
+            badge_html = (
+                f'<span class="sim-badge liste">📂 {escape(where)}</span>' if where
+                else '<span class="sim-badge liste">📌 Watchlist</span>'
+            )
+        else:
+            badge_html = ""
+        role = f" · {escape(credit['role'])}" if credit["role"] else ""
+        href = f"https://www.themoviedb.org/{'tv' if credit['kind'] == 'Série' else 'movie'}/{credit['id']}"
         return (
-            f'<div class="actor-credit">{img}<div>'
-            f'<div class="t">{escape(c["title"])}</div>'
-            f'<div class="d">{c["kind"]}{(" · " + year) if year else ""}{role}</div>'
-            f"</div></div>"
+            f'<a class="actor-credit sim-link" href="{escape(href, quote=True)}"'
+            f' target="_blank" rel="noopener noreferrer" title="Voir « {name} » sur TMDB">{img}'
+            f'<div><div class="t">{name}</div>'
+            f'<div class="d">{credit["kind"]}{(" · " + credit["year"]) if credit["year"] else ""}{role}</div>'
+            f'{badge_html}</div></a>'
         )
 
+    vus_films = [c for c in film_credits.values() if _bucket(c) == "vu"]
+    vus_series = [c for c in tv_credits_map.values() if _bucket(c) == "vu"]
+    listed_films = [c for c in film_credits.values() if _bucket(c) == "liste"]
+    listed_series = [c for c in tv_credits_map.values() if _bucket(c) == "liste"]
+    decouvrir = sorted(
+        (c for c in all_credits.values() if _bucket(c) is None),
+        key=lambda c: c["date"], reverse=True,
+    )[:12]
+
+    dept = "Réalisation" if is_director else "Interprétation"
+    photo = str(person.get("profile_path") or "").strip()
     head_photo = (
         f'<img class="actor-photo" src="https://image.tmdb.org/t/p/w185{escape(photo, quote=True)}"'
-        f' alt="{name}" loading="lazy">' if photo else
-        '<div class="actor-photo" style="display:flex;align-items:center;justify-content:center;'
-        'font-size:2rem;">🎭</div>'
+        f' alt="" loading="lazy">' if photo else
+        '<div class="actor-photo" style="display:flex;align-items:center;justify-content:center;font-size:2rem;">🎭</div>'
     )
+    total_seen = len(vus_films) + len(vus_series)
     tmdb_link = (
         f'<a class="link-pill" href="https://www.themoviedb.org/person/{person_id}"'
         f' target="_blank" rel="noopener noreferrer" title="Fiche TMDB">Fiche TMDB</a>'
     )
-    has_data = bool(watched_ids or watchlist_ids)
-
     st.markdown(_actor_dialog_chrome_css(), unsafe_allow_html=True)
     st.markdown(
         f'<div class="actor-head">{head_photo}<div style="min-width:0;">'
-        f'<p class="actor-name">{name}</p>'
-        f'<p class="actor-meta">{escape(dept)} · {len(credits)} titre(s) au compteur</p>'
+        f'<p class="actor-name">{escape(str(person["name"]))}</p>'
+        f'<p class="actor-meta">{escape(dept)} · {len(all_credits)} titre(s) · '
+        f'<strong style="color:var(--am-yellow);">{total_seen} déjà vu(s) avec toi</strong></p>'
         f'<div style="margin-top:.35rem;">{tmdb_link}</div>'
         f"</div></div>",
         unsafe_allow_html=True,
     )
+    bio = str(person.get("biography") or "").strip()
     if bio:
-        shown = bio if len(bio) <= 520 else bio[:bio.find(" ", 480) if bio.find(" ", 480) > 0 else 480] + "…"
+        shown = bio if len(bio) <= 480 else bio[:bio.find(" ", 440) if bio.find(" ", 440) > 0 else 440] + "…"
         st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
-    if not has_data:
+
+    def _section(title: str, rows: list, empty_skip: bool = True) -> None:
+        if not rows and empty_skip:
+            return
+        cards = "".join(_card(c, _bucket(c)) for c in rows[:24])
+        extra = f'<span class="actor-count">{len(rows)}</span>'
+        more = f'<p class="actor-meta" style="margin:.2rem 1rem;">+ {len(rows) - 24} autre(s)…</p>' if len(rows) > 24 else ""
         st.markdown(
-            '<div class="accent-callout" style="margin:0 1rem;">Charge tes données depuis le Tableau '
-            "de bord pour voir ce que tu as <strong>déjà vu</strong> avec cet acteur.</div>",
+            f'<p class="actor-section-title">{title} {extra}</p>'
+            f'<div class="actor-grid">{cards}</div>{more}',
             unsafe_allow_html=True,
         )
-    else:
-        if vus:
-            extra = f'<span class="actor-count">{len(vus)}</span>'
-            shown = vus[:30]
-            more = f'<p class="actor-meta" style="margin:.2rem 1rem;">+ {len(vus) - 30} autre(s)…</p>' if len(vus) > 30 else ""
-            st.markdown(
-                f'<p class="actor-section-title">✅ Déjà vus avec cet acteur {extra}</p>'
-                f'<div class="actor-grid">{"".join(_credit_html(c) for c in shown)}</div>{more}',
-                unsafe_allow_html=True,
-            )
-        if listes:
-            extra = f'<span class="actor-count">{len(listes)}</span>'
-            shown = listes[:30]
-            more = f'<p class="actor-meta" style="margin:.2rem 1rem;">+ {len(listes) - 30} autre(s)…</p>' if len(listes) > 30 else ""
-            st.markdown(
-                f'<p class="actor-section-title">📌 Dans tes listes {extra}</p>'
-                f'<div class="actor-grid">{"".join(_credit_html(c) for c in shown)}</div>{more}',
-                unsafe_allow_html=True,
-            )
-        if decouvrir:
-            extra = f'<span class="actor-count">{len(decouvrir)}</span>'
-            st.markdown(
-                f'<p class="actor-section-title">🎬 À découvrir avec cet acteur {extra}</p>'
-                f'<div class="actor-grid">{"".join(_credit_html(c) for c in decouvrir[:12])}</div>',
-                unsafe_allow_html=True,
-            )
-        if not vus and not listes:
-            st.markdown(
-                '<p class="actor-meta" style="margin:.4rem 1rem;">Tu n\'as encore rien vu avec cet '
-                "acteur dans ton historique — regarde « À découvrir » ci-dessus 😉</p>",
-                unsafe_allow_html=True,
-            )
+
+    _section(f"🎬 Films vus avec {role_word}", sorted(vus_films, key=lambda c: c["date"], reverse=True))
+    _section(f"📺 Séries vues avec {role_word}", sorted(vus_series, key=lambda c: c["date"], reverse=True))
+    _section(f"📌 Films dans tes listes", sorted(listed_films, key=lambda c: c["date"], reverse=True))
+    _section(f"📌 Séries dans tes listes", sorted(listed_series, key=lambda c: c["date"], reverse=True))
+    _section("🌐 À découvrir", decouvrir)
+    if total_seen == 0 and not listed_films and not listed_series:
+        st.markdown(
+            f'<p class="actor-meta" style="margin:.4rem 1rem;">Tu n\'as encore rien vu avec ce {role_word}'
+            " dans ton historique — regarde « À découvrir » ci-dessus 😉</p>",
+            unsafe_allow_html=True,
+        )
+
+
 @st.dialog(" ", width="large")
-def _actor_detail_dialog(person_id: int) -> None:
-    """Fenêtre modale : fiche acteur (V137)."""
-    _render_actor_detail_body(person_id)
+def _actor_detail_dialog(person_id: int, person_kind: str = "acteur") -> None:
+    """Fenêtre modale : fiche acteur / réalisateur (V147)."""
+    _render_actor_detail_body(person_id, person_kind)
 
 def _open_cinema_detail(row: dict) -> None:
     """Ouvre la fiche cinéma d'une carte (bouton 🎬)."""
@@ -10280,10 +10293,10 @@ def render_basic_stats_page() -> None:
         )
         if director_stats:
             st.markdown("**🎬 Réalisateurs récurrents**")
-            _render_people_cards_clickable(director_stats, fallback_emoji="🎬", limit=10)
+            _render_people_cards_clickable(director_stats, fallback_emoji="🎬", limit=10, person_kind="realisateur")
         if people_stats:
             st.markdown("**🎭 Acteurs récurrents**")
-            _render_people_cards_clickable(people_stats, fallback_emoji="🎭", limit=10)
+            _render_people_cards_clickable(people_stats, fallback_emoji="🎭", limit=10, person_kind="acteur")
         if studio_stats:
             st.markdown("**🏢 Studios récurrents**")
             st.markdown(_render_studio_chips(studio_stats, limit=12), unsafe_allow_html=True)

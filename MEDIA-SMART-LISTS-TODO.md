@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 5 octobre 2026 · Dernière version déployée : V146.
+> Dernière mise à jour : 6 octobre 2026 · Dernière version déployée : V147.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -576,3 +576,29 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       (contrairement à la V137). Contenus vus + dans tes listes + à découvrir.
 - [ ] Idées en discussion : réorganisation de la page Statistiques (onglets ?),
       bloc « anecdote » (TMDB n'en fournit pas — voir ETAPE-146 pour les pistes).
+
+### Fait en V147
+- [x] Fiche ACTEUR / Fiche RÉALISATEUR séparées (directors = crew « Director » de TMDB),
+      boutons différenciés (👤 / 🎬), libellés « avec cet acteur / ce réalisateur ».
+- [x] Fiche personne : contenus vus ET en listes SPLITÉS Films / Séries, badge
+      📂 nom de la liste (ou 📌 Watchlist) sur chaque contenu, chaque contenu =
+      LIEN TMDB cliquable (comme la fiche film), compteur « N déjà vu(s) avec toi ».
+- [x] Cartes personnes : bouton FUSIONNÉ à la carte (look tuile, écart 0px mesuré,
+      même hauteur qu'avant — 24px).
+- [x] Compteur Pedro Pascal (9 vs 12) : l'enrichissement n'enregistrait que les
+      10 premiers acteurs génériqués → cap porté à 20. ⚠️ Clear cache + rechargement
+      des données nécessaire pour recalculer les compteurs (données en mémoire).
+- [x] Bouton « VOIR LA FICHE » : hauteur compacte (24px) AVEC la typo .mc-type
+      (le <p> avait un padding/min-height parasite — nettoyé).
+- [x] Friction : alignement vertical/droite vérifié (Δ 0px entre score et pastille).
+- [ ] Limitation Streamlit 1.60 (testée) : la sélection d'un st.dataframe est en
+      LECTURE SEULE (« Widget state is read-only ») → impossible de décocher
+      programmatiquement une ligne après fermeture de fiche. Le flux reste :
+      décocher → recocher la même ligne (V146).
+### Pistes en discussion
+- [ ] Onglets Statistiques (avec animation de transition) + unification des filtres.
+- [ ] « Pop »-like : suggestions IA par humeur — POSSIBLE avec une clé Google AI
+      Studio (gratuite, aistudio.google.com) posée dans les SECRETS Streamlit
+      (jamais dans le code). L'IA classerait TES contenus scorés localement.
+- [ ] Anecdotes : aucune source gratuite fiable (Trakt = ses propres utilisateurs) ;
+      possible seulement via IA générative (clé ci-dessus) — à discuter.
