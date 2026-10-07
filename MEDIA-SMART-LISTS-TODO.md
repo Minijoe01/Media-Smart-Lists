@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V149.
+> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V150.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -655,9 +655,47 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] 23/23 tests unitaires + non-régression fiche cinéma (vague animée,
       sections, score) vérifiées au banc.
 
+### Fait en V150 (retours du 07/10 soir)
+- [x] 🎯 BUG COLLISION FILM/SÉRIE (trouvé par L'UTILISATEUR — félicitations) :
+      Days of Thunder (movie/2119) et Supercopter (tv/2119) partagent le
+      MÊME id TMDB — or tous les croisements comparaient des ints sans le
+      TYPE → faux badge « 📌 Watchlist » sur Supercopter dans la fiche de
+      Bryan Cranston. CORRECTION EN PROFONDEUR, partout :
+      • `_seen_watchlist_listname_ids` renvoie des clés TYPO-PRÉFIXÉES
+        « movie:{id} » / « tv:{id} » ;
+      • badges Similaires/Saga (`_sim_card`), fiches personnes (`_bucket`,
+        compteur union), comptage exact des tuiles stats, pastille d'état
+        de la fiche (`_fiche_status_pill` + paramètre kind), recherche du
+        média pour les fiches (`_history_fiche_row` filtre par type),
+        post-passe d'enrichissement (clés typées), durées de la page
+        « En cours », pool POP — tout est typé.
+- [x] POP « · Local » malgré la clé : les modèles Gemini 2.5 « réfléchissent »
+      par défaut et le thinking est DÉCOMPTÉ de maxOutputTokens → réponse
+      VIDE → bascule locale silencieuse. Fix : thinkingBudget 0 +
+      maxOutputTokens 1200. ET l'erreur Gemini reste AFFICHÉE (avant, elle
+      était effacée quand le local prenait le relais). NOUVEAU :
+      « 🔧 Diagnostic de la clé Gemini » (1 appel lecture seule, 0 quota).
+- [x] Pépites déjà tirées : chaque chip devient un LIEN vers la fiche TMDB.
+- [x] 🎲 ANECDOTES IA : une anecdote Gemini dans la fiche cinéma (sous le
+      synopsis) et la fiche personne (sous la bio) — NOUVELLE à chaque
+      ouverture (purge à l'ouverture), re-tirable (« 🎲 Une autre »),
+      consigne zéro-spoiler, mention « générée par IA ». Sans clé : rien.
+- [x] FIX INFO-BULLES HEATMAP (séries) : les bulles ::after s'affichent
+      AU-DESSUS des cellules mais .ep-heatmap a overflow-x:auto — qui
+      CLIPPE AUSSI l'axe Y → bulles de la 1re ligne coupées. Fix :
+      padding-top 3.2rem (l'espace de la bulle vit DANS la boîte visible).
+- [x] RÉGRESSION bouton « Voir la fiche » plus court que la tuile (Que
+      regarder ?) : display:flex V149 était appliqué aussi aux boutons
+      AVEC info-bulle → le wrapper tooltip se rétractait. Fix : sélecteur
+      `div.stButton:has(> button)` (boutons SANS wrapper uniquement).
+- [x] README : l'utilisateur préfère le refaire lui-même À LA FIN — plus
+      aucun README dans les livraisons (retiré de V150).
+
 ### PROCHAINES ÉTAPES (validées par l'utilisateur 07/10)
-- [ ] Anecdotes générées par IA (suite de POP — nécessite GEMINI_API_KEY,
-      déjà posée par l'utilisateur).
+- [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
+      livrée) — si « Local » s'affiche encore dans POP, ouvrir le
+      « 🔧 Diagnostic de la clé Gemini » et me donner le message.
+- [ ] README.md : refonte par l'utilisateur À LA FIN (il gère).
 - [ ] Ajouter un contenu à une liste / à la Watchlist DEPUIS LA FICHE CINÉMA
       (demande utilisateur 07/10 — très faisable : les méthodes d'écriture
       existent déjà : `add_watchlist_items`, `add_list_items` ; s'inspirer du

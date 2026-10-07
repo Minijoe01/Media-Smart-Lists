@@ -856,10 +856,19 @@ st.markdown(
     }
     .season-card .t { font-size: .72rem; font-weight: 800; color: var(--am-text); margin-top: .3rem; }
     .season-card .d { font-size: .64rem; color: var(--am-text-muted); }
-    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: .4rem 0 .25rem; overflow-x: auto; }
+    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: 3.2rem 0 .25rem; overflow-x: auto; }
     .ep-row { display: flex; gap: .45rem; align-items: center; }
     .ep-season { font-size: .64rem; font-weight: 800; color: var(--am-text-muted); width: 24px; flex-shrink: 0; }
     .ep-cells { display: flex; gap: 3px; }
+    /* V150 — FIX INFO-BULLES DE LA HEATMAP (retour utilisateur : la bulle
+       n'apparaissait plus) : les bulles ::after s'affichent AU-DESSUS des
+       cellules, mais .ep-heatmap a overflow-x:auto — en CSS, un overflow-x
+       non « visible » CLIPPE AUSSI l'axe Y → les bulles de la première
+       ligne de saison étaient coupées par le haut du conteneur. Le
+       padding-top de .ep-heatmap (3.2rem ≈ hauteur de bulle + offset)
+       donne à la bulle un espace DANS la boîte visible : elle s'affiche
+       intégralement, pour toutes les lignes, sans casser le scroll
+       horizontal des saisons longues. */
     /* V139 — SIMILAIRES / SAGA : mini-cartes + badges d'état */
     .sim-strip { display: flex; gap: .55rem; overflow-x: auto; padding: .45rem .1rem .35rem; scrollbar-width: thin; }
     /* V140 — cartes à hauteur FIXE : titre limité à 2 lignes, badge
@@ -1011,7 +1020,12 @@ st.markdown(
     .mc-year[data-tooltip]::after,
     .media-list-pct[data-tooltip]::after,
     .mc-inline-pct[data-tooltip]::after,
-    .mc-chip[data-tooltip]::after {
+    .mc-chip[data-tooltip]::after,
+    /* V150 — FIX HEATMAP (retour utilisateur : l'info-bulle des épisodes
+       n'apparaissait pas) : ce sélecteur OUBLIAIT .ep-cell — le ::after
+       restait à content:none (aucune bulle, aucune saison). Le :hover et
+       le position:relative le contenaient, mais pas la règle du contenu. */
+    .ep-cell[data-tooltip]::after {
         content: attr(data-tooltip);
         position: absolute;
         bottom: calc(100% + 8px);
@@ -1547,11 +1561,16 @@ st.markdown(
        s'aligne sur une line box de ~26.6px : il glisse de 2.61px dans son
        wrapper (mesuré au banc Chromium). display:flex le sort du contexte
        inline → gap tuile→bouton = 0px, comme les tuiles « Que regarder ? »
-       (boutons AVEC help=, donc déjà flex via le wrapper tooltip). */
+       (boutons AVEC help=, donc déjà flex via le wrapper tooltip).
+       V150 — le :has(> button) ne cible que les boutons SANS wrapper
+       tooltip : appliqué aussi aux boutons AVEC help= (page Que
+       regarder ?), display:flex rétractait le wrapper tooltip à la
+       largeur de son contenu et le bouton devenait PLUS COURT que sa
+       tuile (régression V149, retour utilisateur). */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
-        + div[data-testid="stElementContainer"] div.stButton,
+        + div[data-testid="stElementContainer"] div.stButton:has(> button),
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card)
-        + div[data-testid="stElementContainer"] div.stButton {
+        + div[data-testid="stElementContainer"] div.stButton:has(> button) {
         display: flex !important;
     }
     /* V138 — TUILE ET PIED UNIS au survol : quand la tuile se soulève,
@@ -2775,14 +2794,14 @@ def _collect_person_stats_unified(
     field = "directors" if facet == "realisateur" else "actors"
     counts: dict[int, int] = {}
     meta: dict[int, dict] = {}
-    watched_ids: set[int] = set()
-    for media, _kind in _history_media(dataset):
+    watched_keys: set[str] = set()  # V150 : clés TYPO-PRÉFIXÉES movie/tv
+    for media, kind in _history_media(dataset):
         tmdb = _media_tmdb_id_strict(media)
         if tmdb_whitelist is not None:
             if tmdb is None or str(tmdb) not in tmdb_whitelist:
                 continue
         if tmdb:
-            watched_ids.add(tmdb)
+            watched_keys.add(f"{kind}:{tmdb}")
         for person in media.get(field) or []:
             if not isinstance(person, dict):
                 continue
@@ -2810,10 +2829,13 @@ def _collect_person_stats_unified(
         except Exception:
             return None
         facet_map = filmo.get(facet) or {}
-        return sum(1 for cid in facet_map if cid in watched_ids)
+        # V150 : croisement typé — un film vu et une série non vue (ou
+        # inversement) partageant le même id TMDB ne se comptent plus l'un
+        # pour l'autre (Days of Thunder / Supercopter = 2119).
+        return sum(1 for c in facet_map.values() if _typed_media_key(c["kind"], c["id"]) in watched_keys)
 
     exact_counts: dict[int, int | None] = {}
-    if api_key and watched_ids:
+    if api_key and watched_keys:
         # Premier passage de la semaine : ~48 appels filmo (cachés 7 jours
         # ensuite → les reruns suivants sont instantanés).
         with st.spinner("Comptage exact (filmographies TMDB, en cache 7 jours)…"):
@@ -2942,6 +2964,8 @@ def _render_people_cards_clickable(
             person_id = person.get("id")
             if person_id:
                 if st.button(button_label, key=f"{key_prefix}_{person_id}", use_container_width=True, type="secondary"):
+                    # V150 : anecdote NOUVELLE à chaque ouverture de fiche.
+                    st.session_state.pop(f"anecdote_person_{int(person_id)}", None)
                     _actor_detail_dialog(int(person_id), person_kind)
 
 
@@ -3423,11 +3447,14 @@ def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
     # l'utilisateur). On complète depuis les médias déjà enrichis — même
     # identifiant TMDB, donc AUCUN appel réseau supplémentaire.
     try:
-        enriched_by_tmdb: dict[int, dict] = {}
-        for m, _k in all_media:
+        # V150 — clés TYPO-PRÉFIXÉES : un film et une série peuvent partager
+        # le même id TMDB (Days of Thunder & Supercopter = 2119) — le poster
+        # d'un film ne doit jamais atterrir sur la fiche d'une série.
+        enriched_by_tmdb: dict[str, dict] = {}
+        for m, k in all_media:
             tid = _media_tmdb_id(m)
             if tid:
-                enriched_by_tmdb.setdefault(tid, m)
+                enriched_by_tmdb.setdefault(f"{k}:{tid}", m)
         for row in (data.get("progress") or []):
             if not isinstance(row, dict):
                 continue
@@ -3439,7 +3466,7 @@ def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
                 show_tid = int(show_ids.get("tmdb") or 0)
             except (TypeError, ValueError):
                 show_tid = 0
-            source_media = enriched_by_tmdb.get(show_tid) if show_tid else None
+            source_media = enriched_by_tmdb.get(f"tv:{show_tid}") if show_tid else None
             if not source_media:
                 continue
             if not show.get("poster") and source_media.get("poster"):
@@ -4151,12 +4178,26 @@ def _dataset_media_by_title_year(title: str, year=None) -> tuple[dict, str] | tu
     return best, best_kind
 
 
-def _fiche_status_pill(tmdb_id: int | None) -> str:
+def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
     """Pastille d'état du contenu dans SA propre fiche (V141) :
     ✅ Vu le dd/mm/aaaa · 📂 nom de ta liste · 📌 Watchlist · 🌐 Hors de tes
-    listes — mêmes styles que les badges Similaires/Saga."""
+    listes — mêmes styles que les badges Similaires/Saga.
+
+    V150 — paramètre `kind` ('movie'/'tv') : un film et une série peuvent
+    partager le même id TMDB (Days of Thunder & Supercopter = 2119). La
+    pastille d'un FILM ne regarde donc que les sections films, celle d'une
+    SÉRIE que les sections séries."""
     if not tmdb_id:
         return ""
+    want_kind = "tv" if str(kind or "").strip().lower() in ("tv", "série", "serie", "show") else "movie"
+
+    def _bucket_kind(bucket: str, entry: Any) -> str:
+        if bucket == "movies":
+            return "movie"
+        if bucket in ("shows", "episodes"):
+            return "tv"
+        return _kind_of(_unwrap_media(entry), want_kind)
+
     dataset = _dataset()
     sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
     if not sections:
@@ -4169,6 +4210,8 @@ def _fiche_status_pill(tmdb_id: int | None) -> str:
             media = _unwrap_media(entry)
             if not media or _media_tmdb_id_strict(media) != tmdb_id:
                 continue
+            if _bucket_kind(bucket, entry) != want_kind:
+                continue  # V150 : le même id existe chez l'autre TYPE
             is_watched = True
             raw = None
             if isinstance(entry, dict):
@@ -4193,7 +4236,8 @@ def _fiche_status_pill(tmdb_id: int | None) -> str:
         for bucket in ("movies", "shows", "items"):
             for entry in (user_list.get(bucket) or []):
                 media = _unwrap_media(entry)
-                if media and _media_tmdb_id_strict(media) == tmdb_id:
+                if (media and _media_tmdb_id_strict(media) == tmdb_id
+                        and _bucket_kind(bucket, entry) == want_kind):
                     return (
                         f'<span class="banner-status liste">📂 {escape(str(user_list.get("name") or "Liste"))}</span>'
                     )
@@ -4201,7 +4245,8 @@ def _fiche_status_pill(tmdb_id: int | None) -> str:
     for bucket in ("movies", "shows"):
         for entry in ((sections.get("watchlist") or {}).get(bucket) or []):
             media = _unwrap_media(entry)
-            if media and _media_tmdb_id_strict(media) == tmdb_id:
+            if (media and _media_tmdb_id_strict(media) == tmdb_id
+                    and _bucket_kind(bucket, entry) == want_kind):
                 return '<span class="banner-status liste">📌 Watchlist</span>'
     return '<span class="banner-status hors">🌐 Hors de tes listes</span>'
 
@@ -4220,9 +4265,14 @@ def _history_fiche_row(history_row: dict) -> dict | None:
         tmdb = None
     media = None
     kind = ""
+    # V150 — le TYPE de la ligne guide la recherche : un film et une série
+    # peuvent partager le même id TMDB (Days of Thunder & Supercopter =
+    # 2119) — sans ce filtre, la fiche de l'un pouvait s'ouvrir sur le
+    # média de l'autre (poster, titre, données mélangés).
+    want_kind = "tv" if history_row.get("type") in ("Épisode", "Série") else "movie"
     if tmdb:
         for candidate, candidate_kind in _all_media(_dataset()):
-            if _media_tmdb_id(candidate) == tmdb:
+            if _media_tmdb_id(candidate) == tmdb and candidate_kind == want_kind:
                 media, kind = candidate, candidate_kind
                 break
     if media is None:
@@ -4259,8 +4309,22 @@ def _history_fiche_row(history_row: dict) -> dict | None:
 
 
 def _seen_watchlist_listname_ids() -> tuple[set, set, dict]:
-    """(ids TMDB vus, ids en watchlist, {id: nom de la liste qui le
-    contient}) — sert aux sections Similaires / Saga de la fiche."""
+    """(clés vues, clés en watchlist, {clé: nom de la liste qui la contient})
+    — sert aux badges Similaires / Saga / fiches personnes.
+
+    V150 — CLÉS TYPO-PRÉFIXÉES « movie:{id} » / « tv:{id} » : les ids TMDB
+    ne sont uniques que PAR TYPE. Le film Days of Thunder (movie/2119) et
+    la série Supercopter (tv/2119) partagent le MÊME numéro — l'ancien set
+    d'ints créait de faux badges « 📌 dans ta watchlist » (retour
+    utilisateur : Supercopter badgé à tort sous Bryan Cranston alors que
+    c'est Days of Thunder qui est dans ses listes)."""
+    def _key(media: dict, kind_hint: str) -> str | None:
+        tmdb = _media_tmdb_id_strict(media)  # V148 : STRICT (anti-collision)
+        if not tmdb:
+            return None
+        kind = kind_hint if kind_hint in ("movie", "tv") else _kind_of(media, "movie")
+        return f"{kind}:{tmdb}"
+
     watched: set = set()
     listed: set = set()
     list_names: dict = {}
@@ -4269,24 +4333,33 @@ def _seen_watchlist_listname_ids() -> tuple[set, set, dict]:
     for section, target in ((sections.get("watched") or {}, watched),
                             (sections.get("watchlist") or {}, listed)):
         for bucket in ("movies", "shows"):
+            kind_hint = "movie" if bucket == "movies" else "tv"
             for entry in (section.get(bucket) or []):
                 media = _unwrap_media(entry)
                 if media:
-                    tmdb = _media_tmdb_id_strict(media)  # V148 : STRICT (anti-collision)
-                    if tmdb:
-                        target.add(tmdb)
+                    key = _key(media, kind_hint)
+                    if key:
+                        target.add(key)
     for user_list in (sections.get("user_lists") or []):
         if not isinstance(user_list, dict):
             continue
         name = str(user_list.get("name") or "Liste")
         for bucket in ("movies", "shows", "items"):
+            kind_hint = "movie" if bucket == "movies" else ("tv" if bucket == "shows" else "")
             for entry in (user_list.get(bucket) or []):
                 media = _unwrap_media(entry)
                 if media:
-                    tmdb = _media_tmdb_id_strict(media)  # V148 : STRICT
-                    if tmdb and tmdb not in list_names:
-                        list_names[tmdb] = name
+                    key = _key(media, kind_hint)
+                    if key and key not in list_names:
+                        list_names[key] = name
     return watched, listed, list_names
+
+
+def _typed_media_key(kind_label: Any, tmdb_id: Any) -> str:
+    """Clé typée « movie:{id} » / « tv:{id} » depuis un libellé de type
+    quelconque (« Film », « Série », 'movie', 'tv', …)."""
+    kind = "tv" if str(kind_label or "").strip().lower() in ("série", "serie", "tv", "show", "épisode", "episode") else "movie"
+    return f"{kind}:{int(tmdb_id)}"
 
 
 def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: str = "movie") -> str:
@@ -4305,11 +4378,14 @@ def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: st
         )
     else:
         img = '<span class="sim-noimg">🎬</span>'
-    if entry_id and entry_id in watched:
+    # V150 — clé TYPO-PRÉFIXÉE (movie/tv) : un film et une série peuvent
+    # partager le même id TMDB (Days of Thunder & Supercopter = 2119 !).
+    typed_id = f"{kind}:{entry_id}" if entry_id else ""
+    if typed_id and typed_id in watched:
         badge = '<span class="sim-badge vu">✅ Vu</span>'
-    elif entry_id and entry_id in list_names:
-        badge = f'<span class="sim-badge liste">📂 {escape(list_names[entry_id])}</span>'
-    elif entry_id and entry_id in listed:
+    elif typed_id and typed_id in list_names:
+        badge = f'<span class="sim-badge liste">📂 {escape(list_names[typed_id])}</span>'
+    elif typed_id and typed_id in listed:
         badge = '<span class="sim-badge liste">📌 Watchlist</span>'
     else:
         badge = '<span class="sim-badge hors">🌐 Hors de tes listes</span>'
@@ -4552,7 +4628,7 @@ def _render_cinema_detail_body(row: dict) -> None:
             # V143 — pastille d'ÉTAT dans la bannière (bas droite, à côté
             # du type) : plus joli qu'au bout des chips — les chips sont
             # à l'accent du film, la pastille a SA couleur (vert/bleu).
-            f"{_fiche_status_pill(tmdb_id)}"
+            f"{_fiche_status_pill(tmdb_id, 'tv' if row.get('type') == 'Série' else 'movie')}"
             "</span>"
             "</div></div>"
         )
@@ -5087,6 +5163,16 @@ def _render_cinema_detail_body(row: dict) -> None:
         unsafe_allow_html=True,
     )
 
+    # V150 — 🎲 anecdote Gemini : UNE anecdote fraîche à chaque ouverture
+    # de la fiche (demande utilisateur), re-tirable au bouton. Aucun appel
+    # sans clé Gemini.
+    if api_key and tmdb_id:
+        media_word = "la série" if row.get("type") == "Série" else "le film"
+        _render_ia_anecdote(
+            f"{'tv' if row.get('type') == 'Série' else 'movie'}_{tmdb_id}",
+            f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
+        )
+
 
 @st.dialog(" ", width="large")
 def _cinema_detail_dialog() -> None:
@@ -5168,9 +5254,13 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     watched_ids, listed_ids, list_names = _seen_watchlist_listname_ids()
 
     def _bucket(credit: dict) -> str | None:
-        if credit["id"] in watched_ids:
+        # V150 — clé typée : un film et une série peuvent partager le même
+        # id TMDB (Days of Thunder / Supercopter = 2119) → jamais de badge
+        # croisé entre un film de tes listes et une série de la filmo.
+        typed = _typed_media_key(credit["kind"], credit["id"])
+        if typed in watched_ids:
             return "vu"
-        if credit["id"] in list_names or credit["id"] in listed_ids:
+        if typed in list_names or typed in listed_ids:
             return "liste"
         return None
 
@@ -5210,9 +5300,9 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         for cid, credit in (facets.get(facet_name) or {}).items():
             all_credits.setdefault(cid, credit)
     total_career = len(all_credits)
-    # « N déjà dans ton historique » : union des contenus VUS des deux facettes.
-    seen_union_ids = {cid for cid in all_credits if all_credits[cid]["id"] in watched_ids}
-    total_seen = len(seen_union_ids)
+    # « N déjà dans ton historique » : union des contenus VUS des deux facettes
+    # (V150 : croisement par clé typée movie/tv — cf. Days of Thunder/Supercopter).
+    total_seen = sum(1 for c in all_credits.values() if _bucket(c) == "vu")
 
     dept_parts = [facet_labels[f][0] for f in facet_order if facets.get(f)]
     dept = " & ".join(dept_parts) if dept_parts else "Carrière"
@@ -5240,6 +5330,16 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     if bio:
         shown = bio if len(bio) <= 480 else bio[:bio.find(" ", 440) if bio.find(" ", 440) > 0 else 440] + "…"
         st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
+
+    # V150 — 🎲 anecdote Gemini sur la personne (fraîche à chaque ouverture
+    # de la fiche — la purge est faite par le bouton d'ouverture).
+    if api_key and person_id:
+        job_word = "réalisateur" if facets.get("realisateur") else "acteur·rice"
+        _render_ia_anecdote(
+            f"person_{person_id}",
+            f"la carrière de {'réalisateur' if is_director else 'comédien·ne'} {person['name']}",
+            hint=f"connu·e comme {job_word}",
+        )
 
     def _section(title: str, rows: list, empty_skip: bool = True) -> None:
         if not rows and empty_skip:
@@ -5301,8 +5401,19 @@ def _actor_detail_dialog(person_id: int, person_kind: str = "acteur") -> None:
     _render_actor_detail_body(person_id, person_kind)
 
 def _open_cinema_detail(row: dict) -> None:
-    """Ouvre la fiche cinéma d'une carte (bouton 🎬)."""
+    """Ouvre la fiche cinéma d'une carte (bouton 🎬).
+
+    V150 : purge l'anecdote en session → une anecdote NOUVELLE à chaque
+    ouverture de la fiche (demande utilisateur)."""
     st.session_state["_cinema_detail_row"] = row
+    ids = row.get("ids") if isinstance(row.get("ids"), dict) else (row.get("item") or {}).get("ids") if isinstance(row.get("item"), dict) else {}
+    try:
+        _anecdote_tid = int((ids or {}).get("tmdb") or 0)
+    except (TypeError, ValueError):
+        _anecdote_tid = 0
+    if _anecdote_tid:
+        _anecdote_kind = "tv" if row.get("type") in ("Série", "Épisode") else "movie"
+        st.session_state.pop(f"anecdote_{_anecdote_kind}_{_anecdote_tid}", None)
     _cinema_detail_dialog()
 
 
@@ -8215,6 +8326,46 @@ def _gemini_api_key() -> str:
         return ""
 
 
+def _render_ia_anecdote(state_key: str, subject: str, hint: str = "") -> None:
+    """🎲 Encart « L'anecdote Gemini » (V150) — fiches cinéma et personnes.
+
+    Une anecdote NOUVELLE à chaque OUVERTURE de fiche (la clé de session est
+    purgée par les points d'entrée : `_open_cinema_detail` / boutons des
+    cartes personnes) + bouton « Une autre ». Le clic sur le bouton purge la
+    clé DANS CE MÊME run (rerun scopé au dialog) → re-génération immédiate.
+    Sans clé Gemini : l'encart n'apparaît pas (aucun coût, aucun message).
+    """
+    api_key = _gemini_api_key()
+    if not api_key:
+        return
+    state_key = f"anecdote_{state_key}"
+    if st.button("🎲 Une autre anecdote", key=f"{state_key}_again", type="secondary"):
+        st.session_state.pop(state_key, None)
+    cached = st.session_state.get(state_key)
+    if isinstance(cached, dict) and cached.get("text"):
+        anecdote, error = cached["text"], ""
+    else:
+        anecdote, error = "", ""
+        try:
+            with st.spinner("🎲 Gemini cherche une anecdote…"):
+                anecdote = pop_engine.anecdote_ask_gemini(api_key, subject, hint)
+            st.session_state[state_key] = {"text": anecdote}
+        except RuntimeError as exc:
+            # Pas de bloc d'erreur criard dans la fiche : une ligne discrète.
+            error = str(exc)
+    if anecdote:
+        st.markdown(
+            f'<div class="accent-callout" style="display:block;">'
+            f'<strong>🎲 L\'anecdote du moment</strong> '
+            f'<span style="color:var(--am-text-muted);font-size:.72rem;">· générée par IA · '
+            f'vérifie toujours un fait important avant de le citer</span><br>'
+            f"{escape(anecdote)}</div>",
+            unsafe_allow_html=True,
+        )
+    elif error:
+        st.caption(f"🎲 Anecdote IA indisponible : {error}")
+
+
 def _render_pop_result(result: dict) -> None:
     """Carte-résultat d'un tirage POP (V149) : mêmes classes visuelles que
     les tuiles « Que regarder ? » (poster-card + mc-head), badge de la liste
@@ -8279,6 +8430,17 @@ def render_pop_page() -> None:
     else:
         st.caption("🔕 Aucune clé Gemini détectée — mode LOCAL (sans IA). "
                    "Le guide GUIDE-CLE-IA.txt explique comment en ajouter une gratuitement.")
+    # V150 — DIAGNOSTIC de la clé : 1 appel en lecture seule (liste des
+    # modèles, 0 quota de génération). Si un tirage affiche « · Local »,
+    # ouvre ce diagnostic : il donnera la raison EXACTE (clé refusée,
+    # quota, modèle indisponible…).
+    with st.expander("🔧 Diagnostic de la clé Gemini", expanded=False):
+        if st.button("Tester la clé (1 appel lecture seule)", key="pop_key_test"):
+            with st.spinner("Test en cours…"):
+                ok_key, msg_key = pop_engine.gemini_key_check(api_key)
+            st.session_state["pop_key_test_result"] = ("✅ " if ok_key else "❌ ") + msg_key
+        if st.session_state.get("pop_key_test_result"):
+            st.caption(st.session_state["pop_key_test_result"])
 
     mood = st.pills("🎯 Ton humeur du moment", list(pop_engine.POP_MOODS), key="pop_mood")
     kind = st.pills(
@@ -8319,9 +8481,15 @@ def render_pop_page() -> None:
                     result = {**pick, "reason": res["reason"], "engine": "Local"}
         if result:
             st.session_state["pop_result"] = result
-            drawn.append({"id": result["id"], "title": result.get("title") or "?"})
+            drawn.append({"id": result["id"], "title": result.get("title") or "?",
+                          "kind": result.get("kind") or "Film"})
             st.session_state["pop_drawn"] = drawn
-            st.session_state.pop("pop_error", None)
+            # V150 : l'erreur Gemini reste AFFICHÉE (caption discrète sous le
+            # résultat) même quand le mode local prend le relais — avant, elle
+            # était effacée et le « · Local » restait mystérieux.
+            st.session_state["pop_error"] = (
+                f"Gemini indisponible ({note}) — sélection locale." if note else ""
+            )
         else:
             st.session_state.pop("pop_result", None)
             st.session_state["pop_error"] = (
@@ -8339,12 +8507,20 @@ def render_pop_page() -> None:
         st.session_state.pop("pop_error", None)
     drawn = st.session_state.get("pop_drawn") or []
     if drawn:
-        chips = "".join(
-            f'<span class="mc-chip">💎 {escape(row["title"])}</span>' for row in drawn[-8:]
-        )
+        # V150 — chaque pépite tirée devient un LIEN vers sa fiche TMDB
+        # (demande utilisateur : « ou au moins un lien vers TMDB ? »).
+        chips = []
+        for row in drawn[-8:]:
+            tmdb_kind = "tv" if row.get("kind") == "Série" else "movie"
+            chips.append(
+                f'<a class="mc-chip" style="text-decoration:none;" '
+                f'href="https://www.themoviedb.org/{tmdb_kind}/{int(row["id"])}" '
+                f'target="_blank" rel="noopener noreferrer" '
+                f'title="Voir la fiche TMDB de {escape(str(row.get("title") or ""))}">💎 {escape(row["title"])}</a>'
+            )
         st.markdown(
-            '<p class="actor-meta" style="margin:.5rem 0 .2rem;">Pépites déjà tirées cette session :</p>'
-            f'<div style="display:flex;flex-wrap:wrap;gap:.35rem;">{chips}</div>',
+            '<p class="actor-meta" style="margin:.5rem 0 .2rem;">Pépites déjà tirées cette session (clic → TMDB) :</p>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:.35rem;">{"".join(chips)}</div>',
             unsafe_allow_html=True,
         )
     st.caption(
@@ -8423,19 +8599,21 @@ def render_progress_page() -> None:
             playback_items, fetched_at=time.time(), now_timestamp=time.time()
         )
         fallback_rows = [r for r in fallback_rows if not r.get("paused_at")]
-        media_runtime_by_tmdb: dict[int, int] = {}
-        for m, _k in _all_media(_dataset()):
+        # V150 — clés typées movie/tv (collision possible d'ids entre un
+        # film et une série : Days of Thunder & Supercopter = 2119).
+        media_runtime_by_tmdb: dict[str, int] = {}
+        for m, k in _all_media(_dataset()):
             tid = _media_tmdb_id(m)
             rt = int(m.get("runtime") or 0)
             if tid and rt:
-                media_runtime_by_tmdb.setdefault(tid, rt)
+                media_runtime_by_tmdb.setdefault(f"{k}:{tid}", rt)
         for r in fallback_rows:
             if not r.get("runtime"):
                 try:
                     tid = int((r.get("ids") or {}).get("tmdb") or 0)
                 except (TypeError, ValueError):
                     tid = 0
-                rt = media_runtime_by_tmdb.get(tid)
+                rt = media_runtime_by_tmdb.get(f"tv:{tid}" if r.get("type") != "Film" else f"movie:{tid}")
                 if rt:
                     r["runtime"] = rt
                     if r.get("progress"):

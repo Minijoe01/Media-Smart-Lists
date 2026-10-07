@@ -89,24 +89,21 @@ def pop_candidate_pool(dataset: dict, kind: str = "Peu importe", limit: int = 40
     aléa ±12 pour que deux sessions ne proposent pas toujours le même top.
     """
     sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
-    watched: set[int] = set()
-    for row in (sections.get("watched") or {}).get("movies") or []:
-        ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
-        try:
-            if ids.get("tmdb"):
-                watched.add(int(ids["tmdb"]))
-        except (TypeError, ValueError):
-            pass
-    for row in (sections.get("watched") or {}).get("shows") or []:
-        ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
-        try:
-            if ids.get("tmdb"):
-                watched.add(int(ids["tmdb"]))
-        except (TypeError, ValueError):
-            pass
+    # V150 — clés TYPO-PRÉFIXÉES « movie:{id} » / « tv:{id} » : un film et
+    # une série peuvent partager le même id TMDB (Days of Thunder &
+    # Supercopter = 2119) — sans le préfixe, l'un masquait l'autre.
+    watched: set[str] = set()
+    for bucket, prefix in (("movies", "movie"), ("shows", "tv")):
+        for row in (sections.get("watched") or {}).get(bucket) or []:
+            ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+            try:
+                if ids.get("tmdb"):
+                    watched.add(f"{prefix}:{int(ids['tmdb'])}")
+            except (TypeError, ValueError):
+                pass
 
     pool: list[dict] = []
-    seen_ids: set[int] = set()
+    seen_ids: set[str] = set()
 
     def _push(media: dict, source: str, kind_label: str) -> None:
         ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
@@ -114,12 +111,13 @@ def pop_candidate_pool(dataset: dict, kind: str = "Peu importe", limit: int = 40
             tmdb = int(ids.get("tmdb") or 0)
         except (TypeError, ValueError):
             tmdb = 0
-        if not tmdb or tmdb in seen_ids or tmdb in watched:
+        typed = f"{'tv' if kind_label == 'Série' else 'movie'}:{tmdb}"
+        if not tmdb or typed in seen_ids or typed in watched:
             return
         title = str(media.get("title_fr") or media.get("title") or media.get("name") or "").strip()
         if not title:
             return
-        seen_ids.add(tmdb)
+        seen_ids.add(typed)
         date = str(media.get("release_date") or media.get("first_air_date") or "")
         year = date[:4] if len(date) >= 4 else ""
         try:
@@ -195,6 +193,12 @@ def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
 
     Renvoie {"pick_id": int, "reason": str, "model": str} ou lève
     `RuntimeError(raison lisible)` — l'app affiche alors le mode local.
+
+    V150 — thinkingBudget: 0 : les modèles Gemini 2.5 « réfléchissent » par
+    défaut et les tokens de réflexion SONT décomptés de maxOutputTokens —
+    avec un petit budget, la réponse arrivait VIDE (finishReason
+    MAX_TOKENS sans aucun texte) et POP basculait silencieusement en mode
+    local (retour utilisateur : « · Local » malgré la clé détectée).
     """
     if not api_key:
         raise RuntimeError("Clé Gemini absente")
@@ -202,8 +206,9 @@ def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
         "contents": [{"parts": [{"text": _gemini_prompt(mood, candidates)}]}],
         "generationConfig": {
             "temperature": 0.9,
-            "maxOutputTokens": 400,
+            "maxOutputTokens": 1200,
             "responseMimeType": "application/json",
+            "thinkingConfig": {"thinkingBudget": 0},
         },
     }
     try:
@@ -211,7 +216,7 @@ def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
             GEMINI_URL,
             params={"key": api_key},
             json=body,
-            timeout=25,
+            timeout=30,
         )
     except requests.RequestException as exc:
         raise RuntimeError(f"Réseau indisponible ({exc.__class__.__name__})") from exc
@@ -219,14 +224,22 @@ def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
         raise RuntimeError("Clé Gemini refusée (401/403) — vérifie GEMINI_API_KEY dans les Secrets")
     if response.status_code == 429:
         raise RuntimeError("Quota Gemini atteint (429) — réessaie plus tard")
+    if response.status_code == 404:
+        raise RuntimeError(f"Modèle {GEMINI_MODEL} indisponible (404)")
     if response.status_code != 200:
         raise RuntimeError(f"Gemini a répondu HTTP {response.status_code}")
     try:
         data = response.json()
-        text = str((data.get("candidates") or [{}])[0]
-                   .get("content", {}).get("parts", [{}])[0].get("text") or "")
-    except (ValueError, IndexError, KeyError, TypeError) as exc:
-        raise RuntimeError("Réponse Gemini illisible") from exc
+    except ValueError as exc:
+        raise RuntimeError("Réponse Gemini illisible (pas du JSON)") from exc
+    try:
+        candidate0 = (data.get("candidates") or [{}])[0]
+        text = str((candidate0.get("content") or {}).get("parts", [{}])[0].get("text") or "")
+    except (IndexError, KeyError, TypeError):
+        text = ""
+    if not text.strip():
+        finish = str(candidate0.get("finishReason") or "?")
+        raise RuntimeError(f"Réponse Gemini vide (finishReason: {finish})")
     try:
         parsed = json.loads(text)
     except ValueError:
@@ -243,6 +256,106 @@ def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
     if not pick_id or not reason:
         raise RuntimeError("Réponse Gemini incomplète")
     return {"pick_id": pick_id, "reason": reason, "model": GEMINI_MODEL}
+
+
+def gemini_key_check(api_key: str) -> tuple[bool, str]:
+    """Diagnostic de la clé (V150) : 1 appel LECTURE seule (liste des
+    modèles — ne consomme PAS de quota de génération). Renvoie
+    (ok, message lisible) pour l'afficher sur la page POP."""
+    if not api_key:
+        return False, "Aucune clé GEMINI_API_KEY dans les Secrets."
+    try:
+        response = requests.get(
+            "https://generativelanguage.googleapis.com/v1beta/models",
+            params={"key": api_key, "pageSize": 5},
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        return False, f"Réseau indisponible ({exc.__class__.__name__}) — réessaie."
+    if response.status_code == 200:
+        try:
+            names = [str(m.get("name") or "").removeprefix("models/")
+                     for m in (response.json().get("models") or [])[:5]]
+        except ValueError:
+            names = []
+        return True, ("Clé valide ✅" + (f" · modèles visibles : {', '.join(names)}" if names else ""))
+    if response.status_code in (401, 403):
+        return False, "Clé refusée (401/403) — vérifie la valeur de GEMINI_API_KEY dans les Secrets Streamlit."
+    if response.status_code == 429:
+        return False, "Quota atteint (429) — attends quelques minutes."
+    return False, f"Erreur HTTP {response.status_code} — copie ce code si le problème persiste."
+
+
+def anecdote_ask_gemini(api_key: str, subject: str, hint: str = "") -> str:
+    """🎲 UNE anecdote générée par Gemini sur un sujet (film ou personne) —
+    V150, demande utilisateur : « des anecdotes dans les fiches film et
+    acteur qui se rafraîchiraient à chaque fois ».
+
+    • température 1.2 → varie à chaque appel (pas toujours la même) ;
+    • thinkingBudget 0 → réponse rapide, budget non mangé par la réflexion ;
+    • consigne STRICTE : aucune intrigue révélée (zéro spoiler), fait précis
+      de tournage/casting/coulisses, 2 à 4 phrases en français.
+
+    `subject` : « le film « Blade Runner 2049 » (2017) » ou
+    « la carrière de l'acteur Ryan Gosling ». `hint` : précision libre
+    (réalisateur, genre, série…). Lève RuntimeError (raison lisible).
+    """
+    if not api_key:
+        raise RuntimeError("Clé Gemini absente")
+    prompt = (
+        "Tu es un passionné de cinéma et de séries qui connaît mille anecdotes "
+        "de tournage. Raconte UNE SEULE anecdote SURPRENANTE sur "
+        f"{subject}" + (f" ({hint})" if hint else "") + ".\n"
+        "Consignes strictes :\n"
+        "- 2 à 4 phrases, en FRANÇAIS, ton complice et vivant ;\n"
+        "- AUCUN SPOILER : ne révèle RIEN de l'intrigue ni de la fin ;\n"
+        "- un fait PRÉCIS et vérifiable (tournage, casting, coulisses, record,\n"
+        "  accueil du public) — pas de généralité ni d'invention ;\n"
+        "- si tu n'es pas certain d'un fait précis sur ce sujet, raconte une\n"
+        "  anecdote plus générale mais EXACTE à son sujet ;\n"
+        "- change d'anecdote à chaque appel — jamais deux fois la même.\n"
+        'Réponds STRICTEMENT en JSON : {"anecdote": "<le texte de l\'anecdote>"}'
+    )
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 1.2,
+            "maxOutputTokens": 800,
+            "responseMimeType": "application/json",
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
+    }
+    try:
+        response = requests.post(
+            GEMINI_URL,
+            params={"key": api_key},
+            json=body,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Réseau indisponible ({exc.__class__.__name__})") from exc
+    if response.status_code in (401, 403):
+        raise RuntimeError("Clé refusée (401/403)")
+    if response.status_code == 429:
+        raise RuntimeError("Quota atteint (429)")
+    if response.status_code != 200:
+        raise RuntimeError(f"HTTP {response.status_code}")
+    try:
+        data = response.json()
+        candidate0 = (data.get("candidates") or [{}])[0]
+        text = str((candidate0.get("content") or {}).get("parts", [{}])[0].get("text") or "")
+    except (ValueError, IndexError, KeyError, TypeError):
+        text = ""
+    if not text.strip():
+        raise RuntimeError(f"Réponse vide (finishReason: {candidate0.get('finishReason') or '?'})")
+    try:
+        parsed = json.loads(text)
+        anecdote = str(parsed.get("anecdote") or "").strip()
+    except ValueError:
+        anecdote = (re.sub(r'^[{}\s"]+|[}\s"]+$', "", text) or "").strip()
+    if len(anecdote) < 30:
+        raise RuntimeError("Anecdote trop courte — relance")
+    return anecdote
 
 
 def pop_pick_local(mood: str, candidates: list[dict], exclude_ids: set[int] | None = None) -> dict | None:
