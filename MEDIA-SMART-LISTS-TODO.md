@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V148.
+> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V149.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -597,9 +597,8 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       décocher → recocher la même ligne (V146).
 ### Pistes en discussion
 - [ ] Onglets Statistiques (avec animation de transition) + unification des filtres.
-- [ ] « Pop »-like : suggestions IA par humeur — POSSIBLE avec une clé Google AI
-      Studio (gratuite, aistudio.google.com) posée dans les SECRETS Streamlit
-      (jamais dans le code). L'IA classerait TES contenus scorés localement.
+- [x] « Pop »-like : suggestions IA par humeur — FAIT en V149 (page 🍿 POP,
+      moteur Gemini + repli local, voir « Fait en V149 »).
 - [ ] Anecdotes : aucune source gratuite fiable (Trakt = ses propres utilisateurs) ;
       possible seulement via IA générative (clé ci-dessus) — à discuter.
 
@@ -619,12 +618,55 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] GUIDE-CLE-IA.txt : création clé Google AI Studio + secrets Streamlit +
       limites (Flash ~1500 req/jour) + alternatives (Groq, OpenRouter).
 
+### Fait en V149 (retours du 07/10)
+- [x] COMPTEURS UNIFIÉS — la tuile utilise la MÊME méthode que la fiche
+      (fini le « 12 côté fiche vs 9 côté tuile » et le « 0 vu avec Scorsese ») :
+      • nouvelle fonction centrale `_person_filmography` (cache 7 j) = filmo
+        TMDB en DEUX facettes (acteur = cast, réalisateur = crew Director) ;
+      • `_collect_people_stats`/`_collect_director_stats` réécrits : scan local
+        par ID TMDB STRICT (plus par nom) → 24 candidats → comptage EXACT
+        filmo ∩ ids vus (parallélisé, spinner, 48 appels max puis cache 7 j) ;
+      • CAUSE RACINE du « 0 Scorsese » : la condition de ré-enrichissement ne
+        contenait pas `directors` → les films enrichis AVANT l'existence de ce
+        champ n'étaient jamais ré-examinés. Corrigé par `ENRICH_VERSION = 2`
+        (marqueur `_enrich_v` par média ; re-traitement GRATUIT car les
+        payloads TMDB sont en cache 30 j).
+- [x] FICHE PERSONNE DOUBLE FACETTE : un réalisateur qui joue (Scorsese et ses
+      caméos) voit ses DEUX carrières — « EN TANT QUE RÉALISATEUR » puis
+      « EN TANT QU'ACTEUR », sections Films/Séries (vus + listes) par facette,
+      compteur d'en-tête = UNION dédupliquée des facettes. Séparateur affiché
+      seulement si les deux facettes existent.
+- [x] ÉCART TUILE-BOUTON 2.61px (En cours/Fantôme/Abandonnées, mesuré au banc
+      Chromium) : les boutons SANS help= n'ont pas le wrapper FLEX des tooltips
+      Streamlit → bouton compacté 24px aligné sur une line box inline ~26.6px.
+      Fix : `div.stButton { display: flex }` ciblé aux boutons fusionnés →
+      gap mesuré 0px sur TOUTES les cartes (28/28 vérifications).
+- [x] SÉRIES ABANDONNÉES : tuiles COMPACTES (nom seul, 34px mesurés, classe
+      `.dropped-compact`) + liseré bouton ramené à 3px = liseré tuile.
+- [x] 🍿 POP — NOUVELLE PAGE « une pépite ? » : humeur (8 pills) + type →
+      Gemini choisit LA pépite parmi le top 40 de tes listes/Watchlist (scoré
+      localement) et justifie en 2-3 phrases sans spoiler. `pop_engine.py`
+      séparé ; endpoint NATIF Gemini (compatible clés AQ. ET AIza) ; repli
+      LOCAL sans clé (humeur → genres) ; exclusions des tirages de la session ;
+      confidentialité : seules fiches techniques (titre/genres/durée/note)
+      envoyées — audité au banc (aucune note personnelle dans le prompt).
+- [x] Clarté cartes stats : « N déjà vus » (comptage exact identique à la fiche) ;
+      résultats de recherche : « Ouvre la fiche pour le détail ».
+- [x] 23/23 tests unitaires + non-régression fiche cinéma (vague animée,
+      sections, score) vérifiées au banc.
+
 ### PROCHAINES ÉTAPES (validées par l'utilisateur 07/10)
-- [ ] « Pop » : suggestions IA par humeur (nécessite GEMINI_API_KEY dans les
-      secrets — guide livré). Puis anecdotes générées par IA.
+- [ ] Anecdotes générées par IA (suite de POP — nécessite GEMINI_API_KEY,
+      déjà posée par l'utilisateur).
+- [ ] Ajouter un contenu à une liste / à la Watchlist DEPUIS LA FICHE CINÉMA
+      (demande utilisateur 07/10 — très faisable : les méthodes d'écriture
+      existent déjà : `add_watchlist_items`, `add_list_items` ; s'inspirer du
+      popover « ➕ Ajouter une découverte » des sections hors-listes ;
+      uniquement listes statiques, jamais les listes dynamiques/IA).
 - [ ] Onglets Statistiques : 👁️ Vue d'ensemble / 🎭 Goûts / 👥 Personnes /
       🗓️ Temps — animation de transition + UN seul bloc de filtres partagé
-      (recherche + période + type).
+      (recherche + période + type). Les infos par acteur/réalisateur restent
+      dans Statistiques (décision utilisateur : c'est le bon endroit).
 - [ ] Historique PAR SÉRIE (une ligne par série, clic → fiche série avec dates
       de visionnage) — remplace le tableau par épisode.
 - [ ] Fiche film d'un contenu VU → bloc « Ton historique » (dates, rewatchs, ta note).

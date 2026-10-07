@@ -27,6 +27,7 @@ import mdblist_oauth as mdb_oauth
 import achievements_engine as achievements_mod
 import dashboard_engine as dashboard_mod
 import excel_export as excel_mod
+import pop_engine
 import stats_engine as stats_mod
 import migration_engine as mig_mod
 import trakt_zip_provider
@@ -93,6 +94,14 @@ from recommendation_engine import PRESET_NAMES, build_profile, preset_matches, s
 
 APP_NAME = "Media Smart Lists"
 APP_VERSION = "0.15.0-alpha"
+# V149 — VERSION D'ENRICHISSEMENT : bumpée à chaque évolution des règles
+# d'extraction (cast top 20 → complet, champ `directors` ajouté…). Tout média
+# dont `_enrich_v` diffère est RE-TRAITÉ au prochain chargement. Comme les
+# payloads TMDB sont cachés 30 jours (`_fetch_tmdb_item`), ce re-traitement
+# ne coûte AUCUN appel réseau : il ne refait que l'extraction locale.
+# Historique : v1 = jusqu'à V148 (cast cap order≥20, directors parfois absents
+# des vieux enrichissements → « 0 vu » pour Martin Scorsese dans les stats).
+ENRICH_VERSION = 2
 # Année courante (Paris) : borne haute ADAPTATIVE du slider d'époque — les
 # sorties de l'année en cours (2026…) ne sont plus masquées.
 _CURRENT_YEAR = datetime.now(ZoneInfo("Europe/Paris")).year
@@ -103,6 +112,7 @@ PAGES = [
     "👻 Progression Fantôme",
     "🧹 Nettoyage des listes",
     "🎯 Que regarder ?",
+    "🍿 POP — une pépite ?",
     "📅 Calendrier des sorties",
     "📊 Statistiques",
     "🎬 Rendez-vous annuel",
@@ -723,12 +733,30 @@ st.markdown(
        même style .mc-type que le bouton « VOIR LA FICHE » des tuiles. */
     /* V148 — Séries ABANDONNÉES : la tuile n'a pas de liseré jaune
        (volontaire) → le bouton fusionné prend le liseré VERT pour rester
-       harmonieux avec SA carte. */
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card:not(.poster-card):not(.upnext-card))
+       harmonieux avec SA carte.
+       V149 : 3px EXACTEMENT comme la tuile (retour utilisateur : le liseré
+       du bouton paraissait PLUS GROS que celui de la tuile) + cible
+       explicite .dropped-compact. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card.dropped-compact)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card:not(.poster-card):not(.upnext-card))
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card.dropped-compact)
         + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
-        border-left: 4px solid var(--am-green) !important;
+        border-left: 3px solid var(--am-green) !important;
+    }
+    /* V149 — tuile abandonnée COMPACTE : nom seul, hauteur minimale
+       (retour utilisateur : les tuiles prenaient trop de place). */
+    .media-list-card.dropped-compact {
+        min-height: 0 !important;
+        padding: .3rem .6rem !important;
+        gap: .4rem !important;
+    }
+    .media-list-card.dropped-compact strong {
+        font-size: .92rem !important;
+        line-height: 1.25 !important;
+    }
+    .media-list-card.dropped-compact img {
+        height: 28px !important;
+        width: 20px !important;
     }
     /* V147 — FUSION carte+bouton personne (look tuile « Que regarder ») :
        la carte perd ses coins bas, le bouton ses coins hauts, zéro écart. */
@@ -1511,6 +1539,20 @@ st.markdown(
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] {
         margin-top: 0 !important;  /* la marge basse de la carte est déjà à 0 */
+    }
+    /* V149 — FIX ÉCART RÉSIDUEL 2.61px (En cours de lecture / Progression
+       Fantôme / Séries abandonnées / cartes personnes) : les boutons SANS
+       help= n'ont pas le wrapper FLEX que Streamlit ajoute pour les tooltips
+       → le bouton compacté à 24px reste dans un contexte INLINE et
+       s'aligne sur une line box de ~26.6px : il glisse de 2.61px dans son
+       wrapper (mesuré au banc Chromium). display:flex le sort du contexte
+       inline → gap tuile→bouton = 0px, comme les tuiles « Que regarder ? »
+       (boutons AVEC help=, donc déjà flex via le wrapper tooltip). */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
+        + div[data-testid="stElementContainer"] div.stButton,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card)
+        + div[data-testid="stElementContainer"] div.stButton {
+        display: flex !important;
     }
     /* V138 — TUILE ET PIED UNIS au survol : quand la tuile se soulève,
        son bouton « Voir la fiche » se soulève AVEC elle (sinon elle avait
@@ -2710,38 +2752,88 @@ def _all_media(dataset: dict) -> list[tuple[dict, str]]:
     return out
 
 
-def _collect_people_stats(dataset: dict, tmdb_whitelist: set | None = None) -> list[dict]:
-    """Acteurs triés par nombre d'apparitions (photo + id TMDB).
+def _collect_person_stats_unified(
+    dataset: dict, facet: str, tmdb_whitelist: set | None = None,
+) -> list[dict]:
+    """Cartes personnes (V149) : le compte affiché est EXACT et IDENTIQUE à
+    la fiche personne, par construction.
 
-    `tmdb_whitelist` (facultatif) restreint le calcul aux médias présents
-    dans une sélection filtrée (pour suivre les slicers des statistiques)."""
-    counts: dict[str, int] = {}
-    meta: dict[str, dict] = {}
+    Méthode (identique à `_render_actor_detail_body`) :
+      1. scan local de l'historique (respecte les slicers via
+         `tmdb_whitelist`) par IDENTIFIANT TMDB strict — plus par nom —
+         pour désigner ~24 CANDIDATS (ce n'est qu'une présélection) ;
+      2. pour chaque candidat : filmo TMDB (`_person_filmography`, cache
+         7 jours) ∩ ids TMDB STRICTS de ton historique filtré ;
+      3. tri final par ce compte EXACT.
+
+    Fini le « 12 côté fiche vs 9 côté tuile » (le cap d'order du cast et
+    le champ `directors` manquant fausaient le scan local) et le « 0 vu
+    avec Scorsese » (ses films avaient été enrichis avant l'existence du
+    champ directors — corrigé par ENRICH_VERSION=2). Sans clé TMDB ou en
+    cas d'erreur réseau : repli sur le compte local (dégradé mais utile).
+    """
+    field = "directors" if facet == "realisateur" else "actors"
+    counts: dict[int, int] = {}
+    meta: dict[int, dict] = {}
+    watched_ids: set[int] = set()
     for media, _kind in _history_media(dataset):
+        tmdb = _media_tmdb_id_strict(media)
         if tmdb_whitelist is not None:
-            tmdb = _media_tmdb_id(media)
             if tmdb is None or str(tmdb) not in tmdb_whitelist:
                 continue
-        for actor in media.get("actors") or []:
-            if not isinstance(actor, dict):
+        if tmdb:
+            watched_ids.add(tmdb)
+        for person in media.get(field) or []:
+            if not isinstance(person, dict):
                 continue
-            name = str(actor.get("name") or "").strip()
-            if not name:
+            try:
+                pid = int(person.get("id") or 0)
+            except (TypeError, ValueError):
+                pid = 0
+            if not pid:
                 continue
-            key = name.casefold()
-            counts[key] = counts.get(key, 0) + 1
-            meta.setdefault(key, {
-                "name": name,
-                "id": actor.get("id"),
-                "profile_path": actor.get("profile_path") or "",
+            counts[pid] = counts.get(pid, 0) + 1
+            meta.setdefault(pid, {
+                "name": str(person.get("name") or "").strip() or "?",
+                "id": pid,
+                "profile_path": person.get("profile_path") or "",
             })
-    stats = [
-        {"name": meta[key]["name"], "id": meta[key]["id"],
-         "profile_path": meta[key]["profile_path"], "count": counts[key]}
-        for key in counts
-    ]
+    if not counts:
+        return []
+    api_key = _tmdb_api_key()
+    # Présélection locale : les 24 personnes les plus présentes.
+    candidates = sorted(counts, key=lambda pid: (-counts[pid], meta[pid]["name"].casefold()))[:24]
+
+    def _exact(pid: int) -> int | None:
+        try:
+            filmo = _person_filmography(pid, api_key)
+        except Exception:
+            return None
+        facet_map = filmo.get(facet) or {}
+        return sum(1 for cid in facet_map if cid in watched_ids)
+
+    exact_counts: dict[int, int | None] = {}
+    if api_key and watched_ids:
+        # Premier passage de la semaine : ~48 appels filmo (cachés 7 jours
+        # ensuite → les reruns suivants sont instantanés).
+        with st.spinner("Comptage exact (filmographies TMDB, en cache 7 jours)…"):
+            with ThreadPoolExecutor(max_workers=12) as executor:
+                for pid, value in zip(candidates, executor.map(_exact, candidates)):
+                    exact_counts[pid] = value
+    stats = []
+    for pid in candidates:
+        exact = exact_counts.get(pid)
+        count = exact if exact is not None else counts[pid]
+        if exact is not None and count <= 0:
+            continue  # faux positif local (présence locale, rien de vu côté filmo)
+        stats.append({**meta[pid], "count": count})
     stats.sort(key=lambda row: (-row["count"], row["name"].casefold()))
     return stats
+
+
+def _collect_people_stats(dataset: dict, tmdb_whitelist: set | None = None) -> list[dict]:
+    """Acteurs récurrents de TON historique — compte exact (V149)."""
+    return _collect_person_stats_unified(dataset, "acteur", tmdb_whitelist)
 
 
 def _collect_studio_stats(dataset: dict, tmdb_whitelist: set | None = None) -> list[dict]:
@@ -2768,37 +2860,9 @@ def _collect_studio_stats(dataset: dict, tmdb_whitelist: set | None = None) -> l
 
 
 def _collect_director_stats(dataset: dict, tmdb_whitelist: set | None = None) -> list[dict]:
-    """Réalisateurs/créateurs triés par nombre d'apparitions (photo + id TMDB).
-
-    Suit les slicers des statistiques via `tmdb_whitelist` (comme les acteurs).
-    """
-    counts: dict[str, int] = {}
-    meta: dict[str, dict] = {}
-    for media, _kind in _history_media(dataset):
-        if tmdb_whitelist is not None:
-            tmdb = _media_tmdb_id(media)
-            if tmdb is None or str(tmdb) not in tmdb_whitelist:
-                continue
-        for director in media.get("directors") or []:
-            if not isinstance(director, dict):
-                continue
-            name = str(director.get("name") or "").strip()
-            if not name:
-                continue
-            key = name.casefold()
-            counts[key] = counts.get(key, 0) + 1
-            meta.setdefault(key, {
-                "name": name,
-                "id": director.get("id"),
-                "profile_path": director.get("profile_path") or "",
-            })
-    stats = [
-        {"name": meta[key]["name"], "id": meta[key]["id"],
-         "profile_path": meta[key]["profile_path"], "count": counts[key]}
-        for key in counts
-    ]
-    stats.sort(key=lambda row: (-row["count"], row["name"].casefold()))
-    return stats
+    """Réalisateurs/créateurs récurrents de TON historique — compte exact
+    (V149, même méthode que la fiche : filmo Director ∩ ids vus)."""
+    return _collect_person_stats_unified(dataset, "realisateur", tmdb_whitelist)
 
 
 def _tmdb_image_url(path: str, size: str = "w185") -> str:
@@ -2834,13 +2898,21 @@ def _render_people_cards(people: list[dict], limit: int = 8, fallback_emoji: str
                    f'border:1px solid rgba(0,163,146,.35);">{fallback_emoji}</div>')
         link = (f'<a class="link-pill" href="{url}" target="_blank" rel="noopener noreferrer" '
                 f'title="Fiche TMDB">TMDB</a>') if url else ""
+        # V149 : libellé clarifié — nombre de contenus DÉJÁ VUS (acteur :
+        # contenus où il joue · réalisateur : contenus qu'il a réalisés).
+        # Comptage exact, identique à la fiche. Les résultats de RECHERCHE
+        # n'ont pas de count → pas de sous-ligne trompeuse.
+        if "count" in person:
+            sub = f"{count} déjà vu{'s' if count != 1 else ''}"
+        else:
+            sub = "Ouvre la fiche pour le détail"
         cards.append(
             f'<div class="people-card" style="display:flex;align-items:center;gap:.5rem;background:rgba(8,55,50,.62);'
             f'border:1px solid rgba(0,163,146,.35);border-left:4px solid var(--am-yellow);'
             f'border-radius:13px 13px 0 0;padding:.4rem .5rem;">'
             f'{img}<div style="min-width:0;flex:1;"><div style="font-weight:700;font-size:.8rem;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>'
-            f'<div style="color:#9DC5BF;font-size:.7rem;">{count} titre(s)</div></div>{link}</div>'
+            f'<div style="color:#9DC5BF;font-size:.7rem;">{sub}</div></div>{link}</div>'
         )
     return ('<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));'
             'gap:.5rem;margin:.4rem 0;">' + "".join(cards) + '</div>')
@@ -3236,6 +3308,12 @@ def _apply_tmdb_payload(media: dict, payload: dict, french: bool = False) -> Non
     btc = payload.get("belongs_to_collection")
     if isinstance(btc, dict) and btc.get("id") and not media.get("collection"):
         media["collection"] = {"id": btc["id"], "name": str(btc.get("name") or "").strip()}
+    # V149 — marqueur de version : ce média a été traité par les règles
+    # d'extraction COURANTES (cast top 20, directors remplis…). Sans lui, un
+    # film enrichi par une ANCIENNE version ne était jamais ré-examiné (il
+    # avait déjà genres+studios+actors) → son champ `directors` restait vide
+    # pour toujours → « 0 vu » avec Martin Scorsese dans les Statistiques.
+    media["_enrich_v"] = ENRICH_VERSION
 
 
 def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
@@ -3265,9 +3343,14 @@ def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
     # acteurs). `_fetch_tmdb_item` étant mis en cache par contenu, les médias
     # déjà enrichis ne déclenchent AUCUN appel réseau : la boucle est quasi
     # gratuite sur les rechargements, et n'interroge que les nouveautés.
+    # V149 : on ré-examine AUSSI tout média traité par une version
+    # antérieure de l'extraction (`_enrich_v` différent) — c'est ce qui
+    # remplit enfin `directors` sur les films enrichis avant l'existence de
+    # ce champ (payload déjà en cache → 0 appel réseau).
     need_enrich = [
         (m, k) for m, k in all_media
-        if (not m.get("genres")) or (not m.get("studios")) or (not m.get("actors"))
+        if (m.get("_enrich_v") != ENRICH_VERSION)
+        or (not m.get("genres")) or (not m.get("studios")) or (not m.get("actors"))
     ]
 
     budget = 6000  # sécurité pour les très grosses bibliothèques
@@ -5041,12 +5124,17 @@ def _actor_dialog_chrome_css() -> str:
 
 
 def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> None:
-    """Fiche ACTEUR / RÉALISATEUR (V147) — ouverte depuis Statistiques.
+    """Fiche PERSONNE — acteur et/ou réalisateur (V147 → V149).
 
-    V147 : fiches séparées (acteur = cast, réalisateur = crew « Director »),
-    contenus vus et en listes SPLITÉS films/séries, badge 📂 nom de la liste
-    sur chaque contenu, carte entière = lien TMDB (comme la fiche film),
-    en-tête retravaillé.
+    V149 : DOUBLE FACETTE. Beaucoup de réalisateurs sont aussi acteurs
+    (Scorsese et ses caméos…) et inversement (Eastwood…). La fiche montre
+    donc TOUTES les facettes non vides de la personne :
+      • « En tant que réalisateur » (crew job Director) ;
+      • « En tant qu'acteur » (cast) ;
+    chaque facette étant splitée Films/Séries (vus + en listes), avec badge
+    📂 nom de liste. Le compteur d'en-tête « N déjà dans ton historique »
+    est l'UNION dédupliquée des deux facettes — et il est calculé par la
+    MÊME fonction (`_person_filmography`) que les cartes des Statistiques.
     """
     api_key = _tmdb_api_key()
     if not api_key or not person_id:
@@ -5057,8 +5145,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         return
     try:
         person = _fetch_person_details(person_id, api_key) or {}
-        movie_credits = _fetch_person_credits("movie", person_id, api_key) or {}
-        tv_credits = _fetch_person_credits("tv", person_id, api_key) or {}
+        facets = _person_filmography(person_id, api_key)
     except Exception:
         st.markdown(
             '<div class="accent-callout">Fiche momentanément indisponible (TMDB).</div>',
@@ -5070,36 +5157,12 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         return
 
     is_director = person_kind == "realisateur"
-    role_word = "ce réalisateur" if is_director else "cet acteur"
-
-    def _collect(credits: dict, kind_label: str) -> dict[int, dict]:
-        out: dict[int, dict] = {}
-        if is_director:
-            rows = [c for c in (credits.get("crew") or [])
-                    if isinstance(c, dict) and str(c.get("job") or "").lower() == "director"]
-        else:
-            rows = [c for c in (credits.get("cast") or []) if isinstance(c, dict)]
-        for credit in rows:
-            title = str(credit.get("title") or credit.get("name") or "").strip()
-            if not title or not credit.get("id"):
-                continue
-            cid = int(credit["id"])
-            if cid in out:
-                continue
-            date = str(credit.get("release_date") or credit.get("first_air_date") or "")
-            out[cid] = {
-                "id": cid, "title": title, "kind": kind_label,
-                "role": str(credit.get("character") or credit.get("job") or "").strip(),
-                "poster": str(credit.get("poster_path") or "").strip(),
-                "date": date, "year": date[:4] if len(date) >= 4 else "",
-            }
-        return out
-
-    film_credits = _collect(movie_credits, "Film")
-    tv_credits_map = _collect(tv_credits, "Série")
-    # les films priment sur les séries en cas d'id partagé (rare)
-    all_credits = dict(tv_credits_map)
-    all_credits.update(film_credits)
+    # Ordre d'affichage : la facette d'appel d'abord, l'autre ensuite si non vide.
+    facet_order = ["realisateur", "acteur"] if is_director else ["acteur", "realisateur"]
+    facet_labels = {
+        "acteur": ("Interprétation", "cet acteur", "EN TANT QU'ACTEUR"),
+        "realisateur": ("Réalisation", "ce réalisateur", "EN TANT QUE RÉALISATEUR"),
+    }
 
     # ── croisement avec TES données ──
     watched_ids, listed_ids, list_names = _seen_watchlist_listname_ids()
@@ -5140,23 +5203,25 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             f'{badge_html}</div></a>'
         )
 
-    vus_films = [c for c in film_credits.values() if _bucket(c) == "vu"]
-    vus_series = [c for c in tv_credits_map.values() if _bucket(c) == "vu"]
-    listed_films = [c for c in film_credits.values() if _bucket(c) == "liste"]
-    listed_series = [c for c in tv_credits_map.values() if _bucket(c) == "liste"]
-    decouvrir = sorted(
-        (c for c in all_credits.values() if _bucket(c) is None),
-        key=lambda c: c["date"], reverse=True,
-    )[:12]
+    # Union des contenus des DEUX facettes (pour le compteur d'en-tête et
+    # « À découvrir ») — dédupliquée par id TMDB, la facette d'appel prime.
+    all_credits: dict[int, dict] = {}
+    for facet_name in facet_order:
+        for cid, credit in (facets.get(facet_name) or {}).items():
+            all_credits.setdefault(cid, credit)
+    total_career = len(all_credits)
+    # « N déjà dans ton historique » : union des contenus VUS des deux facettes.
+    seen_union_ids = {cid for cid in all_credits if all_credits[cid]["id"] in watched_ids}
+    total_seen = len(seen_union_ids)
 
-    dept = "Réalisation" if is_director else "Interprétation"
+    dept_parts = [facet_labels[f][0] for f in facet_order if facets.get(f)]
+    dept = " & ".join(dept_parts) if dept_parts else "Carrière"
     photo = str(person.get("profile_path") or "").strip()
     head_photo = (
         f'<img class="actor-photo" src="https://image.tmdb.org/t/p/w185{escape(photo, quote=True)}"'
         f' alt="" loading="lazy">' if photo else
         '<div class="actor-photo" style="display:flex;align-items:center;justify-content:center;font-size:2rem;">🎭</div>'
     )
-    total_seen = len(vus_films) + len(vus_series)
     tmdb_link = (
         f'<a class="link-pill" href="https://www.themoviedb.org/person/{person_id}"'
         f' target="_blank" rel="noopener noreferrer" title="Fiche TMDB">Fiche TMDB</a>'
@@ -5165,7 +5230,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     st.markdown(
         f'<div class="actor-head">{head_photo}<div style="min-width:0;">'
         f'<p class="actor-name">{escape(str(person["name"]))}</p>'
-        f'<p class="actor-meta">{escape(dept)} · {len(all_credits)} titre(s) · '
+        f'<p class="actor-meta">{escape(dept)} · {total_career} titre(s) · '
         f'<strong style="color:var(--am-yellow);">{total_seen} déjà dans ton historique</strong></p>'
         f'<div style="margin-top:.35rem;">{tmdb_link}</div>'
         f"</div></div>",
@@ -5188,12 +5253,41 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             unsafe_allow_html=True,
         )
 
-    _section(f"🎬 Films vus avec {role_word}", sorted(vus_films, key=lambda c: c["date"], reverse=True))
-    _section(f"📺 Séries vues avec {role_word}", sorted(vus_series, key=lambda c: c["date"], reverse=True))
-    _section(f"📌 Films dans tes listes", sorted(listed_films, key=lambda c: c["date"], reverse=True))
-    _section(f"📌 Séries dans tes listes", sorted(listed_series, key=lambda c: c["date"], reverse=True))
+    any_seen_any_listed = False
+    # Le séparateur de facette n'est utile que si les DEUX facettes existent
+    # (Scorsese réalisateur ET acteur) — sinon il ferait doublon.
+    multi_facets = sum(1 for f in facet_order if facets.get(f)) > 1
+    for facet_name in facet_order:
+        facet_map = facets.get(facet_name) or {}
+        if not facet_map:
+            continue
+        _label, role_word, facet_tag = facet_labels[facet_name]
+        if multi_facets:
+            st.markdown(
+                f'<p class="actor-section-title" style="color:var(--am-yellow);'
+                f'letter-spacing:.12em;font-size:.72rem;">{facet_tag}</p>',
+                unsafe_allow_html=True,
+            )
+        films = {cid: c for cid, c in facet_map.items() if c["kind"] == "Film"}
+        series = {cid: c for cid, c in facet_map.items() if c["kind"] == "Série"}
+        vus_films = [c for c in films.values() if _bucket(c) == "vu"]
+        vus_series = [c for c in series.values() if _bucket(c) == "vu"]
+        listed_films = [c for c in films.values() if _bucket(c) == "liste"]
+        listed_series = [c for c in series.values() if _bucket(c) == "liste"]
+        if vus_films or vus_series or listed_films or listed_series:
+            any_seen_any_listed = True
+        _section(f"🎬 Films vus avec {role_word}", sorted(vus_films, key=lambda c: c["date"], reverse=True))
+        _section(f"📺 Séries vues avec {role_word}", sorted(vus_series, key=lambda c: c["date"], reverse=True))
+        _section("📌 Films dans tes listes", sorted(listed_films, key=lambda c: c["date"], reverse=True))
+        _section("📌 Séries dans tes listes", sorted(listed_series, key=lambda c: c["date"], reverse=True))
+
+    decouvrir = sorted(
+        (c for c in all_credits.values() if _bucket(c) is None),
+        key=lambda c: c["date"], reverse=True,
+    )[:12]
     _section("🌐 À découvrir", decouvrir)
-    if total_seen == 0 and not listed_films and not listed_series:
+    if not any_seen_any_listed:
+        role_word = "ce réalisateur" if is_director else "cet acteur"
         st.markdown(
             f'<p class="actor-meta" style="margin:.4rem 1rem;">Tu n\'as encore rien vu avec ce {role_word}'
             " dans ton historique — regarde « À découvrir » ci-dessus 😉</p>",
@@ -5880,6 +5974,7 @@ def _build_item_from_tmdb(tmdb_id: int, kind: str, payload: dict) -> dict:
 
 
 @st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : filmographie par personne
+@st.cache_data(ttl=604800, show_spinner=False)  # V149 : 7 jours — sert la fiche ET les tuiles
 def _fetch_person_credits(kind: str, person_id: int, key: str) -> dict:
     """Filmographie COMPLÈTE d'une personne (cast + équipe) — films ou séries.
 
@@ -5948,6 +6043,52 @@ def _fetch_person_details(person_id: int, key: str) -> dict:
         return response.json() or {}
     except ValueError:
         raise
+
+
+@st.cache_data(ttl=604800, show_spinner=False)  # V149 : 7 jours — LA source commune
+def _person_filmography(person_id: int, key: str) -> dict[str, dict[int, dict]]:
+    """Filmo d'une personne en DEUX FACETTES — source UNIQUE partagée par la
+    FICHE personne et les CARTES des Statistiques (V149) :
+
+      • « acteur »     : credits.cast (toute la filmo d'interprétation) ;
+      • « realisateur » : credits.crew avec job == Director.
+
+    Chaque facette est un dict {id TMDB du contenu: credit} — films ET séries
+    confondus (le credit porte son `kind`). Les films priment sur les séries
+    en cas d'id partagé (rare). C'est LA correction du « 12 vs 9 » et du
+    « 0 vu avec Scorsese » : la tuile et la fiche comptent désormais avec la
+    MÊME méthode, croisée avec les MÊMES ids TMDB vus.
+    """
+    def _facet(credits: dict, as_director: bool) -> dict[int, dict]:
+        rows: list = []
+        if as_director:
+            rows = [c for c in (credits.get("crew") or [])
+                    if isinstance(c, dict) and str(c.get("job") or "").lower() == "director"]
+        else:
+            rows = [c for c in (credits.get("cast") or []) if isinstance(c, dict)]
+        out: dict[int, dict] = {}
+        for credit in rows:
+            cid = int(credit.get("id") or 0)
+            if not cid or cid in out:
+                continue
+            date = str(credit.get("release_date") or credit.get("first_air_date") or "")
+            out[cid] = {
+                "id": cid,
+                "title": str(credit.get("title") or credit.get("name") or "").strip(),
+                "kind": "Film" if "title" in credit else "Série",
+                "role": str(credit.get("character") or credit.get("job") or "").strip(),
+                "poster": str(credit.get("poster_path") or "").strip(),
+                "date": date,
+                "year": date[:4] if len(date) >= 4 else "",
+            }
+        return out
+
+    movie = _fetch_person_credits("movie", person_id, key) or {}
+    tv = _fetch_person_credits("tv", person_id, key) or {}
+    # Films priment sur les séries en cas d'id partagé (rare).
+    actor_map = {**_facet(tv, False), **_facet(movie, False)}
+    director_map = {**_facet(tv, True), **_facet(movie, True)}
+    return {"acteur": actor_map, "realisateur": director_map}
 
 
 @st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : recherche de personne
@@ -8063,6 +8204,156 @@ def render_watchlist_page() -> None:
         st.caption(f"{len(display_rows) - rendered} résultat(s) supplémentaire(s) masqué(s).")
 
 
+def _gemini_api_key() -> str:
+    """Clé Gemini (facultative) depuis les Secrets Streamlit — voir
+    GUIDE-CLE-IA.txt. Fonctionne avec les DEUX formats de clé : « AIza… »
+    (ancien) et « AQ.… » (nouveau format « Auth key » émis depuis AI Studio) :
+    l'app appelle l'endpoint NATIF Gemini, qui accepte les deux."""
+    try:
+        return str(st.secrets.get("GEMINI_API_KEY") or "").strip()
+    except Exception:
+        return ""
+
+
+def _render_pop_result(result: dict) -> None:
+    """Carte-résultat d'un tirage POP (V149) : mêmes classes visuelles que
+    les tuiles « Que regarder ? » (poster-card + mc-head), badge de la liste
+    source, puis la justification IA dans un encart jaune."""
+    poster = escape(_poster_url({"poster": result.get("poster")}), quote=True)
+    image_html = _poster_html(poster, result.get("kind") or "")
+    title = escape(result.get("title") or "?")
+    year = f" ({result['year']})" if result.get("year") else ""
+    note = f"⭐ {result['note']:.1f}" if result.get("note") else ""
+    genres = " · ".join(result.get("genres") or [])
+    runtime = _format_minutes(int(result.get("runtime") or 0)) if result.get("runtime") else ""
+    chips = " · ".join(x for x in (genres, runtime, note) if x)
+    engine = str(result.get("engine") or "Local")
+    st.markdown(
+        f'<div class="media-list-card poster-card">{image_html}'
+        f'<div class="media-list-content" style="width:100%;">'
+        f'<div class="mc-head">{_type_chip(result.get("kind") or "")}'
+        f'<strong style="font-size:1.08rem;">{title}{year}</strong>'
+        f'<span class="source-badge">💎 PÉPITE POP</span></div>'
+        f'<small>📂 {escape(result.get("source") or "ta liste")}'
+        + (f" · {chips}</small>" if chips else "</small>")
+        + f'</div></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="accent-callout"><strong>💎 Pourquoi cette pépite ?</strong> '
+        f'<span style="color:var(--am-text-muted);font-size:.75rem;">· {engine}</span><br>'
+        f"{escape(result.get('reason') or '')}</div>",
+        unsafe_allow_html=True,
+    )
+    # V149 — un SEUL bouton de tirage (le principal, libellé dynamique) :
+    # le bouton « une autre » ici aurait fait doublon avec lui.
+    if st.button("🎬 Voir la fiche", key=f"pop_fiche_{result['id']}", use_container_width=True, type="secondary"):
+        _pop_row = _history_fiche_row({
+            "ids": {"tmdb": result["id"]}, "title": result.get("title") or "",
+            "type": result.get("kind") or "Film",
+        })
+        if not _pop_row:
+            _pop_row = {"item": {"ids": {"tmdb": result["id"]}, "title": result.get("title")},
+                        "type": result.get("kind") or "Film", "key": f"pop_{result['id']}"}
+        _open_cinema_detail(_pop_row)
+
+
+def render_pop_page() -> None:
+    """🍿 POP (V149) — LA pépite de tes listes, choisie par Gemini selon
+    ton humeur. Candidats = contenus NON vus de ta Watchlist + listes,
+    scorés localement (top 40) ; seule leur fiche technique (titre, genres,
+    durée, note, source) part chez Google — aucune donnée personnelle.
+    Sans clé Gemini (ou en cas d'erreur) : repli local humeur → genres."""
+    st.markdown('<div class="page-title">🍿 POP — LA pépite pour ce soir</div>', unsafe_allow_html=True)
+    dataset = _dataset()
+    if not dataset:
+        st.markdown(
+            '<div class="accent-callout"><strong>DONNÉES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+    api_key = _gemini_api_key()
+    if api_key:
+        st.caption("🔑 Gemini connecté (clé détectée dans tes Secrets).")
+    else:
+        st.caption("🔕 Aucune clé Gemini détectée — mode LOCAL (sans IA). "
+                   "Le guide GUIDE-CLE-IA.txt explique comment en ajouter une gratuitement.")
+
+    mood = st.pills("🎯 Ton humeur du moment", list(pop_engine.POP_MOODS), key="pop_mood")
+    kind = st.pills(
+        "🎞️ Type", ["Peu importe", "Film", "Série"], key="pop_kind",
+        default="Peu importe",
+    )
+    if not mood:
+        st.markdown(
+            '<div class="accent-callout"><strong>CHOISIS TON HUMEUR</strong> · '
+            "Cocooning, grand frisson, rire… Gemini (ou le moteur local) ira chercher "
+            "LE contenu de tes listes qui colle parfaitement.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    draw_label = "🎲 Une autre pépite !" if st.session_state.get("pop_result") else "🍿 Tire-moi LA pépite !"
+    if st.button(draw_label, type="primary", use_container_width=True, key="pop_draw"):
+        candidates = pop_engine.pop_candidate_pool(dataset, kind or "Peu importe")
+        drawn = list(st.session_state.get("pop_drawn") or [])
+        exclude = {row["id"] for row in drawn}
+        fresh = [c for c in candidates if c["id"] not in exclude] or candidates
+        result = None
+        note = ""
+        if api_key and fresh:
+            try:
+                with st.spinner("💎 Gemini fouille tes listes…"):
+                    res = pop_engine.pop_ask_gemini(api_key, mood, fresh)
+                pick = next((c for c in fresh if c["id"] == res["pick_id"]), None)
+                if pick:
+                    result = {**pick, "reason": res["reason"], "engine": "Gemini"}
+            except RuntimeError as exc:
+                note = str(exc)
+        if result is None and fresh:
+            res = pop_engine.pop_pick_local(mood, fresh)
+            if res:
+                pick = next((c for c in fresh if c["id"] == res["pick_id"]), None)
+                if pick:
+                    result = {**pick, "reason": res["reason"], "engine": "Local"}
+        if result:
+            st.session_state["pop_result"] = result
+            drawn.append({"id": result["id"], "title": result.get("title") or "?"})
+            st.session_state["pop_drawn"] = drawn
+            st.session_state.pop("pop_error", None)
+        else:
+            st.session_state.pop("pop_result", None)
+            st.session_state["pop_error"] = (
+                note or "Aucun contenu disponible dans tes listes et ta Watchlist — "
+                "ajoute-en quelques-uns et reviens !"
+            )
+
+    result = st.session_state.get("pop_result")
+    if result:
+        _render_pop_result(result)
+    error = st.session_state.get("pop_error")
+    if error:
+        st.markdown(f'<div class="accent-callout"><strong>⚠️ POP</strong> · {escape(error)}</div>',
+                    unsafe_allow_html=True)
+        st.session_state.pop("pop_error", None)
+    drawn = st.session_state.get("pop_drawn") or []
+    if drawn:
+        chips = "".join(
+            f'<span class="mc-chip">💎 {escape(row["title"])}</span>' for row in drawn[-8:]
+        )
+        st.markdown(
+            '<p class="actor-meta" style="margin:.5rem 0 .2rem;">Pépites déjà tirées cette session :</p>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:.35rem;">{chips}</div>',
+            unsafe_allow_html=True,
+        )
+    st.caption(
+        "🔒 Confidentialité : seuls titre, année, type, genres, durée et note des "
+        "40 candidats partent chez Google — jamais tes notes personnelles ni ton "
+        "historique. Quota gratuit Gemini : ~1 500 requêtes/jour (1 par tirage)."
+    )
+
+
 def render_progress_page() -> None:
     st.markdown('<div class="page-title">▶️ En cours de lecture</div>', unsafe_allow_html=True)
     sections = _sections()
@@ -8318,8 +8609,12 @@ def render_progress_page() -> None:
         st.markdown("### Séries abandonnées")
         st.caption("Ces séries sont marquées « Abandonnée » dans MDBList. Aucune modification n’est proposée ici.")
         for item in dropped[:30]:
+            # V149 — tuile COMPACTE : pas d'affiche, juste le nom (retour
+            # utilisateur : « on affiche juste le nom du contenu, donc autant
+            # réduire la hauteur de la tuile »). Classe dédiée → hauteur
+            # minimale et padding réduits (CSS .dropped-compact).
             st.markdown(
-                f'<div class="media-list-card"><div class="media-list-content">'
+                f'<div class="media-list-card dropped-compact"><div class="media-list-content">'
                 f'<strong>{escape(_media_title(item))}</strong></div></div>',
                 unsafe_allow_html=True,
             )
@@ -12044,6 +12339,8 @@ elif page == "🧹 Nettoyage des listes":
     render_static_lists_page()
 elif page == "🎯 Que regarder ?":
     render_watchlist_page()
+elif page == "🍿 POP — une pépite ?":
+    render_pop_page()
 elif page == "📅 Calendrier des sorties":
     render_calendar_page()
 elif page == "📊 Statistiques":
