@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 6 octobre 2026 · Dernière version déployée : V147.
+> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V148.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -602,3 +602,31 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       (jamais dans le code). L'IA classerait TES contenus scorés localement.
 - [ ] Anecdotes : aucune source gratuite fiable (Trakt = ses propres utilisateurs) ;
       possible seulement via IA générative (clé ci-dessus) — à discuter.
+
+### Fait en V148
+- [x] BUG Supercopter (faux badge Watchlist sur la fiche de Bryan Cranston) :
+      `_media_tmdb_id_strict` — les croisements n'utilisent PLUS le repli « id »
+      interne (MDBList/Trakt) qui entrait en collision numérique avec de vrais
+      ids TMDB. Appliqué aux badges + pastilles d'état (testé 6/6).
+- [x] Cartes personnes : LISERÉ JAUNE (harmonisé avec le bouton), plus compactes
+      (photo 40px, 5 par ligne).
+- [x] « N déjà dans ton historique » (français naturel, retour utilisateur).
+- [x] RECHERCHE d'acteur/réalisateur dans Statistiques — même hors de ton top
+      (TMDB /search/person, cache 7 j, boutons Fiche).
+- [x] Tuiles En cours/Fantôme : écart 1-2px carte-bouton supprimé (marge basse 0).
+- [x] Séries abandonnées : bouton « Voir la fiche » ajouté, liseré VERT
+      (harmonisé avec la tuile sans jaune — volontaire).
+- [x] GUIDE-CLE-IA.txt : création clé Google AI Studio + secrets Streamlit +
+      limites (Flash ~1500 req/jour) + alternatives (Groq, OpenRouter).
+
+### PROCHAINES ÉTAPES (validées par l'utilisateur 07/10)
+- [ ] « Pop » : suggestions IA par humeur (nécessite GEMINI_API_KEY dans les
+      secrets — guide livré). Puis anecdotes générées par IA.
+- [ ] Onglets Statistiques : 👁️ Vue d'ensemble / 🎭 Goûts / 👥 Personnes /
+      🗓️ Temps — animation de transition + UN seul bloc de filtres partagé
+      (recherche + période + type).
+- [ ] Historique PAR SÉRIE (une ligne par série, clic → fiche série avec dates
+      de visionnage) — remplace le tableau par épisode.
+- [ ] Fiche film d'un contenu VU → bloc « Ton historique » (dates, rewatchs, ta note).
+- [ ] Fiche acteur → « score moyen de ses contenus que tu as notés ».
+- [ ] Stats → « duo favori » (acteur + réalisateur le plus croisé).

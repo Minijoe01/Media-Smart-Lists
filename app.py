@@ -721,6 +721,15 @@ st.markdown(
     .cast-link:hover .cast-name { color: #fff; }
     /* V146 — bouton « 👤 Fiche » sous les cartes personnes (Statistiques) :
        même style .mc-type que le bouton « VOIR LA FICHE » des tuiles. */
+    /* V148 — Séries ABANDONNÉES : la tuile n'a pas de liseré jaune
+       (volontaire) → le bouton fusionné prend le liseré VERT pour rester
+       harmonieux avec SA carte. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card:not(.poster-card):not(.upnext-card))
+        + div[data-testid="stElementContainer"] button[kind="secondary"],
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card:not(.poster-card):not(.upnext-card))
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
+        border-left: 4px solid var(--am-green) !important;
+    }
     /* V147 — FUSION carte+bouton personne (look tuile « Que regarder ») :
        la carte perd ses coins bas, le bouton ses coins hauts, zéro écart. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card) .people-card {
@@ -1516,7 +1525,8 @@ st.markdown(
        réduit (retour utilisateur), et la carte remonte vers l'élément
        précédent pour compacter les listes. */
     .media-list-card {
-        margin: .1rem 0 !important;
+        margin: .1rem 0 0 !important;  /* V148 : PAS de marge basse — le bouton
+                                           collait avec 1-2px d'écart (En cours/Fantôme) */
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) {
         margin-top: -0.75rem !important;
@@ -2588,6 +2598,24 @@ def _media_tmdb_id(item: dict) -> int | None:
         return None
 
 
+def _media_tmdb_id_strict(item: dict) -> int | None:
+    """Identifiant TMDB STRICT : ids.tmdb / tmdb_id / tmdbid UNIQUEMENT.
+
+    V148 — jamais le repli « id » de _media_tmdb_id : cet id interne
+    (MDBList/Trakt) peut NUMÉRIQUEMENT coïncider avec un vrai id TMDB et
+    créer de faux badges (« Supercopter dans ta watchlist » sur la fiche
+    de Bryan Cranston — retour utilisateur). Utilisé pour tous les
+    CROISEMENTS d'identifiants (badges, pastilles d'état)."""
+    if not isinstance(item, dict):
+        return None
+    ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+    tmdb = ids.get("tmdb") or item.get("tmdb_id") or item.get("tmdbid")
+    try:
+        return int(tmdb) if tmdb not in (None, "", 0, "0") else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _unwrap_media(item: Any) -> dict:
     """Désimbrique movie/show/episode pour obtenir le dictionnaire média."""
     if not isinstance(item, dict):
@@ -2797,21 +2825,22 @@ def _render_people_cards(people: list[dict], limit: int = 8, fallback_emoji: str
         count = int(person.get("count") or 0)
         if photo:
             img = (f'<img src="{photo}" alt="" loading="lazy" '
-                   f'style="width:44px;height:44px;border-radius:10px;object-fit:cover;'
+                   f'style="width:40px;height:40px;border-radius:10px;object-fit:cover;'
                    f'border:1px solid rgba(255,225,0,.45);">')
         else:
-            img = (f'<div style="width:44px;height:44px;border-radius:10px;display:flex;'
-                   'align-items:center;justify-content:center;font-size:20px;'
+            img = (f'<div style="width:40px;height:40px;border-radius:10px;display:flex;'
+                   'align-items:center;justify-content:center;font-size:18px;'
                    'background:linear-gradient(180deg,#0C2E28,#041710);'
                    f'border:1px solid rgba(0,163,146,.35);">{fallback_emoji}</div>')
         link = (f'<a class="link-pill" href="{url}" target="_blank" rel="noopener noreferrer" '
                 f'title="Fiche TMDB">TMDB</a>') if url else ""
         cards.append(
-            f'<div class="people-card" style="display:flex;align-items:center;gap:.6rem;background:rgba(8,55,50,.62);'
-            f'border:1px solid rgba(0,163,146,.35);border-radius:12px;padding:.5rem .6rem;">'
-            f'{img}<div style="min-width:0;flex:1;"><div style="font-weight:700;font-size:.85rem;'
+            f'<div class="people-card" style="display:flex;align-items:center;gap:.5rem;background:rgba(8,55,50,.62);'
+            f'border:1px solid rgba(0,163,146,.35);border-left:4px solid var(--am-yellow);'
+            f'border-radius:13px 13px 0 0;padding:.4rem .5rem;">'
+            f'{img}<div style="min-width:0;flex:1;"><div style="font-weight:700;font-size:.8rem;'
             f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>'
-            f'<div style="color:#9DC5BF;font-size:.74rem;">{count} titre(s)</div></div>{link}</div>'
+            f'<div style="color:#9DC5BF;font-size:.7rem;">{count} titre(s)</div></div>{link}</div>'
         )
     return ('<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));'
             'gap:.5rem;margin:.4rem 0;">' + "".join(cards) + '</div>')
@@ -2819,7 +2848,7 @@ def _render_people_cards(people: list[dict], limit: int = 8, fallback_emoji: str
 
 def _render_people_cards_clickable(
     people: list[dict], fallback_emoji: str = "🎭", limit: int = 10,
-    columns: int = 4, person_kind: str = "acteur",
+    columns: int = 5, person_kind: str = "acteur",
 ) -> None:
     """Cartes personnes CLIQUABLES (Statistiques, V146-V147) : chaque carte
     est FUSIONNÉE à un bouton natif (look tuile) qui ouvre la FICHE ACTEUR
@@ -4055,7 +4084,7 @@ def _fiche_status_pill(tmdb_id: int | None) -> str:
     for bucket in ("movies", "shows", "episodes"):
         for entry in ((sections.get("watched") or {}).get(bucket) or []):
             media = _unwrap_media(entry)
-            if not media or _media_tmdb_id(media) != tmdb_id:
+            if not media or _media_tmdb_id_strict(media) != tmdb_id:
                 continue
             is_watched = True
             raw = None
@@ -4081,7 +4110,7 @@ def _fiche_status_pill(tmdb_id: int | None) -> str:
         for bucket in ("movies", "shows", "items"):
             for entry in (user_list.get(bucket) or []):
                 media = _unwrap_media(entry)
-                if media and _media_tmdb_id(media) == tmdb_id:
+                if media and _media_tmdb_id_strict(media) == tmdb_id:
                     return (
                         f'<span class="banner-status liste">📂 {escape(str(user_list.get("name") or "Liste"))}</span>'
                     )
@@ -4089,7 +4118,7 @@ def _fiche_status_pill(tmdb_id: int | None) -> str:
     for bucket in ("movies", "shows"):
         for entry in ((sections.get("watchlist") or {}).get(bucket) or []):
             media = _unwrap_media(entry)
-            if media and _media_tmdb_id(media) == tmdb_id:
+            if media and _media_tmdb_id_strict(media) == tmdb_id:
                 return '<span class="banner-status liste">📌 Watchlist</span>'
     return '<span class="banner-status hors">🌐 Hors de tes listes</span>'
 
@@ -4160,7 +4189,7 @@ def _seen_watchlist_listname_ids() -> tuple[set, set, dict]:
             for entry in (section.get(bucket) or []):
                 media = _unwrap_media(entry)
                 if media:
-                    tmdb = _media_tmdb_id(media)
+                    tmdb = _media_tmdb_id_strict(media)  # V148 : STRICT (anti-collision)
                     if tmdb:
                         target.add(tmdb)
     for user_list in (sections.get("user_lists") or []):
@@ -4171,7 +4200,7 @@ def _seen_watchlist_listname_ids() -> tuple[set, set, dict]:
             for entry in (user_list.get(bucket) or []):
                 media = _unwrap_media(entry)
                 if media:
-                    tmdb = _media_tmdb_id(media)
+                    tmdb = _media_tmdb_id_strict(media)  # V148 : STRICT
                     if tmdb and tmdb not in list_names:
                         list_names[tmdb] = name
     return watched, listed, list_names
@@ -5137,7 +5166,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         f'<div class="actor-head">{head_photo}<div style="min-width:0;">'
         f'<p class="actor-name">{escape(str(person["name"]))}</p>'
         f'<p class="actor-meta">{escape(dept)} · {len(all_credits)} titre(s) · '
-        f'<strong style="color:var(--am-yellow);">{total_seen} déjà vu(s) avec toi</strong></p>'
+        f'<strong style="color:var(--am-yellow);">{total_seen} déjà dans ton historique</strong></p>'
         f'<div style="margin-top:.35rem;">{tmdb_link}</div>'
         f"</div></div>",
         unsafe_allow_html=True,
@@ -5919,6 +5948,40 @@ def _fetch_person_details(person_id: int, key: str) -> dict:
         return response.json() or {}
     except ValueError:
         raise
+
+
+@st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : recherche de personne
+def _tmdb_search_person(query: str, key: str) -> list[dict]:
+    """Recherche une PERSONNE par nom sur TMDB — V148 : chercher n'importe
+    quel acteur/réalisateur depuis Statistiques, même hors de ton top."""
+    query = str(query or "").strip()
+    if len(query) < 2:
+        return []
+    try:
+        response = requests.get(
+            "https://api.themoviedb.org/3/search/person",
+            params={"api_key": key, "language": "fr-FR", "query": query, "page": 1},
+            timeout=10,
+        )
+    except requests.RequestException:
+        raise
+    if response.status_code != 200:
+        return []
+    try:
+        payload = response.json() or {}
+    except ValueError:
+        return []
+    out = []
+    for person in (payload.get("results") or [])[:8]:
+        if not isinstance(person, dict) or not person.get("id") or not person.get("name"):
+            continue
+        out.append({
+            "name": str(person["name"]),
+            "id": int(person["id"]),
+            "profile_path": str(person.get("profile_path") or ""),
+            "known_for_department": str(person.get("known_for_department") or ""),
+        })
+    return out
 
 
 @st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : recommandations
@@ -8260,6 +8323,15 @@ def render_progress_page() -> None:
                 f'<strong>{escape(_media_title(item))}</strong></div></div>',
                 unsafe_allow_html=True,
             )
+            # V148 — bouton « Voir la fiche » aussi ici (liseré VERT : la
+            # tuile abandonnée n'a volontairement PAS de liseré jaune).
+            _dr_tmdb = ""
+            try:
+                _dr_tmdb = str(int(_media_tmdb_id(item) or 0) or "")
+            except (TypeError, ValueError):
+                pass
+            if st.button("🎬 Voir la fiche", key=f"cin_dr_{_dr_tmdb or _media_title(item)[:40]}", use_container_width=True, type="secondary"):
+                _open_cinema_detail(_history_fiche_row({"ids": item.get("ids") if isinstance(item.get("ids"), dict) else {}, "title": _media_title(item), "type": "Série"}) or {"item": item, "type": "Série", "key": f"dr_{_dr_tmdb}"})
 
 
 NOW_PLAYING_CACHE_KEY = "_mdblist_now_playing_live"
@@ -10286,10 +10358,28 @@ def render_basic_stats_page() -> None:
     if any(_ENRICH_STATE["in_flight"].values()):
         st.caption("⏳ Acteurs et studios en cours de chargement (TMDB en arrière-plan) — "
                    "cette section se complète d'elle même.")
+    # V148 — chercher N'IMPORTE QUELLE personne (même hors de ton top)
+    _person_query = st.text_input(
+        "🔍 Chercher un acteur / réalisateur (même hors de ton top)…",
+        key="stats_person_search",
+        placeholder="Ex. : Bryan Cranston, Denis Villeneuve…",
+    )
+    _person_query = str(_person_query or "").strip()
+    if len(_person_query) >= 2 and _tmdb_api_key():
+        try:
+            _persons_found = _tmdb_search_person(_person_query, _tmdb_api_key())
+        except Exception:
+            _persons_found = []
+        if _persons_found:
+            st.caption(f"{len(_persons_found)} personne(s) trouvée(s) sur TMDB — clique sur « Fiche » :")
+            _render_people_cards_clickable(_persons_found, limit=5, person_kind="acteur")
+        else:
+            st.caption("Aucune personne trouvée pour cette recherche.")
     if people_stats or studio_stats or director_stats:
         st.caption(
             "Détectés automatiquement sur la sélection filtrée ci-dessus "
-            f"({period_label}). Clique sur une carte pour ouvrir la fiche TMDB."
+            f"({period_label}). Clique sur « Fiche » pour la fiche complète, "
+            "sur TMDB pour la fiche externe."
         )
         if director_stats:
             st.markdown("**🎬 Réalisateurs récurrents**")
