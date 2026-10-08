@@ -878,6 +878,18 @@ st.markdown(
        premières cellules de chaque rangée reçoivent un ancrage décalé :
        la 1re bulle part du bord de la cellule VERS LA DROITE, les 2e-3e
        ont un retrait contrôlé qui reste dans la boîte visible. */
+    /* V153 — PANNEAU « glass » de la page POP (famille Tableau de bord). */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .pop-panel-start)
+        + div[data-testid="stLayoutWrapper"] [data-testid="stVerticalBlock"] {
+        background: rgba(8, 55, 50, .45);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(0, 163, 146, .38) !important;
+        border-left: 4px solid var(--am-green) !important;
+        border-radius: 16px !important;
+        padding: .8rem 1rem .9rem !important;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 24px rgba(0, 163, 146, .07);
+    }
     .ep-cell:first-child[data-tooltip]::after {
         left: 0;            /* part du bord de la cellule vers la droite */
         transform: translateY(4px);
@@ -5199,20 +5211,24 @@ def _render_cinema_detail_body(row: dict) -> None:
 
     # de la fiche (demande utilisateur), re-tirable au bouton. Aucun appel
     # sans clé Gemini.
-    # V152 — BOUTON « ✨ L'info des coulisses » : plus AUCUN chargement
-    # automatique (la fiche s'ouvre instantanément) ; un précalcul tourne
-    # en silence pendant la lecture → au clic, affichage quasi immédiat.
-    # Habillage aux couleurs d'accentuation DE LA FICHE + spark Gemini.
+    # V153 — chargement AUTOMATIQUE (retour utilisateur : « elle doit se
+    # charger avec la fiche, sans bouton ») : cette fonction est appelée
+    # en FIN de fiche, le précalcul a commencé au début du rendu → la fiche
+    # s'affiche pendant que l'info se prépare, le bloc apparaît en bas.
+    # COULEURS : accent de la fiche (bordure) + accent clair (texte, comme
+    # le synopsis) + fond glass discret — fini le violet (retour capture).
     if api_key and tmdb_id:
         media_word = "la série" if row.get("type") == "Série" else "le film"
         try:
             _ia_accent = f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})"
+            _ia_soft = f"rgba({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]},.32)"
+            _ia_text = f"rgb({a3_rgb[0]},{a3_rgb[1]},{a3_rgb[2]})"
         except (TypeError, IndexError):
-            _ia_accent = ""
+            _ia_accent, _ia_soft, _ia_text = "#FFE100", "rgba(255,225,0,.32)", "#EAF6F3"
         _render_ia_coulisses(
             f"{'tv' if row.get('type') == 'Série' else 'movie'}_{tmdb_id}",
             f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
-            accent=_ia_accent,
+            accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
         )
 
 
@@ -5426,16 +5442,17 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             unsafe_allow_html=True,
         )
 
-    # V152 — 🎲 « L'info des coulisses » sur la personne, TOUT EN BAS de la
-    # fiche (retour utilisateur : « je veux voir les films déjà vus et
-    # APRÈS, si Gemini est dispo, l'anecdote ») — et sur clic uniquement :
-    # la fiche s'affiche instantanément, le précalcul se fait en silence.
+    # V153 — 🎲 « L'info des coulisses » sur la personne, TOUT EN BAS de la
+    # fiche et en CHARGEMENT AUTOMATIQUE (retour utilisateur : films vus
+    # d'abord, l'anecdote arrive ensuite toute seule, sans clic).
+    # Couleurs du thème (jaune) + fond glass.
     if api_key and person_id:
         job_word = "réalisateur" if facets.get("realisateur") else "acteur·rice"
         _render_ia_coulisses(
             f"person_{person_id}",
             f"la carrière de {'réalisateur' if is_director else 'comédien·ne'} {person['name']}",
             hint=f"connu·e comme {job_word}",
+            accent="#FFE100", accent_soft="rgba(255,225,0,.32)", accent_text="#EAF6F3",
         )
 
 
@@ -8431,197 +8448,171 @@ def _ia_fetch_or_wait(store_key: str, api_key: str, subject: str, hint: str,
         return None, str(exc)
 
 
-def _ia_spark_svg(size: int = 18) -> str:
-    """Petit « spark » dégradé façon Gemini (dessiné en SVG inline — aucune
-    ressource externe, aucun fichier)."""
+def _ia_spark_svg(size: int = 16, color_from: str = "#FFE100", color_to: str = "#FFFFFF") -> str:
+    """Petit « spark » (V153) en dégradé COULEUR D'ACCENT DE LA FICHE →
+    blanc : l'esprit Gemini sans casser l'harmonie (retour utilisateur :
+    « les couleurs doivent être en couleur d'accentuation »). SVG inline,
+    aucune ressource externe."""
     return (
         f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" style="flex:0 0 auto;">'
-        '<defs><linearGradient id="gmsl" x1="0" y1="0" x2="1" y2="1">'
-        '<stop offset="0" stop-color="#4285F4"/><stop offset=".55" stop-color="#9B72CB"/>'
-        '<stop offset="1" stop-color="#D96570"/></linearGradient></defs>'
+        f'<defs><linearGradient id="gmsl" x1="0" y1="0" x2="1" y2="1">'
+        f'<stop offset="0" stop-color="{color_from}"/><stop offset="1" stop-color="{color_to}"/>'
+        f"</linearGradient></defs>"
         '<path fill="url(#gmsl)" d="M12 1.6l2.4 6.5 6.5 2.4-6.5 2.4L12 19.4l-2.4-6.5-6.5-2.4 6.5-2.4z"/>'
         '<path fill="url(#gmsl)" opacity=".85" d="M18.7 14.6l1 2.7 2.7 1-2.7 1-1 2.7-1-2.7-2.7-1 2.7-1z"/>'
         "</svg>"
     )
 
 
-def _ia_coulisses_css() -> str:
-    return """
+def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,0,.32)",
+                      accent_text: str = "#EAF6F3") -> str:
+    """CSS du bloc « L'info des coulisses » — V153 : TOUT AUX COULEURS
+    D'ACCENTUATION DE LA FICHE (retour utilisateur avec capture : le violet
+    « Gemini » dénaturait la fiche). Fond « glass » légèrement obscurci
+    (blur discret), texte en accent clair comme le synopsis, pros/cons en
+    vert/jaune DU THÈME. Les variables sont posées sur :root pour que le
+    bouton « Une autre » (rendu dans un autre conteneur) en profite aussi."""
+    return f"""
     <style>
-    .ia-block {
-        border: 1px solid rgba(255, 225, 0, .35);
-        border-left: 4px solid var(--ia-accent, #FFE100);
+    :root {{
+        --ia-accent: {accent};
+        --ia-accent-soft: {accent_soft};
+        --ia-text: {accent_text};
+    }}
+    .ia-block {{
+        border: 1px solid var(--ia-accent-soft);
+        border-left: 4px solid var(--ia-accent);
         border-radius: 13px;
-        background: rgba(4, 34, 30, .78);
+        background: rgba(3, 22, 19, .52);
+        backdrop-filter: blur(7px);
+        -webkit-backdrop-filter: blur(7px);
         padding: .6rem .8rem .65rem;
         margin: .45rem 0 .3rem;
-    }
-    .ia-block .ia-head { display: flex; align-items: center; gap: .5rem; }
-    .ia-block .ia-title { font-size: .78rem; font-weight: 900; color: #fff; letter-spacing: .1em; }
-    .ia-block .ia-sub { font-size: .66rem; color: #9DC5BF; margin-top: 1px; }
-    .ia-block .ia-text { font-size: .88rem; color: #EAF6F3; line-height: 1.45; margin-top: .45rem; }
-    .ia-pc { display: flex; gap: .55rem; margin-top: .55rem; flex-wrap: wrap; }
-    .ia-pc .col { flex: 1 1 200px; border-radius: 10px; padding: .38rem .55rem .42rem; font-size: .78rem; }
-    .ia-pc .pros { background: rgba(0, 163, 146, .13); border: 1px solid rgba(0, 163, 146, .38); }
-    .ia-pc .cons { background: rgba(255, 225, 0, .06); border: 1px solid rgba(255, 225, 0, .26); }
-    .ia-pc b { display: block; font-size: .66rem; letter-spacing: .09em; margin-bottom: .12rem; }
-    .ia-pc .pros b { color: #7DE8DA; }
-    .ia-pc .cons b { color: #FFE27A; }
-    .ia-pc ul { margin: 0; padding-left: 1.05rem; }
-    .ia-pc li { margin: .09rem 0; color: #EAF6F3; }
-    /* Bouton principal « ✨ L'info des coulisses » : verre dégradé aux
-       couleurs Gemini (ciblé par l'ancre .ia-anchor — pattern des tuiles). */
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
-        + div[data-testid="stElementContainer"] button[kind="secondary"],
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
-        background: linear-gradient(120deg, rgba(66, 133, 244, .20), rgba(155, 114, 203, .18) 55%, rgba(217, 101, 112, .16)) !important;
-        border: 1px solid rgba(155, 114, 203, .50) !important;
-        color: #fff !important;
-        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .74rem !important;
-        font-weight: 800 !important;
-        letter-spacing: .12em !important;
-        text-transform: uppercase !important;
-        min-height: 36px !important;
-        border-radius: 12px !important;
-        transition: transform .16s ease, box-shadow .16s ease !important;
-    }
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
-        + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 24px rgba(155, 114, 203, .25) !important;
-        border-color: rgba(217, 101, 112, .65) !important;
-    }
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
-        + div[data-testid="stElementContainer"] button[kind="secondary"] p,
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p {
-        color: #fff !important;
-        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .74rem !important;
-        font-weight: 800 !important;
-        letter-spacing: .12em !important;
-        line-height: 1 !important;
-        margin: 0 !important;
-    }
-    /* Bouton « 🎲 Une autre » : compact, discret (même famille que les
-       boutons fiche des tuiles). */
+    }}
+    .ia-block .ia-head {{ display: flex; align-items: center; gap: .5rem; }}
+    .ia-block .ia-title {{ font-size: .78rem; font-weight: 900; color: var(--ia-accent); letter-spacing: .1em; }}
+    .ia-block .ia-sub {{ font-size: .66rem; color: rgba(157, 197, 191, .85); margin-top: 1px; }}
+    .ia-block .ia-text {{ font-size: .88rem; color: var(--ia-text); line-height: 1.5; margin-top: .45rem; }}
+    .ia-block .ia-text strong {{ color: var(--ia-accent); }}
+    .ia-pc {{ display: flex; gap: .55rem; margin-top: .55rem; flex-wrap: wrap; }}
+    .ia-pc .col {{ flex: 1 1 200px; border-radius: 10px; padding: .38rem .55rem .42rem; font-size: .78rem;
+                   background: rgba(3, 22, 19, .45); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }}
+    .ia-pc .pros {{ border: 1px solid rgba(0, 163, 146, .40); }}
+    .ia-pc .cons {{ border: 1px solid rgba(255, 225, 0, .28); }}
+    .ia-pc b {{ display: block; font-size: .66rem; letter-spacing: .09em; margin-bottom: .12rem; }}
+    .ia-pc .pros b {{ color: #7DE8DA; }}
+    .ia-pc .cons b {{ color: #FFE27A; }}
+    .ia-pc ul {{ margin: 0; padding-left: 1.05rem; }}
+    .ia-pc li {{ margin: .09rem 0; color: var(--ia-text); }}
+    /* Bouton « 🎲 Une autre anecdote » : liseré ACCENT, fond verre vert —
+       même famille que les boutons fiche des tuiles. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
-        background: rgba(8, 55, 50, .62) !important;
-        border: 1px solid rgba(155, 114, 203, .45) !important;
-        border-left: 4px solid #9B72CB !important;
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {{
+        background: rgba(8, 55, 50, .55) !important;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        border: 1px solid var(--ia-accent-soft) !important;
+        border-left: 4px solid var(--ia-accent) !important;
         border-radius: 11px !important;
-        color: #E4D9F2 !important;
+        color: var(--ia-text) !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .70rem !important;
         font-weight: 800 !important;
         letter-spacing: .08em !important;
         text-transform: uppercase !important;
         min-height: 28px !important;
         padding: .1rem .5rem !important;
-    }
+    }}
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"] p,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p {
-        color: #E4D9F2 !important;
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p {{
+        color: var(--ia-text) !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .70rem !important;
         font-weight: 800 !important;
         line-height: 1 !important;
         margin: 0 !important;
-    }
+    }}
     </style>
     """
 
 
 def _render_ia_coulisses(state_key: str, subject: str, hint: str = "",
-                         accent: str = "") -> None:
-    """🎲 Bloc « L'info des coulisses » (V152) — fiches cinéma et personnes.
+                         accent: str = "#FFE100",
+                         accent_soft: str = "rgba(255,225,0,.32)",
+                         accent_text: str = "#EAF6F3") -> None:
+    """🎲 Bloc « L'info des coulisses » (V153) — chargement AUTOMATIQUE.
 
-    UX (retours utilisateur) :
-      • RIEN ne se charge à l'ouverture : la fiche est instantanée, les
-        contenus vus/listes s'affichent en premier ; un précalcul tourne
-        en silence pendant la lecture ;
-      • au clic sur « ✨ L'info des coulisses » : si le précalcul est fini
-        (le cas courant), affichage IMMÉDIAT ; sinon spinner bref ;
-      • « 🎲 Une autre » régénère (nouvel appel, température haute) ;
-      • contenu : anecdote de tournage + points forts / points de
-        vigilance « côté spectateurs » — des infos absentes de TMDB ;
-      • habillage : couleur d'ACCENT de la fiche (bordure gauche) + spark
-        dégradé façon Gemini (demande : « un beau truc et un beau bouton
-        qui va bien avec le thème »).
-    """
+    Retours utilisateur : « l'info ne doit pas être cliquée depuis un
+    bouton, elle doit se charger avec la fiche… pouvoir lire la fiche et
+    que l'anecdote se charge en arrière-plan ». Cette fonction est appelée
+    en FIN de fiche (après toutes les sections) : le précalcul a déjà
+    commencé au début du rendu, la fiche s'affiche pendant que l'info se
+    prépare, et le bloc apparaît en bas dès qu'il est prêt — sans clic.
+    « 🎲 Une autre anecdote » régénère. Tout est aux couleurs d'accent
+    de la fiche, fond « glass » discret."""
     api_key = _gemini_api_key()
     if not api_key:
         return
     session_key = f"ia_coulisses_{state_key}"
-    # Le nonce change à chaque OUVERTURE de fiche (posé par les points
-    # d'entrée) → précalcul et contenu frais à chaque fois.
     nonce = st.session_state.get(f"ia_nonce_{state_key}") or ""
     store_key = f"{nonce}|{state_key}"
     _ia_prefetch_launch(store_key, api_key, subject, hint)
 
+    # V153 — le chargement AUTO passe AVANT l'affichage : le bouton
+    # « Une autre » est rendu APRÈS le bloc, il est donc toujours visible
+    # dès que le bloc existe (y compris dans le run qui vient de le générer).
     shown = st.session_state.get(session_key)
-    wants_open = False
-    wants_again = False
-    if not shown:
-        st.markdown('<div class="ia-anchor"></div>', unsafe_allow_html=True)
-        if st.button("✨ L'info des coulisses", key=f"{session_key}_btn",
-                     use_container_width=True):
-            wants_open = True
-    elif not shown.get("error"):
-        st.markdown('<div class="ia-again-anchor"></div>', unsafe_allow_html=True)
-        if st.button("🎲 Une autre", key=f"{session_key}_again",
-                     use_container_width=True):
-            wants_again = True
-
-    if wants_open or wants_again:
-        if wants_again:
-            # purge le précalcul → force une NOUVELLE génération
+    again = st.session_state.pop(f"{session_key}_again_clicked", False)
+    if not shown or again:
+        if again:
             _IA_PREFETCH.pop(store_key, None)
             _ia_prefetch_launch(store_key, api_key, subject, hint)
-        with st.spinner("✨ Une autre pépite…" if wants_again else "✨ Gemini consulte les coulisses…"):
-            data, error = _ia_fetch_or_wait(store_key, api_key, subject, hint)
-        st.session_state[session_key] = data if data else {"error": error or "Indisponible — relance"}
+        with st.spinner("✨ Une autre pépite…" if again else "✨ L'info des coulisses arrive…"):
+            data, error = _ia_fetch_or_wait(store_key, api_key, subject, hint, wait=22.0)
+        st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
         shown = st.session_state.get(session_key)
 
     if not shown:
         return
-    st.markdown(_ia_coulisses_css(), unsafe_allow_html=True)
+    st.markdown(_ia_coulisses_css(accent, accent_soft, accent_text), unsafe_allow_html=True)
+    spark = _ia_spark_svg(16, accent, "#FFFFFF")
     if shown.get("error"):
         st.markdown(
-            f'<div class="ia-block" style="--ia-accent:#9B72CB;">'
-            f'<div class="ia-head">{_ia_spark_svg()}<div>'
+            f'<div class="ia-block">'
+            f'<div class="ia-head">{spark}<div>'
             f'<div class="ia-title">L\'INFO DES COULISSES</div>'
-            f'<div class="ia-sub">indisponible pour le moment · {escape(str(shown.get("error"))[:120])}</div>'
+            f'<div class="ia-sub">indisponible pour le moment · {escape(str(shown.get("error"))[:110])}</div>'
             f"</div></div></div>",
             unsafe_allow_html=True,
         )
         return
-    accent_attr = f' style="--ia-accent:{accent};"' if accent else ""
     pros = "".join(f"<li>{escape(str(p))}</li>" for p in (shown.get("pros") or [])[:3])
     cons = "".join(f"<li>{escape(str(c))}</li>" for c in (shown.get("cons") or [])[:3])
     pros_html = f'<div class="col pros"><b>✅ LES SPECTATEURS AIMENT</b><ul>{pros}</ul></div>' if pros else ""
     cons_html = f'<div class="col cons"><b>⚠️ POINTS DE VIGILANCE</b><ul>{cons}</ul></div>' if cons else ""
     st.markdown(
-        f'<div class="ia-block"{accent_attr}>'
-        f'<div class="ia-head">{_ia_spark_svg()}<div>'
+        f'<div class="ia-block">'
+        f'<div class="ia-head">{spark}<div>'
         f'<div class="ia-title">L\'INFO DES COULISSES</div>'
         f'<div class="ia-sub">anecdote de tournage + ressenti des spectateurs · générée par IA — vérifie un fait important avant de le citer</div>'
         f"</div></div>"
-        f'<div class="ia-text">🎲 {escape(str(shown.get("anecdote") or ""))}</div>'
+        f'<div class="ia-text"><strong>💡 Le saviez-vous ?</strong> {escape(str(shown.get("anecdote") or ""))}</div>'
         f'<div class="ia-pc">{pros_html}{cons_html}</div>'
         f"</div>",
         unsafe_allow_html=True,
     )
+    if not shown.get("error"):
+        st.markdown(f'<div class="ia-again-anchor" style="--ia-accent:{accent};"></div>',
+                    unsafe_allow_html=True)
+        if st.button("🎲 Une autre anecdote", key=f"{session_key}_again", use_container_width=True):
+            st.session_state[f"{session_key}_again_clicked"] = True
 
 def _render_pop_result(result: dict) -> None:
-    """Carte-résultat d'un tirage POP (V149 → V152) : TUILE + bouton
+    """Carte-résultat d'un tirage POP (V149 → V153) : TUILE + bouton
     « Voir la fiche » fusionnés EXACTEMENT comme « Que regarder ? » (retour
     utilisateur), PUIS la justification IA en dessous (thème conservé)."""
     poster = escape(_poster_url({"poster": result.get("poster")}), quote=True)
@@ -8662,7 +8653,7 @@ def _render_pop_result(result: dict) -> None:
         unsafe_allow_html=True,
     )
 
-@st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : recherches POP libre
+
 def _tmdb_search_media(kind: str, query: str, year: int | None, key: str) -> dict:
     """Recherche TMDB par TITRE (V152 — POP libre) : retrouve l'œuvre hors
     listes proposée par l'IA (titre + année + type). Dict vide si introuvable."""
@@ -8844,22 +8835,24 @@ def render_pop_page() -> None:
         if st.session_state.get("pop_key_test_result"):
             st.caption(st.session_state["pop_key_test_result"])
 
-    mood = st.pills("🎯 Ton humeur du moment", list(pop_engine.POP_MOODS), key="pop_mood")
-    kind = st.pills(
-        "🎞️ Type", ["Peu importe", "Film", "Série"], key="pop_kind",
-        default="Peu importe",
-    )
-    if not mood:
-        st.markdown(
-            '<div class="accent-callout"><strong>CHOISIS TON HUMEUR</strong> · '
-            "Cocooning, grand frisson, rire… Gemini (ou le moteur local) ira chercher "
-            "LE contenu de tes listes qui colle parfaitement.</div>",
-            unsafe_allow_html=True,
+    # V153 — PANNEAU « glass » (même famille que les cartes du Tableau de
+    # bord — retour utilisateur : « on est en dessous des autres pages »).
+    st.markdown('<div class="pop-panel-start"></div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        mood = st.pills("🎯 Ton humeur du moment", list(pop_engine.POP_MOODS), key="pop_mood")
+        kind = st.pills(
+            "🎞️ Type", ["Peu importe", "Film", "Série"], key="pop_kind",
+            default="Peu importe",
         )
+        if not mood:
+            st.caption("Cocooning, grand frisson, rire… choisis ton humeur et Gemini "
+                       "(ou le moteur local) ira chercher LE contenu de tes listes qui colle.")
+        draw_label = "🎲 Une autre pépite !" if st.session_state.get("pop_result") else "🍿 Tire-moi LA pépite !"
+        _pop_draw_clicked = st.button(draw_label, type="primary", use_container_width=True, key="pop_draw")
+    if not mood:
         return
 
-    draw_label = "🎲 Une autre pépite !" if st.session_state.get("pop_result") else "🍿 Tire-moi LA pépite !"
-    if st.button(draw_label, type="primary", use_container_width=True, key="pop_draw"):
+    if _pop_draw_clicked:
         candidates = pop_engine.pop_candidate_pool(dataset, kind or "Peu importe")
         drawn = list(st.session_state.get("pop_drawn") or [])
         exclude = {row["id"] for row in drawn}

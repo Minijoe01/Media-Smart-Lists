@@ -98,27 +98,44 @@ _model_cache: dict[str, tuple[float, str]] = {}
 _MODEL_TTL = 6 * 3600.0
 
 
-def _pick_flash_model(raw_names: list[str]) -> str:
-    """Choisit le meilleur modèle Flash dans la liste renvoyée par l'API :
-    1. l'alias « gemini-flash-latest » (toujours à jour) s'il est présent ;
-    2. sinon : STABLE avant preview (fiabilité), puis numéro de version le
-       plus haut, puis « flash » avant « flash-lite ».
-       Ex : 3.6-flash > 3.1-flash-lite > 2.5-flash > 3.8-flash-preview."""
+def _ranked_flash_models(raw_names: list[str]) -> list[str]:
+    """Classe les modèles Flash disponibles POUR TA CLÉ (V153).
+
+    ORDRE : les FLASH-LITE d'abord — leur quota gratuit est largement plus
+    généreux (les Flash « standard » récents peuvent être limités à
+    quelques dizaines de requêtes/jour : retour utilisateur « je crois que
+    je n'ai que 20 tokens par jour », 429 dès la première journée).
+    Pour nos usages (anecdotes courtes, choix parmi 40 candidats), un
+    flash-lite est largement suffisant.
+
+    Détail : 1) alias gemini-flash-lite-latest ; 2) versions lite stables,
+    plus haute d'abord ; 3) alias gemini-flash-latest ; 4) versions flash
+    stables puis previews, plus hautes d'abord."""
     names = [
         str(n).removeprefix("models/") for n in raw_names
         if "flash" in str(n) and not any(x in str(n) for x in _MODEL_EXCLUDE)
     ]
+    seen: set[str] = set()
+    names = [n for n in names if not (n in seen or seen.add(n))]
     if not names:
-        return GEMINI_FALLBACK_MODEL
-    if GEMINI_FALLBACK_MODEL in names:
-        return GEMINI_FALLBACK_MODEL
+        return [GEMINI_FALLBACK_MODEL]
 
-    def _rank(name: str):
+    def _stable(name: str) -> bool:
+        return "preview" not in name and "exp" not in name
+
+    def _version(name: str) -> float:
         match = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
-        version = float(match.group(1)) if match else -1.0
-        return ("preview" not in name and "exp" not in name, version, "lite" not in name)
+        return float(match.group(1)) if match else -1.0
 
-    return sorted(names, key=_rank, reverse=True)[0]
+    lite_alias = [n for n in names if n == "gemini-flash-lite-latest"]
+    lite_stable = sorted([n for n in names if "lite" in n and _stable(n) and n not in lite_alias],
+                         key=_version, reverse=True)
+    flash_alias = [n for n in names if n == GEMINI_FALLBACK_MODEL]
+    flash_stable = sorted([n for n in names if "lite" not in n and _stable(n) and n not in flash_alias],
+                          key=_version, reverse=True)
+    previews = sorted([n for n in names if not _stable(n)], key=_version, reverse=True)
+    ranked = lite_alias + lite_stable + flash_alias + flash_stable + previews
+    return ranked or [GEMINI_FALLBACK_MODEL]
 
 
 def list_gemini_models(api_key: str) -> list[str]:
@@ -160,24 +177,32 @@ def resolve_gemini_model(api_key: str, refresh: bool = False) -> str:
 
     Découverte dynamique + cache 6 h. En cas d'échec réseau : alias public
     « gemini-flash-latest » (ou le dernier choix connu)."""
+    return resolve_gemini_models_ranked(api_key, refresh=refresh)[0]
+
+
+def resolve_gemini_models_ranked(api_key: str, refresh: bool = False) -> list[str]:
+    """La liste ORDONNÉE des modèles à essayer (V153) : flash-lite d'abord
+    (quota gratuit généreux), puis flash. Le premier est le choix par
+    défaut ; les suivants servent de SECOURS en cas de 429 (quota du
+    modèle épuisé) — cf. _gemini_post_json."""
     if not api_key:
-        return GEMINI_FALLBACK_MODEL
+        return [GEMINI_FALLBACK_MODEL]
     key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
     now = _time.time()
     cached = _model_cache.get(key_hash)
-    if cached and not refresh and (now - cached[0]) < _MODEL_TTL:
+    if cached and not refresh and (now - cached[0]) < _MODEL_TTL and cached[1]:
         return cached[1]
     try:
         names = list_gemini_models(api_key)
     except RuntimeError:
-        return cached[1] if cached else GEMINI_FALLBACK_MODEL
-    model = _pick_flash_model(names) if names else GEMINI_FALLBACK_MODEL
-    _model_cache[key_hash] = (now, model)
-    return model
+        return cached[1] if cached else [GEMINI_FALLBACK_MODEL]
+    ranked = _ranked_flash_models(names) if names else [GEMINI_FALLBACK_MODEL]
+    _model_cache[key_hash] = (now, ranked)
+    return ranked
 
 
-def _gemini_url(api_key: str) -> str:
-    return f"{GEMINI_BASE}/models/{resolve_gemini_model(api_key)}:generateContent"
+def _gemini_url(api_key: str, model: str | None = None) -> str:
+    return f"{GEMINI_BASE}/models/{model or resolve_gemini_model(api_key)}:generateContent"
 
 
 def pop_candidate_pool(dataset: dict, kind: str = "Peu importe", limit: int = 40) -> list[dict]:
@@ -288,39 +313,58 @@ def _gemini_prompt(mood: str, candidates: list[dict]) -> str:
 
 
 def _gemini_post_json(api_key: str, body: dict, what: str) -> dict:
-    """POST generateContent AVEC RETRY (V152) : les 503 (Google surchargé)
-    et les ReadTimeout sont fréquents et transitoires — 2 tentatives avec
-    une pause d'une seconde avant d'abandonner (retour utilisateur :
-    « parfois HTTP 503 », « Réseau indisponible (ReadTimeout) »)."""
+    """POST generateContent — INFAILLIBLE (V153) :
+
+      • 503 (Google surchargé) : 3 tentatives, pause 1 s puis 2,5 s ;
+      • 429 (quota du MODÈLE épuisé) : bascule AUTOMATIQUE sur le modèle
+        suivant de la liste ranked (flash-lite d'abord) — l'utilisateur
+        n'a pas à y penser ;
+      • 404 : modèle retiré → modèle suivant aussi ;
+      • 401/403 : clé refusée (raison lisible).
+
+    Le tout avec un timeout de 30 s par tentative."""
+    if not api_key:
+        raise RuntimeError("Clé Gemini absente")
+    models = resolve_gemini_models_ranked(api_key)[:3] or [GEMINI_FALLBACK_MODEL]
     last_error = ""
-    for attempt in (1, 2):
-        try:
-            response = requests.post(
-                _gemini_url(api_key),
-                params={"key": api_key},
-                json=body,
-                timeout=35,
-            )
-        except requests.RequestException as exc:
-            last_error = f"Réseau indisponible ({exc.__class__.__name__})"
-            if attempt == 1:
-                _time.sleep(0.9)
-                continue
-            raise RuntimeError(last_error)
-        if response.status_code == 503 and attempt == 1:
-            last_error = "Google surchargé (503) — 2e tentative…"
-            _time.sleep(0.9)
-            continue
-        if response.status_code in (401, 403):
-            raise RuntimeError("Clé Gemini refusée (401/403) — vérifie GEMINI_API_KEY dans les Secrets")
-        if response.status_code == 429:
-            raise RuntimeError("Quota Gemini atteint (429) — réessaie plus tard")
-        if response.status_code == 404:
-            _model_cache.pop(hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16], None)
-            raise RuntimeError("Modèle refusé (404) — ouvre « 🔧 Diagnostic de la clé Gemini » (page POP)")
-        if response.status_code != 200:
-            raise RuntimeError(f"Gemini a répondu HTTP {response.status_code}")
-        return response
+    for model in models:
+        for attempt in (1, 2, 3):
+            try:
+                response = requests.post(
+                    _gemini_url(api_key, model),
+                    params={"key": api_key},
+                    json=body,
+                    timeout=30,
+                )
+            except requests.RequestException as exc:
+                last_error = f"Réseau indisponible ({exc.__class__.__name__})"
+                if attempt < 3:
+                    _time.sleep(1.0 if attempt == 1 else 2.5)
+                    continue
+                break  # modèle suivant
+            if response.status_code == 503:
+                last_error = "Google surchargé (503)"
+                if attempt < 3:
+                    _time.sleep(1.0 if attempt == 1 else 2.5)
+                    continue
+                break  # modèle suivant
+            if response.status_code in (401, 403):
+                raise RuntimeError("Clé Gemini refusée (401/403) — vérifie GEMINI_API_KEY dans les Secrets")
+            if response.status_code == 429:
+                # quota de CE modèle épuisé → modèle suivant (flash-lite…)
+                last_error = f"Quota épuisé pour {model}"
+                break
+            if response.status_code == 404:
+                last_error = f"Modèle {model} refusé (404)"
+                break  # modèle suivant
+            if response.status_code != 200:
+                raise RuntimeError(f"Gemini a répondu HTTP {response.status_code}")
+            return response
+    # tous les modèles ont échoué
+    key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+    _model_cache.pop(key_hash, None)
+    if "Quota" in last_error:
+        raise RuntimeError("Quota Gemini épuisé pour aujourd'hui (tous les modèles essayés)")
     raise RuntimeError(last_error or "Gemini indisponible")
 
 
@@ -395,14 +439,10 @@ def gemini_key_check(api_key: str) -> tuple[bool, str]:
         names = list_gemini_models(api_key)
     except RuntimeError as exc:
         return False, f"{exc} — vérifie la valeur de GEMINI_API_KEY dans les Secrets Streamlit."
-    model = _pick_flash_model(names) if names else GEMINI_FALLBACK_MODEL
-    flash_models = [
-        n.removeprefix("models/") for n in names
-        if "flash" in n and not any(x in n for x in _MODEL_EXCLUDE)
-    ]
-    details = f"Clé valide ✅ · modèle retenu : {model}"
-    if flash_models:
-        details += f" · Flash disponibles : {', '.join(flash_models[:6])}"
+    ranked = _ranked_flash_models(names) if names else [GEMINI_FALLBACK_MODEL]
+    details = f"Clé valide ✅ · modèle utilisé : {ranked[0]} (lite d'abord : quota gratuit plus large)"
+    if len(ranked) > 1:
+        details += f" · secours en cas de quota : {', '.join(ranked[1:4])}"
     elif names:
         details += " (aucun modèle Flash visible — voici les modèles : " + ", ".join(n.removeprefix('models/') for n in names[:5]) + ")"
     return True, details

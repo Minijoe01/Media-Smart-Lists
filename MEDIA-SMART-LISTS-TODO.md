@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V152.
+> Dernière mise à jour : 8 octobre 2026 · Dernière version déployée : V153.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -751,7 +751,38 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] Banc : 28/28 vérifications (retry 503 prouvé, POP libre complet,
       ordre fiche personne, heatmap) + 23/23 tests + smoke test app réelle.
 
-### PROCHAINES ÉTAPES (validées par l'utilisateur 07/10)
+### Fait en V153 (retours du 08/10 — l'IA dans le décor de la fiche)
+- [x] 🎯 QUOTA 429 (« je crois que je n'ai que 20 tokens par jour ») : le
+      résolveur choisissait le flash le plus RÉCENT, dont le quota gratuit
+      est très bas ; les FLASH-LITE gardent un quota bien plus large.
+      NOUVELLE stratégie : flash-lite EN PREMIER + BASCULE AUTOMATIQUE de
+      modèle en cas de 429 (jusqu'à 3 modèles essayés) + 503 → 3 tentatives
+      (pause 1 s puis 2,5 s). Le diagnostic affiche modèle + secours.
+- [x] CHARGEMENT AUTOMATIQUE de l'info des coulisses (retour : « elle doit
+      se charger avec la fiche, sans bouton ») : la fonction est appelée
+      en FIN de fiche, le précalcul démarre au début du rendu → PREUVE AU
+      CHRONO au banc : sections visibles à 1,1 s PENDANT la préparation,
+      l'info apparaît à 5,3 s en bas, sans clic. « 🎲 Une autre anecdote »
+      conservé, rendu après le bloc (toujours visible).
+- [x] 💡 « Le saviez-vous ? » en préfixe de l'anecdote (demande utilisateur).
+- [x] COULEURS : retour avec capture — le violet « Gemini » dénaturait la
+      fiche. TOUT EST À L'ACCENT DE LA FICHE désormais : bordure gauche et
+      titre en couleur d'accent (a2 du film / jaune pour les personnes),
+      anecdote en accent clair (a3) comme le synopsis, spark SVG en dégradé
+      accent → blanc, fond « glass » légèrement obscurci (backdrop blur
+      7 px), pros/cons en vert/jaune DU THÈME. Mesures : bordure
+      rgb(255,178,57) = accent du film de test, zéro violet.
+- [x] Fiche personne : films vus et listes AVANT le bloc IA (déjà V152,
+      re-vérifié) + chargement auto (plus de bouton).
+- [x] PAGE POP : panneau « glass » façon Tableau de bord autour des choix
+      (fond vert translucide + blur + liseré 4 px + coins 16 px, mesuré),
+      le callout « CHOISIS TON HUMEUR » devient une caption douce.
+- [x] (fix interne) _render_pop_result réinsérée après une suppression
+      accidentelle lors du remplacement de bloc — non-régression vérifiée.
+- [x] Banc : 22/22 vérifications (chrono du streaming, couleurs mesurées,
+      429→bascule, 503→retry, panneau) + 23/23 tests + smoke test.
+
+### PROCHAINES ÉTAPES (validées par l'utilisateur 08/10)
 - [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
       livrée) — si « Local » s'affiche encore dans POP, ouvrir le
       « 🔧 Diagnostic de la clé Gemini » et me donner le message.
@@ -761,7 +792,7 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       existent déjà : `add_watchlist_items`, `add_list_items` ; s'inspirer du
       popover « ➕ Ajouter une découverte » des sections hors-listes ;
       uniquement listes statiques, jamais les listes dynamiques/IA).
-- [ ] Onglets Statistiques : 👁️ Vue d'ensemble / 🎭 Goûts / 👥 Personnes /
+- [ ] ⭐ REFONTE STATISTIQUES (chantier V154 — l'utilisateur adore le thème de la fiche film et le look dashboard : futuriste, moderne, très réactif) : onglets : 👁️ Vue d'ensemble / 🎭 Goûts / 👥 Personnes /
       🗓️ Temps — animation de transition + UN seul bloc de filtres partagé
       (recherche + période + type). Les infos par acteur/réalisateur restent
       dans Statistiques (décision utilisateur : c'est le bon endroit).
