@@ -287,6 +287,63 @@ def _gemini_prompt(mood: str, candidates: list[dict]) -> str:
     )
 
 
+def _gemini_post_json(api_key: str, body: dict, what: str) -> dict:
+    """POST generateContent AVEC RETRY (V152) : les 503 (Google surchargé)
+    et les ReadTimeout sont fréquents et transitoires — 2 tentatives avec
+    une pause d'une seconde avant d'abandonner (retour utilisateur :
+    « parfois HTTP 503 », « Réseau indisponible (ReadTimeout) »)."""
+    last_error = ""
+    for attempt in (1, 2):
+        try:
+            response = requests.post(
+                _gemini_url(api_key),
+                params={"key": api_key},
+                json=body,
+                timeout=35,
+            )
+        except requests.RequestException as exc:
+            last_error = f"Réseau indisponible ({exc.__class__.__name__})"
+            if attempt == 1:
+                _time.sleep(0.9)
+                continue
+            raise RuntimeError(last_error)
+        if response.status_code == 503 and attempt == 1:
+            last_error = "Google surchargé (503) — 2e tentative…"
+            _time.sleep(0.9)
+            continue
+        if response.status_code in (401, 403):
+            raise RuntimeError("Clé Gemini refusée (401/403) — vérifie GEMINI_API_KEY dans les Secrets")
+        if response.status_code == 429:
+            raise RuntimeError("Quota Gemini atteint (429) — réessaie plus tard")
+        if response.status_code == 404:
+            _model_cache.pop(hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16], None)
+            raise RuntimeError("Modèle refusé (404) — ouvre « 🔧 Diagnostic de la clé Gemini » (page POP)")
+        if response.status_code != 200:
+            raise RuntimeError(f"Gemini a répondu HTTP {response.status_code}")
+        return response
+    raise RuntimeError(last_error or "Gemini indisponible")
+
+
+def _gemini_json_body(prompt: str, temperature: float, max_tokens: int) -> dict:
+    return {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+            "responseMimeType": "application/json",
+            "thinkingConfig": {"thinkingBudget": 0},
+        },
+    }
+
+
+def _gemini_text(response: dict) -> str:
+    try:
+        candidate0 = (response.json().get("candidates") or [{}])[0]
+        return str((candidate0.get("content") or {}).get("parts", [{}])[0].get("text") or "")
+    except (ValueError, IndexError, KeyError, TypeError):
+        return ""
+
+
 def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
     """Appelle Gemini (endpoint NATIF, compatible clés AQ. et AIza).
 
@@ -302,51 +359,11 @@ def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
     if not api_key:
         raise RuntimeError("Clé Gemini absente")
     model = resolve_gemini_model(api_key)
-    body = {
-        "contents": [{"parts": [{"text": _gemini_prompt(mood, candidates)}]}],
-        "generationConfig": {
-            "temperature": 0.9,
-            "maxOutputTokens": 1200,
-            "responseMimeType": "application/json",
-            "thinkingConfig": {"thinkingBudget": 0},
-        },
-    }
-    try:
-        response = requests.post(
-            _gemini_url(api_key),
-            params={"key": api_key},
-            json=body,
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        raise RuntimeError(f"Réseau indisponible ({exc.__class__.__name__})") from exc
-    if response.status_code in (401, 403):
-        raise RuntimeError("Clé Gemini refusée (401/403) — vérifie GEMINI_API_KEY dans les Secrets")
-    if response.status_code == 429:
-        raise RuntimeError("Quota Gemini atteint (429) — réessaie plus tard")
-    if response.status_code == 404:
-        # V151 : le modèle choisi n'est pas disponible pour cette clé → on
-        # purge le cache et on oriente vers le diagnostic (qui liste les
-        # modèles réellement visibles par la clé).
-        _model_cache.pop(hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16], None)
-        raise RuntimeError(
-            f"Modèle {model} refusé (404) — ouvre « 🔧 Diagnostic de la clé Gemini » "
-            "sur la page POP et donne le message à l'assistant"
-        )
-    if response.status_code != 200:
-        raise RuntimeError(f"Gemini a répondu HTTP {response.status_code}")
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise RuntimeError("Réponse Gemini illisible (pas du JSON)") from exc
-    try:
-        candidate0 = (data.get("candidates") or [{}])[0]
-        text = str((candidate0.get("content") or {}).get("parts", [{}])[0].get("text") or "")
-    except (IndexError, KeyError, TypeError):
-        text = ""
+    body = _gemini_json_body(_gemini_prompt(mood, candidates), 0.9, 1200)
+    response = _gemini_post_json(api_key, body, "pop")
+    text = _gemini_text(response)
     if not text.strip():
-        finish = str(candidate0.get("finishReason") or "?")
-        raise RuntimeError(f"Réponse Gemini vide (finishReason: {finish})")
+        raise RuntimeError("Réponse Gemini vide — relance")
     try:
         parsed = json.loads(text)
     except ValueError:
@@ -391,77 +408,127 @@ def gemini_key_check(api_key: str) -> tuple[bool, str]:
     return True, details
 
 
-def anecdote_ask_gemini(api_key: str, subject: str, hint: str = "") -> str:
-    """🎲 UNE anecdote générée par Gemini sur un sujet (film ou personne) —
-    V150, demande utilisateur : « des anecdotes dans les fiches film et
-    acteur qui se rafraîchiraient à chaque fois ».
+def coulisses_ask_gemini(api_key: str, subject: str, hint: str = "") -> dict:
+    """🎲 L'INFO DES COULISSES (V152) — un SEUL appel Gemini pour :
+      • une ANECDOTE de tournage/casting (zéro spoiler) ;
+      • 2-3 POINTS FORTS et 2-3 POINTS DE VIGILANCE « côté spectateurs »
+        (ce que les gens aiment / reprochent — ex. « rythme lent », « 3 h
+        de longueur ») : des infos qu'on ne trouve PAS sur TMDB
+        (demande utilisateur).
 
-    • température 1.2 → varie à chaque appel (pas toujours la même) ;
-    • thinkingBudget 0 → réponse rapide, budget non mangé par la réflexion ;
-    • consigne STRICTE : aucune intrigue révélée (zéro spoiler), fait précis
-      de tournage/casting/coulisses, 2 à 4 phrases en français.
-
-    `subject` : « le film « Blade Runner 2049 » (2017) » ou
-    « la carrière de l'acteur Ryan Gosling ». `hint` : précision libre
-    (réalisateur, genre, série…). Lève RuntimeError (raison lisible).
+    Retourne {"anecdote": str, "pros": [..], "cons": [..]}. Lève
+    RuntimeError (raison lisible). Retry 503/timeout inclus.
     """
     if not api_key:
         raise RuntimeError("Clé Gemini absente")
     prompt = (
-        "Tu es un passionné de cinéma et de séries qui connaît mille anecdotes "
-        "de tournage. Raconte UNE SEULE anecdote SURPRENANTE sur "
-        f"{subject}" + (f" ({hint})" if hint else "") + ".\n"
-        "Consignes strictes :\n"
-        "- 2 à 4 phrases, en FRANÇAIS, ton complice et vivant ;\n"
-        "- AUCUN SPOILER : ne révèle RIEN de l'intrigue ni de la fin ;\n"
-        "- un fait PRÉCIS et vérifiable (tournage, casting, coulisses, record,\n"
-        "  accueil du public) — pas de généralité ni d'invention ;\n"
-        "- si tu n'es pas certain d'un fait précis sur ce sujet, raconte une\n"
-        "  anecdote plus générale mais EXACTE à son sujet ;\n"
-        "- change d'anecdote à chaque appel — jamais deux fois la même.\n"
-        'Réponds STRICTEMENT en JSON : {"anecdote": "<le texte de l\'anecdote>"}'
+        "Tu es un passionné de cinéma et de séries qui connaît les coulisses de "
+        "tournage ET le sentiment du public. À propos de "
+        f"{subject}" + (f" ({hint})" if hint else "") + ", produis :\n"
+        "1. UNE anecdote SURPRENANTE et VÉRIFIÉE (tournage, casting, coulisses, "
+        "record) — 2 à 4 phrases, en FRANÇAIS, ton complice ;\n"
+        "2. Deux à trois POINTS FORTS tels que les spectateurs les décrivent "
+        "(ex : photographie somptueuse, casting au sommet, bande originale) ;\n"
+        "3. Deux à trois POINTS DE VIGILANCE honnêtes, ceux que les spectateurs "
+        "les moins conquis reprochent (ex : rythme lent, durée, fin divisive) — "
+        "sois franc, pas complaisant.\n"
+        "Règles strictes :\n"
+        "- AUCUN SPOILER de l'intrigue ni de la fin, nulle part ;\n"
+        "- points forts et vigilance : des expressions COURTES (max 8 mots), "
+        "pas des phrases ;\n"
+        "- si un doute existe sur un fait précis, préfère une anecdote plus "
+        "générale mais EXACTE ;\n"
+        "- tout en français, varie à chaque appel.\n"
+        'Réponds STRICTEMENT en JSON : {"anecdote": "…", "pros": ["…", "…"], '
+        '"cons": ["…", "…"]}'
     )
-    body = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 1.2,
-            "maxOutputTokens": 800,
-            "responseMimeType": "application/json",
-            "thinkingConfig": {"thinkingBudget": 0},
-        },
-    }
-    try:
-        response = requests.post(
-            _gemini_url(api_key),
-            params={"key": api_key},
-            json=body,
-            timeout=30,
-        )
-    except requests.RequestException as exc:
-        raise RuntimeError(f"Réseau indisponible ({exc.__class__.__name__})") from exc
-    if response.status_code in (401, 403):
-        raise RuntimeError("Clé refusée (401/403)")
-    if response.status_code == 429:
-        raise RuntimeError("Quota atteint (429)")
-    if response.status_code != 200:
-        raise RuntimeError(f"HTTP {response.status_code}")
-    try:
-        data = response.json()
-        candidate0 = (data.get("candidates") or [{}])[0]
-        text = str((candidate0.get("content") or {}).get("parts", [{}])[0].get("text") or "")
-    except (ValueError, IndexError, KeyError, TypeError):
-        text = ""
+    body = _gemini_json_body(prompt, 1.1, 1400)
+    response = _gemini_post_json(api_key, body, "coulisses")
+    text = _gemini_text(response)
     if not text.strip():
-        raise RuntimeError(f"Réponse vide (finishReason: {candidate0.get('finishReason') or '?'})")
+        raise RuntimeError("Réponse Gemini vide — relance")
     try:
         parsed = json.loads(text)
-        anecdote = str(parsed.get("anecdote") or "").strip()
     except ValueError:
-        anecdote = (re.sub(r'^[{}\s"]+|[}\s"]+$', "", text) or "").strip()
+        raise RuntimeError("Réponse illisible — relance")
+    anecdote = str(parsed.get("anecdote") or "").strip()
+    pros = [str(x).strip() for x in (parsed.get("pros") or []) if str(x).strip()][:3]
+    cons = [str(x).strip() for x in (parsed.get("cons") or []) if str(x).strip()][:3]
     if len(anecdote) < 30:
-        raise RuntimeError("Anecdote trop courte — relance")
-    return anecdote
+        raise RuntimeError("Réponse incomplète — relance")
+    return {"anecdote": anecdote, "pros": pros, "cons": cons}
 
+
+def freeform_ask_gemini(api_key: str, wish: str, candidates: list[dict]) -> dict:
+    """✍️ POP LIBRE (V152) : l'utilisateur décrit son envie en une phrase
+    (« un film d'amour sur un bateau »). Un SEUL appel Gemini :
+
+      • "in_list"  : le meilleur candidat PARMI ses listes (id fourni) ;
+      • "outside"  : UNE œuvre réelle hors de ses listes qui colle aussi
+        à l'envie (titre + année + type) — l'app la retrouve ensuite sur
+        TMDB (recherche par titre).
+
+    Retourne {"in_list_id": int, "outside": {"title","year","kind"},
+    "reason": str}."""
+    if not api_key:
+        raise RuntimeError("Clé Gemini absente")
+    wish = str(wish or "").strip()
+    if len(wish) < 3:
+        raise RuntimeError("Décris ton envie en quelques mots")
+    payload = [
+        {"i": c["id"], "t": c["title"], "k": c["kind"], "y": c["year"],
+         "g": c["genres"], "d": c["runtime"], "r": c["note"], "s": c["source"]}
+        for c in candidates
+    ]
+    json_shape = (
+        '{"in_list_id": <champ i du contenu choisi>, '
+        '"outside": {"title": "<titre>", "year": <année int>, "kind": "Film"|"Série"}, '
+        '"reason": "<2 à 3 phrases en français, ton enthousiaste et personnel, '
+        'sans spoiler, qui explique les deux choix au regard de ton envie>"}'
+    )
+    prompt = (
+        "Tu es un conseiller cinéma et séries francophone. L'envie du moment de "
+        f"l'utilisateur : « {wish} ».\n"
+        "Voici les contenus disponibles dans SES listes (JSON) :\n"
+        f"{json.dumps(payload, ensure_ascii=False)}\n\n"
+        "Choisis :\n"
+        "1. LE meilleur contenu DE SA LISTE qui correspond à l'envie (champ i) ;\n"
+        "2. UNE AUTRE œuvre, RÉELLE et reconnue, qui n'est PAS dans cette liste "
+        "et qui colle encore mieux à l'envie — titre exact, année, Film ou Série. "
+        "Pour une série très connue, son titre français usuel convient.\n"
+        "Réponds STRICTEMENT en JSON, sans texte autour :\n"
+        f"{json_shape}"
+    )
+    body = _gemini_json_body(prompt, 0.9, 1200)
+    response = _gemini_post_json(api_key, body, "pop-libre")
+    text = _gemini_text(response)
+    if not text.strip():
+        raise RuntimeError("Réponse Gemini vide — relance")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        raise RuntimeError("Réponse illisible — relance")
+    try:
+        in_list_id = int(parsed.get("in_list_id") or 0)
+    except (TypeError, ValueError):
+        in_list_id = 0
+    outside = parsed.get("outside") if isinstance(parsed.get("outside"), dict) else {}
+    reason = str(parsed.get("reason") or "").strip()
+    if not in_list_id or not reason:
+        raise RuntimeError("Réponse incomplète — relance")
+    try:
+        year = int(outside.get("year") or 0) or None
+    except (TypeError, ValueError):
+        year = None
+    return {
+        "in_list_id": in_list_id,
+        "outside": {
+            "title": str(outside.get("title") or "").strip(),
+            "year": year,
+            "kind": "Série" if str(outside.get("kind") or "").strip().lower() in ("série", "serie", "tv") else "Film",
+        },
+        "reason": reason,
+    }
 
 def pop_pick_local(mood: str, candidates: list[dict], exclude_ids: set[int] | None = None) -> dict | None:
     """Repli SANS IA : mapping humeur → genres sur le même top de candidats."""

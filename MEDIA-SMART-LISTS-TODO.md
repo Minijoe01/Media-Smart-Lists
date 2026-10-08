@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V151.
+> Dernière mise à jour : 7 octobre 2026 · Dernière version déployée : V152.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -714,6 +714,42 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       CSS instantanée reste.
 - [x] Quota affiché corrigé : ~1 000 requêtes/jour (Flash gratuit 2026),
       et non ~1 500.
+
+### Fait en V152 (retours du 07/10, 3e vague — l'IA au cœur)
+- [x] ERREURS 503 / ReadTimeout (retours utilisateur) : RETRY automatique —
+      2 tentatives avec 1 s de pause sur HTTP 503 (Google surchargé) et les
+      timeouts réseau, pour POP, les anecdotes ET le POP libre.
+- [x] 🎲 « L'INFO DES COULISSES » (ex-anecdote, enrichie) : anecdote de
+      tournage + ✅ POINTS FORTS / ⚠️ POINTS DE VIGILANCE « côté
+      spectateurs » (ex. rythme lent) — des infos introuvables sur TMDB,
+      en UN SEUL appel Gemini.
+- [x] FLUX REPUSENSÉ (demandes utilisateur) :
+      • plus AUCUN chargement auto dans les fiches — la fiche s'ouvre
+        instantanément, un BOUTON « ✨ L'info des coulisses » propose l'IA ;
+      • PRÉCALCUL en arrière-plan (thread) pendant la lecture de la fiche
+        → au clic, affichage quasi instantané dans la plupart des cas ;
+      • fiche PERSONNE : les films vus/listes s'affichent AVANT le bouton
+        IA (l'anecdote était avant les sections — corrigé) ;
+      • « 🎲 Une autre » régénère.
+- [x] LOOK du bloc : couleur d'ACCENT de la fiche (bordure gauche), spark
+      dégradé façon Gemini (SVG inline), bouton principal en verre dégradé
+      bleu-violet-rose + « Une autre » compact — finies les couleurs
+      « message d'alerte » (demande utilisateur).
+- [x] POP : la fiche film est juste sous la tuile, EXACTEMENT comme
+      « Que regarder ? » (bouton fusionné : gap 0, même largeur — mesuré),
+      puis la raison en dessous (thème conservé).
+- [x] ✍️ POP LIBRE : un champ « décris ton envie en une phrase » (ex.
+      « un film d'amour sur un bateau ») → Gemini propose 1 contenu DE tes
+      listes + 1 œuvre HORS listes (retrouvée sur TMDB via recherche par
+      titre), avec justification. Requiert la clé IA (pas de repli local).
+- [x] Heatmap : RÉALIGNÉE à gauche comme à l'origine (padding-left
+      retiré — retour utilisateur) tout en gardant les bulles entières :
+      ancrage spécifique des 3 premières cellules de chaque rangée
+      (1re : part vers la droite ; 2e-3e : retrait contrôlé). Mesures :
+      1re cellule à 31,2 px du bord (comme avant), ancres 0 / -25,6 px,
+      title natif toujours absent (1 seule bulle, instantanée).
+- [x] Banc : 28/28 vérifications (retry 503 prouvé, POP libre complet,
+      ordre fiche personne, heatmap) + 23/23 tests + smoke test app réelle.
 
 ### PROCHAINES ÉTAPES (validées par l'utilisateur 07/10)
 - [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150

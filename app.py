@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import random
+import threading
 import time
 from datetime import date, datetime, timedelta
 from html import escape
@@ -856,7 +857,7 @@ st.markdown(
     }
     .season-card .t { font-size: .72rem; font-weight: 800; color: var(--am-text); margin-top: .3rem; }
     .season-card .d { font-size: .64rem; color: var(--am-text-muted); }
-    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: 3.2rem .4rem .25rem 3.6rem; overflow-x: auto; }
+    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: 3.2rem .4rem .25rem 0; overflow-x: auto; }
     .ep-row { display: flex; gap: .45rem; align-items: center; }
     .ep-season { font-size: .64rem; font-weight: 800; color: var(--am-text-muted); width: 24px; flex-shrink: 0; }
     .ep-cells { display: flex; gap: 3px; }
@@ -869,19 +870,33 @@ st.markdown(
        donne à la bulle un espace DANS la boîte visible : elle s'affiche
        intégralement, pour toutes les lignes, sans casser le scroll
        horizontal des saisons longues. */
-    /* V151 — FIX BULLE COUPÉE À GAUCHE (retour utilisateur avec capture) :
-       la bulle est CENTRÉE sur sa cellule (min-width 180px) → pour les
-       premiers épisodes d'une saison, elle débordait à GAUCHE du conteneur
-       scrollable et le texte (« la note ») était coupé par le bord de la
-       fiche. Deux gardes : un padding-left de 3.6rem (l'espace vit dans la
-       boîte visible) ET un ancrage spécifique pour la 1re cellule de chaque
-       rangée — sa bulle part du bord de la cellule vers la droite, donc ne
-       peut PLUS jamais déborder à gauche. */
+    /* V151→V152 — FIX BULLE COUPÉE À GAUCHE : la bulle est CENTRÉE sur sa
+       cellule (min-width 180px) → pour les 2e-3e épisodes d'une saison,
+       elle débordait à GAUCHE du conteneur scrollable (texte coupé par le
+       bord de la fiche). V152 : SANS padding-left (la heatmap reste
+       alignée à gauche comme à l'origine — retour utilisateur), les 3
+       premières cellules de chaque rangée reçoivent un ancrage décalé :
+       la 1re bulle part du bord de la cellule VERS LA DROITE, les 2e-3e
+       ont un retrait contrôlé qui reste dans la boîte visible. */
     .ep-cell:first-child[data-tooltip]::after {
-        left: -3.1rem;
+        left: 0;            /* part du bord de la cellule vers la droite */
         transform: translateY(4px);
     }
     .ep-cell:first-child[data-tooltip]:hover::after {
+        transform: translateY(0);
+    }
+    .ep-cell:nth-child(2)[data-tooltip]::after {
+        left: -1.6rem;      /* léger retrait : reste dans la boîte visible */
+        transform: translateY(4px);
+    }
+    .ep-cell:nth-child(2)[data-tooltip]:hover::after {
+        transform: translateY(0);
+    }
+    .ep-cell:nth-child(3)[data-tooltip]::after {
+        left: -0.6rem;
+        transform: translateY(4px);
+    }
+    .ep-cell:nth-child(3)[data-tooltip]:hover::after {
         transform: translateY(0);
     }
     /* V139 — SIMILAIRES / SAGA : mini-cartes + badges d'état */
@@ -2979,8 +2994,9 @@ def _render_people_cards_clickable(
             person_id = person.get("id")
             if person_id:
                 if st.button(button_label, key=f"{key_prefix}_{person_id}", use_container_width=True, type="secondary"):
-                    # V150 : anecdote NOUVELLE à chaque ouverture de fiche.
-                    st.session_state.pop(f"anecdote_person_{int(person_id)}", None)
+                    # V152 : info des coulisses NOUVELLE à chaque ouverture.
+                    st.session_state.pop(f"ia_coulisses_person_{int(person_id)}", None)
+                    st.session_state[f"ia_nonce_person_{int(person_id)}"] = time.time()
                     _actor_detail_dialog(int(person_id), person_kind)
 
 
@@ -5181,14 +5197,22 @@ def _render_cinema_detail_body(row: dict) -> None:
         unsafe_allow_html=True,
     )
 
-    # V150 — 🎲 anecdote Gemini : UNE anecdote fraîche à chaque ouverture
     # de la fiche (demande utilisateur), re-tirable au bouton. Aucun appel
     # sans clé Gemini.
+    # V152 — BOUTON « ✨ L'info des coulisses » : plus AUCUN chargement
+    # automatique (la fiche s'ouvre instantanément) ; un précalcul tourne
+    # en silence pendant la lecture → au clic, affichage quasi immédiat.
+    # Habillage aux couleurs d'accentuation DE LA FICHE + spark Gemini.
     if api_key and tmdb_id:
         media_word = "la série" if row.get("type") == "Série" else "le film"
-        _render_ia_anecdote(
+        try:
+            _ia_accent = f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})"
+        except (TypeError, IndexError):
+            _ia_accent = ""
+        _render_ia_coulisses(
             f"{'tv' if row.get('type') == 'Série' else 'movie'}_{tmdb_id}",
             f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
+            accent=_ia_accent,
         )
 
 
@@ -5349,16 +5373,6 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         shown = bio if len(bio) <= 480 else bio[:bio.find(" ", 440) if bio.find(" ", 440) > 0 else 440] + "…"
         st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
 
-    # V150 — 🎲 anecdote Gemini sur la personne (fraîche à chaque ouverture
-    # de la fiche — la purge est faite par le bouton d'ouverture).
-    if api_key and person_id:
-        job_word = "réalisateur" if facets.get("realisateur") else "acteur·rice"
-        _render_ia_anecdote(
-            f"person_{person_id}",
-            f"la carrière de {'réalisateur' if is_director else 'comédien·ne'} {person['name']}",
-            hint=f"connu·e comme {job_word}",
-        )
-
     def _section(title: str, rows: list, empty_skip: bool = True) -> None:
         if not rows and empty_skip:
             return
@@ -5412,6 +5426,18 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             unsafe_allow_html=True,
         )
 
+    # V152 — 🎲 « L'info des coulisses » sur la personne, TOUT EN BAS de la
+    # fiche (retour utilisateur : « je veux voir les films déjà vus et
+    # APRÈS, si Gemini est dispo, l'anecdote ») — et sur clic uniquement :
+    # la fiche s'affiche instantanément, le précalcul se fait en silence.
+    if api_key and person_id:
+        job_word = "réalisateur" if facets.get("realisateur") else "acteur·rice"
+        _render_ia_coulisses(
+            f"person_{person_id}",
+            f"la carrière de {'réalisateur' if is_director else 'comédien·ne'} {person['name']}",
+            hint=f"connu·e comme {job_word}",
+        )
+
 
 @st.dialog(" ", width="large")
 def _actor_detail_dialog(person_id: int, person_kind: str = "acteur") -> None:
@@ -5431,7 +5457,11 @@ def _open_cinema_detail(row: dict) -> None:
         _anecdote_tid = 0
     if _anecdote_tid:
         _anecdote_kind = "tv" if row.get("type") in ("Série", "Épisode") else "movie"
-        st.session_state.pop(f"anecdote_{_anecdote_kind}_{_anecdote_tid}", None)
+        _ia_key = f"{_anecdote_kind}_{_anecdote_tid}"
+        st.session_state.pop(f"ia_coulisses_{_ia_key}", None)
+        # V152 — nonce : info NOUVELLE à chaque ouverture (le précalcul en
+        # arrière-plan repart de zéro, il n'y a PAS d'attente à l'écran).
+        st.session_state[f"ia_nonce_{_ia_key}"] = time.time()
     _cinema_detail_dialog()
 
 
@@ -8344,50 +8374,256 @@ def _gemini_api_key() -> str:
         return ""
 
 
-def _render_ia_anecdote(state_key: str, subject: str, hint: str = "") -> None:
-    """🎲 Encart « L'anecdote Gemini » (V150) — fiches cinéma et personnes.
+# ═══════════════ V152 — 🎲 L'INFO DES COULISSES (bloc IA des fiches) ═══════════════
+# Précalcul en arrière-plan : la fiche s'ouvre SANS attendre l'IA ; pendant
+# que l'utilisateur la lit, un thread discret prépare l'info. Au clic sur
+# « ✨ L'info des coulisses », elle est déjà prête → quasi instantané
+# (demande utilisateur : « du très rapide, presque instantané »).
+_IA_PREFETCH: dict[str, dict] = {}
 
-    Une anecdote NOUVELLE à chaque OUVERTURE de fiche (la clé de session est
-    purgée par les points d'entrée : `_open_cinema_detail` / boutons des
-    cartes personnes) + bouton « Une autre ». Le clic sur le bouton purge la
-    clé DANS CE MÊME run (rerun scopé au dialog) → re-génération immédiate.
-    Sans clé Gemini : l'encart n'apparaît pas (aucun coût, aucun message).
+
+def _ia_now() -> float:
+    return time.time()
+
+
+def _ia_prefetch_launch(store_key: str, api_key: str, subject: str, hint: str) -> None:
+    """Lance (une seule fois) la génération en arrière-plan. Le thread ne
+    touche JAMAIS à st.* (interdit hors run) : il écrit dans un dict
+    module-level ; l'UI le relit. Garde-fou mémoire : 60 entrées max."""
+    entry = _IA_PREFETCH.get(store_key)
+    if entry:
+        if entry.get("status") == "pending" and (_ia_now() - entry.get("ts", 0)) < 45:
+            return  # déjà en cours
+        if entry.get("status") == "done" and (_ia_now() - entry.get("ts", 0)) < 900:
+            return  # déjà prêt (moins de 15 min)
+    if len(_IA_PREFETCH) > 60:
+        for old_key, _ in sorted(_IA_PREFETCH.items(), key=lambda kv: kv[1].get("ts", 0))[:20]:
+            _IA_PREFETCH.pop(old_key, None)
+    _IA_PREFETCH[store_key] = {"status": "pending", "ts": _ia_now()}
+
+    def _work() -> None:
+        try:
+            data = pop_engine.coulisses_ask_gemini(api_key, subject, hint)
+            _IA_PREFETCH[store_key] = {"status": "done", "ts": _ia_now(), "data": data}
+        except Exception as exc:  # RuntimeError (lisible) ou imprévu
+            _IA_PREFETCH[store_key] = {"status": "error", "ts": _ia_now(),
+                                       "error": str(exc) or "Erreur inattendue"}
+
+    threading.Thread(target=_work, daemon=True).start()
+
+
+def _ia_fetch_or_wait(store_key: str, api_key: str, subject: str, hint: str,
+                      wait: float = 26.0) -> tuple[dict | None, str]:
+    """Attend le précalcul (s'il est en cours) puis, à défaut, appelle
+    Gemini directement (retry 503/timeout inclus dans pop_engine)."""
+    if store_key and store_key in _IA_PREFETCH:
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            entry = _IA_PREFETCH.get(store_key) or {}
+            if entry.get("status") == "done":
+                return entry.get("data") or None, ""
+            if entry.get("status") == "error":
+                break  # le précalcul a échoué → nouvel essai direct
+            time.sleep(0.35)
+    try:
+        return pop_engine.coulisses_ask_gemini(api_key, subject, hint), ""
+    except RuntimeError as exc:
+        return None, str(exc)
+
+
+def _ia_spark_svg(size: int = 18) -> str:
+    """Petit « spark » dégradé façon Gemini (dessiné en SVG inline — aucune
+    ressource externe, aucun fichier)."""
+    return (
+        f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" style="flex:0 0 auto;">'
+        '<defs><linearGradient id="gmsl" x1="0" y1="0" x2="1" y2="1">'
+        '<stop offset="0" stop-color="#4285F4"/><stop offset=".55" stop-color="#9B72CB"/>'
+        '<stop offset="1" stop-color="#D96570"/></linearGradient></defs>'
+        '<path fill="url(#gmsl)" d="M12 1.6l2.4 6.5 6.5 2.4-6.5 2.4L12 19.4l-2.4-6.5-6.5-2.4 6.5-2.4z"/>'
+        '<path fill="url(#gmsl)" opacity=".85" d="M18.7 14.6l1 2.7 2.7 1-2.7 1-1 2.7-1-2.7-2.7-1 2.7-1z"/>'
+        "</svg>"
+    )
+
+
+def _ia_coulisses_css() -> str:
+    return """
+    <style>
+    .ia-block {
+        border: 1px solid rgba(255, 225, 0, .35);
+        border-left: 4px solid var(--ia-accent, #FFE100);
+        border-radius: 13px;
+        background: rgba(4, 34, 30, .78);
+        padding: .6rem .8rem .65rem;
+        margin: .45rem 0 .3rem;
+    }
+    .ia-block .ia-head { display: flex; align-items: center; gap: .5rem; }
+    .ia-block .ia-title { font-size: .78rem; font-weight: 900; color: #fff; letter-spacing: .1em; }
+    .ia-block .ia-sub { font-size: .66rem; color: #9DC5BF; margin-top: 1px; }
+    .ia-block .ia-text { font-size: .88rem; color: #EAF6F3; line-height: 1.45; margin-top: .45rem; }
+    .ia-pc { display: flex; gap: .55rem; margin-top: .55rem; flex-wrap: wrap; }
+    .ia-pc .col { flex: 1 1 200px; border-radius: 10px; padding: .38rem .55rem .42rem; font-size: .78rem; }
+    .ia-pc .pros { background: rgba(0, 163, 146, .13); border: 1px solid rgba(0, 163, 146, .38); }
+    .ia-pc .cons { background: rgba(255, 225, 0, .06); border: 1px solid rgba(255, 225, 0, .26); }
+    .ia-pc b { display: block; font-size: .66rem; letter-spacing: .09em; margin-bottom: .12rem; }
+    .ia-pc .pros b { color: #7DE8DA; }
+    .ia-pc .cons b { color: #FFE27A; }
+    .ia-pc ul { margin: 0; padding-left: 1.05rem; }
+    .ia-pc li { margin: .09rem 0; color: #EAF6F3; }
+    /* Bouton principal « ✨ L'info des coulisses » : verre dégradé aux
+       couleurs Gemini (ciblé par l'ancre .ia-anchor — pattern des tuiles). */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
+        + div[data-testid="stElementContainer"] button[kind="secondary"],
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
+        background: linear-gradient(120deg, rgba(66, 133, 244, .20), rgba(155, 114, 203, .18) 55%, rgba(217, 101, 112, .16)) !important;
+        border: 1px solid rgba(155, 114, 203, .50) !important;
+        color: #fff !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .74rem !important;
+        font-weight: 800 !important;
+        letter-spacing: .12em !important;
+        text-transform: uppercase !important;
+        min-height: 36px !important;
+        border-radius: 12px !important;
+        transition: transform .16s ease, box-shadow .16s ease !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
+        + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 10px 24px rgba(155, 114, 203, .25) !important;
+        border-color: rgba(217, 101, 112, .65) !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
+        + div[data-testid="stElementContainer"] button[kind="secondary"] p,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-anchor)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p {
+        color: #fff !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .74rem !important;
+        font-weight: 800 !important;
+        letter-spacing: .12em !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+    }
+    /* Bouton « 🎲 Une autre » : compact, discret (même famille que les
+       boutons fiche des tuiles). */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] button[kind="secondary"],
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
+        background: rgba(8, 55, 50, .62) !important;
+        border: 1px solid rgba(155, 114, 203, .45) !important;
+        border-left: 4px solid #9B72CB !important;
+        border-radius: 11px !important;
+        color: #E4D9F2 !important;
+        font-size: .70rem !important;
+        font-weight: 800 !important;
+        letter-spacing: .08em !important;
+        text-transform: uppercase !important;
+        min-height: 28px !important;
+        padding: .1rem .5rem !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] button[kind="secondary"] p,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p {
+        color: #E4D9F2 !important;
+        font-size: .70rem !important;
+        font-weight: 800 !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+    }
+    </style>
+    """
+
+
+def _render_ia_coulisses(state_key: str, subject: str, hint: str = "",
+                         accent: str = "") -> None:
+    """🎲 Bloc « L'info des coulisses » (V152) — fiches cinéma et personnes.
+
+    UX (retours utilisateur) :
+      • RIEN ne se charge à l'ouverture : la fiche est instantanée, les
+        contenus vus/listes s'affichent en premier ; un précalcul tourne
+        en silence pendant la lecture ;
+      • au clic sur « ✨ L'info des coulisses » : si le précalcul est fini
+        (le cas courant), affichage IMMÉDIAT ; sinon spinner bref ;
+      • « 🎲 Une autre » régénère (nouvel appel, température haute) ;
+      • contenu : anecdote de tournage + points forts / points de
+        vigilance « côté spectateurs » — des infos absentes de TMDB ;
+      • habillage : couleur d'ACCENT de la fiche (bordure gauche) + spark
+        dégradé façon Gemini (demande : « un beau truc et un beau bouton
+        qui va bien avec le thème »).
     """
     api_key = _gemini_api_key()
     if not api_key:
         return
-    state_key = f"anecdote_{state_key}"
-    if st.button("🎲 Une autre anecdote", key=f"{state_key}_again", type="secondary"):
-        st.session_state.pop(state_key, None)
-    cached = st.session_state.get(state_key)
-    if isinstance(cached, dict) and cached.get("text"):
-        anecdote, error = cached["text"], ""
-    else:
-        anecdote, error = "", ""
-        try:
-            with st.spinner("🎲 Gemini cherche une anecdote…"):
-                anecdote = pop_engine.anecdote_ask_gemini(api_key, subject, hint)
-            st.session_state[state_key] = {"text": anecdote}
-        except RuntimeError as exc:
-            # Pas de bloc d'erreur criard dans la fiche : une ligne discrète.
-            error = str(exc)
-    if anecdote:
+    session_key = f"ia_coulisses_{state_key}"
+    # Le nonce change à chaque OUVERTURE de fiche (posé par les points
+    # d'entrée) → précalcul et contenu frais à chaque fois.
+    nonce = st.session_state.get(f"ia_nonce_{state_key}") or ""
+    store_key = f"{nonce}|{state_key}"
+    _ia_prefetch_launch(store_key, api_key, subject, hint)
+
+    shown = st.session_state.get(session_key)
+    wants_open = False
+    wants_again = False
+    if not shown:
+        st.markdown('<div class="ia-anchor"></div>', unsafe_allow_html=True)
+        if st.button("✨ L'info des coulisses", key=f"{session_key}_btn",
+                     use_container_width=True):
+            wants_open = True
+    elif not shown.get("error"):
+        st.markdown('<div class="ia-again-anchor"></div>', unsafe_allow_html=True)
+        if st.button("🎲 Une autre", key=f"{session_key}_again",
+                     use_container_width=True):
+            wants_again = True
+
+    if wants_open or wants_again:
+        if wants_again:
+            # purge le précalcul → force une NOUVELLE génération
+            _IA_PREFETCH.pop(store_key, None)
+            _ia_prefetch_launch(store_key, api_key, subject, hint)
+        with st.spinner("✨ Une autre pépite…" if wants_again else "✨ Gemini consulte les coulisses…"):
+            data, error = _ia_fetch_or_wait(store_key, api_key, subject, hint)
+        st.session_state[session_key] = data if data else {"error": error or "Indisponible — relance"}
+        shown = st.session_state.get(session_key)
+
+    if not shown:
+        return
+    st.markdown(_ia_coulisses_css(), unsafe_allow_html=True)
+    if shown.get("error"):
         st.markdown(
-            f'<div class="accent-callout" style="display:block;">'
-            f'<strong>🎲 L\'anecdote du moment</strong> '
-            f'<span style="color:var(--am-text-muted);font-size:.72rem;">· générée par IA · '
-            f'vérifie toujours un fait important avant de le citer</span><br>'
-            f"{escape(anecdote)}</div>",
+            f'<div class="ia-block" style="--ia-accent:#9B72CB;">'
+            f'<div class="ia-head">{_ia_spark_svg()}<div>'
+            f'<div class="ia-title">L\'INFO DES COULISSES</div>'
+            f'<div class="ia-sub">indisponible pour le moment · {escape(str(shown.get("error"))[:120])}</div>'
+            f"</div></div></div>",
             unsafe_allow_html=True,
         )
-    elif error:
-        st.caption(f"🎲 Anecdote IA indisponible : {error}")
-
+        return
+    accent_attr = f' style="--ia-accent:{accent};"' if accent else ""
+    pros = "".join(f"<li>{escape(str(p))}</li>" for p in (shown.get("pros") or [])[:3])
+    cons = "".join(f"<li>{escape(str(c))}</li>" for c in (shown.get("cons") or [])[:3])
+    pros_html = f'<div class="col pros"><b>✅ LES SPECTATEURS AIMENT</b><ul>{pros}</ul></div>' if pros else ""
+    cons_html = f'<div class="col cons"><b>⚠️ POINTS DE VIGILANCE</b><ul>{cons}</ul></div>' if cons else ""
+    st.markdown(
+        f'<div class="ia-block"{accent_attr}>'
+        f'<div class="ia-head">{_ia_spark_svg()}<div>'
+        f'<div class="ia-title">L\'INFO DES COULISSES</div>'
+        f'<div class="ia-sub">anecdote de tournage + ressenti des spectateurs · générée par IA — vérifie un fait important avant de le citer</div>'
+        f"</div></div>"
+        f'<div class="ia-text">🎲 {escape(str(shown.get("anecdote") or ""))}</div>'
+        f'<div class="ia-pc">{pros_html}{cons_html}</div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
 
 def _render_pop_result(result: dict) -> None:
-    """Carte-résultat d'un tirage POP (V149) : mêmes classes visuelles que
-    les tuiles « Que regarder ? » (poster-card + mc-head), badge de la liste
-    source, puis la justification IA dans un encart jaune."""
+    """Carte-résultat d'un tirage POP (V149 → V152) : TUILE + bouton
+    « Voir la fiche » fusionnés EXACTEMENT comme « Que regarder ? » (retour
+    utilisateur), PUIS la justification IA en dessous (thème conservé)."""
     poster = escape(_poster_url({"poster": result.get("poster")}), quote=True)
     image_html = _poster_html(poster, result.get("kind") or "")
     title = escape(result.get("title") or "?")
@@ -8408,14 +8644,8 @@ def _render_pop_result(result: dict) -> None:
         + f'</div></div>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        f'<div class="accent-callout"><strong>💎 Pourquoi cette pépite ?</strong> '
-        f'<span style="color:var(--am-text-muted);font-size:.75rem;">· {engine}</span><br>'
-        f"{escape(result.get('reason') or '')}</div>",
-        unsafe_allow_html=True,
-    )
-    # V149 — un SEUL bouton de tirage (le principal, libellé dynamique) :
-    # le bouton « une autre » ici aurait fait doublon avec lui.
+    # V152 — bouton DIRECT sous la tuile (pas de colonnes) → fusion
+    # automatique par le sélecteur :has(.media-list-card), comme partout.
     if st.button("🎬 Voir la fiche", key=f"pop_fiche_{result['id']}", use_container_width=True, type="secondary"):
         _pop_row = _history_fiche_row({
             "ids": {"tmdb": result["id"]}, "title": result.get("title") or "",
@@ -8425,6 +8655,160 @@ def _render_pop_result(result: dict) -> None:
             _pop_row = {"item": {"ids": {"tmdb": result["id"]}, "title": result.get("title")},
                         "type": result.get("kind") or "Film", "key": f"pop_{result['id']}"}
         _open_cinema_detail(_pop_row)
+    st.markdown(
+        f'<div class="accent-callout"><strong>💎 Pourquoi cette pépite ?</strong> '
+        f'<span style="color:var(--am-text-muted);font-size:.75rem;">· {engine}</span><br>'
+        f"{escape(result.get('reason') or '')}</div>",
+        unsafe_allow_html=True,
+    )
+
+@st.cache_data(ttl=604800, show_spinner=False)  # 7 jours : recherches POP libre
+def _tmdb_search_media(kind: str, query: str, year: int | None, key: str) -> dict:
+    """Recherche TMDB par TITRE (V152 — POP libre) : retrouve l'œuvre hors
+    listes proposée par l'IA (titre + année + type). Dict vide si introuvable."""
+    query = str(query or "").strip()
+    if len(query) < 2:
+        return {}
+    endpoint = "tv" if str(kind).lower() in ("série", "serie", "tv") else "movie"
+    params = {"api_key": key, "language": "fr-FR", "query": query, "page": 1}
+    if year:
+        params["year" if endpoint == "movie" else "first_air_date_year"] = int(year)
+    try:
+        response = requests.get(
+            f"https://api.themoviedb.org/3/search/{endpoint}",
+            params=params,
+            timeout=10,
+        )
+    except requests.RequestException:
+        return {}
+    if response.status_code != 200:
+        return {}
+    try:
+        results = response.json().get("results") or []
+    except ValueError:
+        return {}
+    for entry in results:
+        if not isinstance(entry, dict) or not entry.get("id"):
+            continue
+        date = str(entry.get("release_date") or entry.get("first_air_date") or "")
+        title = str(entry.get("title") or entry.get("name") or "").strip()
+        if not title:
+            continue
+        try:
+            note = round(float(entry.get("vote_average") or 0), 1) or None
+        except (TypeError, ValueError):
+            note = None
+        return {
+            "id": int(entry["id"]),
+            "title": title,
+            "year": date[:4] if len(date) >= 4 else (year or ""),
+            "note": note,
+            "poster": str(entry.get("poster_path") or ""),
+            "kind": "Série" if endpoint == "tv" else "Film",
+        }
+    return {}
+
+
+def _render_pop_free_card(pick: dict, badge: str) -> None:
+    """Tuile d'une proposition du POP libre (dans tes listes / hors listes)
+    + bouton « Voir la fiche » fusionné (même mécanique que le résultat POP)."""
+    poster = escape(_poster_url({"poster": pick.get("poster")}), quote=True)
+    image_html = _poster_html(poster, pick.get("kind") or "")
+    title = escape(pick.get("title") or "?")
+    year = f" ({pick['year']})" if pick.get("year") else ""
+    note = f"⭐ {pick['note']:.1f}" if pick.get("note") else ""
+    genres = " · ".join(pick.get("genres") or [])
+    runtime = _format_minutes(int(pick.get("runtime") or 0)) if pick.get("runtime") else ""
+    source = pick.get("source")
+    chips = " · ".join(x for x in ([genres] if genres else []) + ([runtime] if runtime else []) + ([note] if note else []) + ([f"📂 {source}"] if source else []))
+    st.markdown(
+        f'<div class="media-list-card poster-card">{image_html}'
+        f'<div class="media-list-content" style="width:100%;">'
+        f'<div class="mc-head">{_type_chip(pick.get("kind") or "")}'
+        f'<strong style="font-size:1.05rem;">{title}{year}</strong>'
+        f'<span class="source-badge">{badge}</span></div>'
+        + (f"<small>{chips}</small>" if chips else "")
+        + "</div></div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("🎬 Voir la fiche", key=f"popfree_{badge}_{pick['id']}", use_container_width=True, type="secondary"):
+        _pop_row = _history_fiche_row({
+            "ids": {"tmdb": pick["id"]}, "title": pick.get("title") or "",
+            "type": pick.get("kind") or "Film",
+        })
+        if not _pop_row:
+            _pop_row = {"item": {"ids": {"tmdb": pick["id"]}, "title": pick.get("title")},
+                        "type": pick.get("kind") or "Film", "key": f"popfree_{pick['id']}"}
+        _open_cinema_detail(_pop_row)
+
+
+def _render_pop_free_section(api_key: str, dataset: dict) -> None:
+    """✍️ POP LIBRE (V152) : l'utilisateur décrit son envie en une phrase
+    (« un film d'amour sur un bateau ») → Gemini propose UNE pépite de ses
+    listes ET UNE œuvre hors de ses listes (retrouvée ensuite sur TMDB)."""
+    with st.expander("✍️ Ou décris ton envie en une phrase", expanded=False):
+        wish = st.text_area(
+            "Ton envie",
+            placeholder="Ex. : un film d'amour sur un bateau · une comédie sans réfléchir · un docu sur la F1…",
+            key="pop_wish",
+            height=90,
+        )
+        if st.button("🍿 Trouve-moi ça !", type="primary", use_container_width=True,
+                     key="pop_free_go", disabled=not api_key):
+            wish_txt = str(wish or "").strip()
+            if len(wish_txt) < 3:
+                st.session_state["pop_free_error"] = "Décris ton envie en quelques mots 😉"
+            else:
+                candidates = pop_engine.pop_candidate_pool(dataset, "Peu importe")
+                try:
+                    with st.spinner("✨ Gemini cherche dans tes listes ET au-delà…"):
+                        res = pop_engine.freeform_ask_gemini(api_key, wish_txt, candidates)
+                    in_pick = next((c for c in candidates if c["id"] == res["in_list_id"]), None)
+                    outside = _tmdb_search_media(
+                        res["outside"].get("kind") or "Film",
+                        res["outside"].get("title") or "",
+                        res["outside"].get("year"),
+                        _tmdb_api_key(),
+                    )
+                    st.session_state["pop_free"] = {
+                        "in": in_pick, "outside": outside,
+                        "reason": res["reason"], "wish": wish_txt,
+                    }
+                    st.session_state.pop("pop_free_error", None)
+                except RuntimeError as exc:
+                    st.session_state["pop_free_error"] = str(exc)
+        if not api_key:
+            st.caption("🔓 Nécessite une clé Gemini (mode local impossible pour une envie libre).")
+
+    free = st.session_state.get("pop_free")
+    if free:
+        st.markdown(
+            f'<p class="actor-meta" style="margin:.55rem 0 .2rem;">Pour ton envie « {escape(str(free.get("wish") or ""))} » :</p>',
+            unsafe_allow_html=True,
+        )
+        in_pick = free.get("in")
+        if in_pick:
+            _render_pop_free_card(in_pick, "DANS TES LISTES")
+        else:
+            st.caption("Aucun contenu de tes listes ne collait à cette envie.")
+        outside = free.get("outside")
+        if isinstance(outside, dict) and outside.get("id"):
+            _render_pop_free_card(outside, "HORS DE TES LISTES")
+        else:
+            st.caption("🌐 La proposition hors listes n'a pas été retrouvée sur TMDB — reformule ton envie.")
+        if free.get("reason"):
+            st.markdown(
+                f'<div class="accent-callout"><strong>💎 Pourquoi ces deux choix ?</strong><br>'
+                f"{escape(str(free['reason']))}</div>",
+                unsafe_allow_html=True,
+            )
+    if st.session_state.get("pop_free_error"):
+        st.markdown(
+            f'<div class="accent-callout"><strong>⚠️ POP libre</strong> · '
+            f"{escape(str(st.session_state['pop_free_error']))}</div>",
+            unsafe_allow_html=True,
+        )
+        st.session_state.pop("pop_free_error", None)
 
 
 def render_pop_page() -> None:
@@ -8541,6 +8925,10 @@ def render_pop_page() -> None:
             f'<div style="display:flex;flex-wrap:wrap;gap:.35rem;">{"".join(chips)}</div>',
             unsafe_allow_html=True,
         )
+    # V152 — ✍️ POP LIBRE : l'envie en une phrase → une pépite de tes
+    # listes + une œuvre hors listes (retrouvée sur TMDB).
+    _render_pop_free_section(api_key, dataset)
+
     st.caption(
         "🔒 Confidentialité : seuls titre, année, type, genres, durée et note des "
         "40 candidats partent chez Google — jamais tes notes personnelles ni ton "
