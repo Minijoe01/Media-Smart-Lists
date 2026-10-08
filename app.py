@@ -879,6 +879,93 @@ st.markdown(
        la 1re bulle part du bord de la cellule VERS LA DROITE, les 2e-3e
        ont un retrait contrôlé qui reste dans la boîte visible. */
     /* V153 — PANNEAU « glass » de la page POP (famille Tableau de bord). */
+    /* V154 — STATISTIQUES REFONTE : panneau filtres (même verre que POP)
+       + NAVIGATION par boutons « glass » (inspiration utilisateur : boutons
+       modernes, simples, futuristes — l'onglet ACTIF reçoit le liseré jaune
+       et la lueur du thème) + animations d'entrée. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-filters-start)
+        + div[data-testid="stLayoutWrapper"] [data-testid="stVerticalBlock"] {
+        background: rgba(8, 55, 50, .45);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(0, 163, 146, .38) !important;
+        border-left: 4px solid var(--am-green) !important;
+        border-radius: 16px !important;
+        padding: .7rem 1rem .8rem !important;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 24px rgba(0, 163, 146, .07);
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] {
+        background: rgba(8, 55, 50, .55) !important;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        border: 1px solid rgba(0, 163, 146, .35) !important;
+        border-radius: 12px !important;
+        color: #9DC5BF !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .8rem !important;
+        font-weight: 700 !important;
+        letter-spacing: .04em !important;
+        min-height: 42px !important;
+        transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, color .16s ease !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover {
+        transform: translateY(-2px);
+        color: #fff !important;
+        border-color: rgba(0, 163, 146, .6) !important;
+        box-shadow: 0 10px 22px rgba(0, 163, 146, .18) !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] p {
+        color: #9DC5BF !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .8rem !important;
+        font-weight: 700 !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] {
+        background: linear-gradient(150deg, rgba(0, 163, 146, .38), rgba(0, 82, 75, .55)) !important;
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgba(255, 225, 0, .55) !important;
+        border-radius: 12px !important;
+        color: #fff !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .8rem !important;
+        font-weight: 800 !important;
+        letter-spacing: .04em !important;
+        min-height: 42px !important;
+        box-shadow: 0 12px 26px rgba(0, 163, 146, .28), inset 0 0 18px rgba(255, 225, 0, .06) !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] p {
+        color: #fff !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .8rem !important;
+        font-weight: 800 !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+    }
+    /* Animations : entrée de la nav + du panneau d'onglet (réactivité). */
+    @keyframes mslStabIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: none; }
+    }
+    @keyframes mslPaneIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: none; }
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
+        + div[data-testid="stHorizontalBlock"] {
+        animation: mslStabIn .35s ease both;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-pane-start)
+        + div[data-testid="stElementContainer"] {
+        animation: mslPaneIn .4s ease both;
+    }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .pop-panel-start)
         + div[data-testid="stLayoutWrapper"] [data-testid="stVerticalBlock"] {
         background: rgba(8, 55, 50, .45);
@@ -2984,7 +3071,7 @@ def _render_people_cards(people: list[dict], limit: int = 8, fallback_emoji: str
 
 def _render_people_cards_clickable(
     people: list[dict], fallback_emoji: str = "🎭", limit: int = 10,
-    columns: int = 5, person_kind: str = "acteur",
+    columns: int = 5, person_kind: str = "acteur", key_salt: str = "",
 ) -> None:
     """Cartes personnes CLIQUABLES (Statistiques, V146-V147) : chaque carte
     est FUSIONNÉE à un bouton natif (look tuile) qui ouvre la FICHE ACTEUR
@@ -3005,7 +3092,7 @@ def _render_people_cards_clickable(
             )
             person_id = person.get("id")
             if person_id:
-                if st.button(button_label, key=f"{key_prefix}_{person_id}", use_container_width=True, type="secondary"):
+                if st.button(button_label, key=f"{key_prefix}_{person_id}{key_salt}", use_container_width=True, type="secondary"):
                     # V152 : info des coulisses NOUVELLE à chaque ouverture.
                     st.session_state.pop(f"ia_coulisses_person_{int(person_id)}", None)
                     st.session_state[f"ia_nonce_person_{int(person_id)}"] = time.time()
@@ -5217,7 +5304,7 @@ def _render_cinema_detail_body(row: dict) -> None:
     # s'affiche pendant que l'info se prépare, le bloc apparaît en bas.
     # COULEURS : accent de la fiche (bordure) + accent clair (texte, comme
     # le synopsis) + fond glass discret — fini le violet (retour capture).
-    if api_key and tmdb_id:
+    if (api_key or _groq_api_key()) and tmdb_id:
         media_word = "la série" if row.get("type") == "Série" else "le film"
         try:
             _ia_accent = f"rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]})"
@@ -5446,7 +5533,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     # fiche et en CHARGEMENT AUTOMATIQUE (retour utilisateur : films vus
     # d'abord, l'anecdote arrive ensuite toute seule, sans clic).
     # Couleurs du thème (jaune) + fond glass.
-    if api_key and person_id:
+    if (api_key or _groq_api_key()) and person_id:
         job_word = "réalisateur" if facets.get("realisateur") else "acteur·rice"
         _render_ia_coulisses(
             f"person_{person_id}",
@@ -8403,7 +8490,7 @@ def _ia_now() -> float:
     return time.time()
 
 
-def _ia_prefetch_launch(store_key: str, api_key: str, subject: str, hint: str) -> None:
+def _ia_prefetch_launch(store_key: str, gemini_key: str, groq_key: str, subject: str, hint: str) -> None:
     """Lance (une seule fois) la génération en arrière-plan. Le thread ne
     touche JAMAIS à st.* (interdit hors run) : il écrit dans un dict
     module-level ; l'UI le relit. Garde-fou mémoire : 60 entrées max."""
@@ -8420,7 +8507,7 @@ def _ia_prefetch_launch(store_key: str, api_key: str, subject: str, hint: str) -
 
     def _work() -> None:
         try:
-            data = pop_engine.coulisses_ask_gemini(api_key, subject, hint)
+            data = pop_engine.coulisses_ask_ai(gemini_key, groq_key, subject, hint)
             _IA_PREFETCH[store_key] = {"status": "done", "ts": _ia_now(), "data": data}
         except Exception as exc:  # RuntimeError (lisible) ou imprévu
             _IA_PREFETCH[store_key] = {"status": "error", "ts": _ia_now(),
@@ -8429,7 +8516,7 @@ def _ia_prefetch_launch(store_key: str, api_key: str, subject: str, hint: str) -
     threading.Thread(target=_work, daemon=True).start()
 
 
-def _ia_fetch_or_wait(store_key: str, api_key: str, subject: str, hint: str,
+def _ia_fetch_or_wait(store_key: str, gemini_key: str, groq_key: str, subject: str, hint: str,
                       wait: float = 26.0) -> tuple[dict | None, str]:
     """Attend le précalcul (s'il est en cours) puis, à défaut, appelle
     Gemini directement (retry 503/timeout inclus dans pop_engine)."""
@@ -8443,7 +8530,7 @@ def _ia_fetch_or_wait(store_key: str, api_key: str, subject: str, hint: str,
                 break  # le précalcul a échoué → nouvel essai direct
             time.sleep(0.35)
     try:
-        return pop_engine.coulisses_ask_gemini(api_key, subject, hint), ""
+        return pop_engine.coulisses_ask_ai(gemini_key, groq_key, subject, hint), ""
     except RuntimeError as exc:
         return None, str(exc)
 
@@ -8554,13 +8641,14 @@ def _render_ia_coulisses(state_key: str, subject: str, hint: str = "",
     prépare, et le bloc apparaît en bas dès qu'il est prêt — sans clic.
     « 🎲 Une autre anecdote » régénère. Tout est aux couleurs d'accent
     de la fiche, fond « glass » discret."""
-    api_key = _gemini_api_key()
-    if not api_key:
+    gemini_key = _gemini_api_key()
+    groq_key = _groq_api_key()
+    if not gemini_key and not groq_key:
         return
     session_key = f"ia_coulisses_{state_key}"
     nonce = st.session_state.get(f"ia_nonce_{state_key}") or ""
     store_key = f"{nonce}|{state_key}"
-    _ia_prefetch_launch(store_key, api_key, subject, hint)
+    _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint)
 
     # V153 — le chargement AUTO passe AVANT l'affichage : le bouton
     # « Une autre » est rendu APRÈS le bloc, il est donc toujours visible
@@ -8570,9 +8658,9 @@ def _render_ia_coulisses(state_key: str, subject: str, hint: str = "",
     if not shown or again:
         if again:
             _IA_PREFETCH.pop(store_key, None)
-            _ia_prefetch_launch(store_key, api_key, subject, hint)
+            _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint)
         with st.spinner("✨ Une autre pépite…" if again else "✨ L'info des coulisses arrive…"):
-            data, error = _ia_fetch_or_wait(store_key, api_key, subject, hint, wait=22.0)
+            data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint, wait=22.0)
         st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
         shown = st.session_state.get(session_key)
 
@@ -8610,6 +8698,17 @@ def _render_ia_coulisses(state_key: str, subject: str, hint: str = "",
                     unsafe_allow_html=True)
         if st.button("🎲 Une autre anecdote", key=f"{session_key}_again", use_container_width=True):
             st.session_state[f"{session_key}_again_clicked"] = True
+
+def _groq_api_key() -> str:
+    """Clé Groq (facultative, V154) depuis les Secrets Streamlit — provider
+    IA TRÈS rapide et généreux en gratuit (console.groq.com). Si elle est
+    posée, l'app l'utilise EN PRIORITÉ, Gemini servant de secours (et
+    réciproquement)."""
+    try:
+        return str(st.secrets.get("GROQ_API_KEY") or "").strip()
+    except Exception:
+        return ""
+
 
 def _render_pop_result(result: dict) -> None:
     """Carte-résultat d'un tirage POP (V149 → V153) : TUILE + bouton
@@ -8737,6 +8836,7 @@ def _render_pop_free_section(api_key: str, dataset: dict) -> None:
     """✍️ POP LIBRE (V152) : l'utilisateur décrit son envie en une phrase
     (« un film d'amour sur un bateau ») → Gemini propose UNE pépite de ses
     listes ET UNE œuvre hors de ses listes (retrouvée ensuite sur TMDB)."""
+    groq_key = _groq_api_key()
     with st.expander("✍️ Ou décris ton envie en une phrase", expanded=False):
         wish = st.text_area(
             "Ton envie",
@@ -8745,15 +8845,15 @@ def _render_pop_free_section(api_key: str, dataset: dict) -> None:
             height=90,
         )
         if st.button("🍿 Trouve-moi ça !", type="primary", use_container_width=True,
-                     key="pop_free_go", disabled=not api_key):
+                     key="pop_free_go", disabled=not (api_key or groq_key)):
             wish_txt = str(wish or "").strip()
             if len(wish_txt) < 3:
                 st.session_state["pop_free_error"] = "Décris ton envie en quelques mots 😉"
             else:
                 candidates = pop_engine.pop_candidate_pool(dataset, "Peu importe")
                 try:
-                    with st.spinner("✨ Gemini cherche dans tes listes ET au-delà…"):
-                        res = pop_engine.freeform_ask_gemini(api_key, wish_txt, candidates)
+                    with st.spinner("✨ L'IA cherche dans tes listes ET au-delà…"):
+                        res = pop_engine.freeform_ask_ai(api_key, groq_key, wish_txt, candidates)
                     in_pick = next((c for c in candidates if c["id"] == res["in_list_id"]), None)
                     outside = _tmdb_search_media(
                         res["outside"].get("kind") or "Film",
@@ -8768,8 +8868,8 @@ def _render_pop_free_section(api_key: str, dataset: dict) -> None:
                     st.session_state.pop("pop_free_error", None)
                 except RuntimeError as exc:
                     st.session_state["pop_free_error"] = str(exc)
-        if not api_key:
-            st.caption("🔓 Nécessite une clé Gemini (mode local impossible pour une envie libre).")
+        if not api_key and not groq_key:
+            st.caption("🔓 Nécessite une clé IA (Groq ou Gemini) — mode local impossible pour une envie libre.")
 
     free = st.session_state.get("pop_free")
     if free:
@@ -8818,19 +8918,23 @@ def render_pop_page() -> None:
         )
         return
     api_key = _gemini_api_key()
-    if api_key:
-        st.caption("🔑 Gemini connecté (clé détectée dans tes Secrets).")
+    groq_key = _groq_api_key()
+    if groq_key:
+        st.caption("⚡ IA : Groq (très rapide) — Gemini en secours si besoin.")
+    elif api_key:
+        st.caption("🔑 IA : Gemini connecté. Astuce : une clé GROQ_API_KEY gratuite "
+                   "(console.groq.com) rend l'IA encore plus rapide et plus généreuse.")
     else:
-        st.caption("🔕 Aucune clé Gemini détectée — mode LOCAL (sans IA). "
+        st.caption("🔕 Aucune clé IA détectée — mode LOCAL (sans IA). "
                    "Le guide GUIDE-CLE-IA.txt explique comment en ajouter une gratuitement.")
     # V150 — DIAGNOSTIC de la clé : 1 appel en lecture seule (liste des
     # modèles, 0 quota de génération). Si un tirage affiche « · Local »,
     # ouvre ce diagnostic : il donnera la raison EXACTE (clé refusée,
     # quota, modèle indisponible…).
-    with st.expander("🔧 Diagnostic de la clé Gemini", expanded=False):
-        if st.button("Tester la clé (1 appel lecture seule)", key="pop_key_test"):
+    with st.expander("🔧 Diagnostic des clés IA (Groq + Gemini)", expanded=False):
+        if st.button("Tester les clés (1 appel lecture seule par provider)", key="pop_key_test"):
             with st.spinner("Test en cours…"):
-                ok_key, msg_key = pop_engine.gemini_key_check(api_key)
+                ok_key, msg_key = pop_engine.ai_key_check(api_key, groq_key)
             st.session_state["pop_key_test_result"] = ("✅ " if ok_key else "❌ ") + msg_key
         if st.session_state.get("pop_key_test_result"):
             st.caption(st.session_state["pop_key_test_result"])
@@ -8859,13 +8963,13 @@ def render_pop_page() -> None:
         fresh = [c for c in candidates if c["id"] not in exclude] or candidates
         result = None
         note = ""
-        if api_key and fresh:
+        if (api_key or groq_key) and fresh:
             try:
-                with st.spinner("💎 Gemini fouille tes listes…"):
-                    res = pop_engine.pop_ask_gemini(api_key, mood, fresh)
+                with st.spinner("💎 L'IA fouille tes listes…"):
+                    res = pop_engine.pop_ask_ai(api_key, groq_key, mood, fresh)
                 pick = next((c for c in fresh if c["id"] == res["pick_id"]), None)
                 if pick:
-                    result = {**pick, "reason": res["reason"], "engine": "Gemini"}
+                    result = {**pick, "reason": res["reason"], "engine": "Groq" if groq_key else "Gemini"}
             except RuntimeError as exc:
                 note = str(exc)
         if result is None and fresh:
@@ -8883,7 +8987,7 @@ def render_pop_page() -> None:
             # résultat) même quand le mode local prend le relais — avant, elle
             # était effacée et le « · Local » restait mystérieux.
             st.session_state["pop_error"] = (
-                f"Gemini indisponible ({note}) — sélection locale." if note else ""
+                f"IA indisponible ({note}) — sélection locale." if note else ""
             )
         else:
             st.session_state.pop("pop_result", None)
@@ -8925,8 +9029,8 @@ def render_pop_page() -> None:
     st.caption(
         "🔒 Confidentialité : seuls titre, année, type, genres, durée et note des "
         "40 candidats partent chez Google — jamais tes notes personnelles ni ton "
-        "historique. Quota gratuit Gemini (modèles Flash) : ~1 000 requêtes/jour "
-        "(1 par tirage, 1 par anecdote)."
+        "historique. Quotas gratuits : Groq ~1 000 requêtes/jour · Gemini (Flash) "
+        "~1 000/jour — 1 requête par tirage ou anecdote, avec bascule automatique entre modèles."
     )
 
 
@@ -10786,9 +10890,9 @@ def render_calendar_page() -> None:
         calendar_error=cache.get("calendar_error"),
     )
 
-def render_detailed_stats_page(filtered: "pd.DataFrame", period_label: str) -> None:
-    """Statistiques détaillées — reçoit le DataFrame DÉJÀ filtré par les
-    slicers uniques de la page, plus aucun filtre ni tableau dupliqué."""
+def _stats_activity_section(filtered: "pd.DataFrame", period_label: str) -> None:
+    """👁️ Vue d'ensemble (V154) : compteurs filtrés + heatmap d'activité
+    + les 4 graphiques — ex-section « activité » de la page détaillée."""
     if filtered.empty:
         st.warning("Aucun résultat pour ces filtres.")
         return
@@ -10883,6 +10987,11 @@ def render_detailed_stats_page(filtered: "pd.DataFrame", period_label: str) -> N
 
     # ── ADN cinéphile ────────────────────────────────────────────────────────
     st.divider()
+
+
+def _stats_tastes_section(filtered: "pd.DataFrame", period_label: str) -> None:
+    """🎭 Goûts (V154) : ADN cinéphile, studios, marathons, évolution —
+    ex-section « goûts » de la page détaillée."""
     st.markdown("#### 🧬 Ton ADN cinéphile")
     st.caption("La composition de tes visionnages sur la sélection filtrée ci-dessus.")
     dna1, dna2 = st.columns([0.52, 0.48])
@@ -10934,6 +11043,7 @@ def render_detailed_stats_page(filtered: "pd.DataFrame", period_label: str) -> N
         _render_echarts(evolution, height="380px")
     else:
         st.caption("La période filtrée couvre moins de 2 années — élargis la période (« Tout ») pour voir l'évolution.")
+
 
 
 def _rated_contents_rows(dataset: dict) -> list[dict]:
@@ -11046,89 +11156,17 @@ def _stats_period_bounds(period: str, now: datetime, custom_start=None, custom_e
     return None, None
 
 
-def render_basic_stats_page() -> None:
-    st.markdown('<div class="page-title">📊 Statistiques</div>', unsafe_allow_html=True)
-    dataset = _dataset()
-    if not dataset:
-        st.markdown(
-            '<div class="accent-callout"><strong>STATISTIQUES NON CHARGÉES</strong> · '
-            'Charge MDBList depuis le Tableau de bord.</div>',
-            unsafe_allow_html=True,
-        )
-        return
-
-    # ── Vue d'ensemble : ALL-TIME (non filtrée par les slicers) ──────────────
-    render_dataset_overview()
-    st.caption(
-        "👆 La vue d'ensemble ci-dessus est **non filtrée** (toutes périodes confondues). "
-        "Les slicers ci-dessous s'appliquent à l'historique, aux graphiques et aux analyses."
-    )
-
-    rows = normalize_history(dataset, timezone_name="Europe/Paris")
-    if not rows:
-        st.caption("Aucun visionnage n’est disponible dans le dataset actuel.")
-        return
-    df = stats_mod.build_frame(rows)
-    if df.empty:
-        st.caption("Aucune donnée datée pour les statistiques.")
-        return
-
-    # ── Slicers UNIQUES (appliqués à toute la page) ──────────────────────────
-    dated_values = [row["watched_at"].date() for row in rows if row.get("watched_at")]
-    earliest = min(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
-    latest = max(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
-
-    period_col, type_col, genre_col = st.columns([0.32, 0.22, 0.46])
-    period = period_col.selectbox("Période", stats_mod.PERIOD_OPTIONS, key="stats_period")
-    media_filter = type_col.selectbox("Type", stats_mod.TYPE_OPTIONS, key="stats_type")
-    all_genres = sorted(
-        {genre for raw in df["genre"].astype(str) for genre in raw.split(" · ") if genre != "Inconnu"},
-        key=str.casefold,
-    )
-    genre_choice = genre_col.selectbox("Genre", ["Tous"] + all_genres, key="stats_genre",
-                                       format_func=_genre_display)  # emoji par genre (V112)
-
-    custom_start = custom_end = None
-    if period == "Période personnalisée":
-        months = stats_mod.available_months(df)
-        if len(months) >= 2:
-            pair = st.select_slider(
-                "Sélectionne la période (mois)",
-                options=months,
-                value=(months[0], months[-1]),
-                key="stats_months",
-            )
-            custom_start = datetime.strptime(pair[0], "%m-%Y").replace(tzinfo=PARIS_TZ).date()
-            custom_end = (
-                datetime.strptime(pair[1], "%m-%Y").replace(day=28) + timedelta(days=4)
-            ).replace(tzinfo=PARIS_TZ).date()
-        else:
-            custom_start = df["date_dt"].min().date()
-            custom_end = df["date_dt"].max().date()
-
-    # Ma note personnelle : filtre par plage (ex. uniquement mes 10/10 —
-    # pratique quand tu dois recommander des contenus à quelqu'un).
-    rating_lo, rating_hi = st.select_slider(
-        "Ma note personnelle (plage)",
-        options=list(range(0, 11)),
-        value=(0, 10),
-        key="stats_rating_range",
-    )
-
-    filtered = df.copy()
-    if rating_lo > 0 or rating_hi < 10:
-        _notes = filtered["note"].fillna(0)
-        filtered = filtered[(_notes >= rating_lo) & (_notes <= rating_hi)]
-    if media_filter != "Tous":
-        wanted = "Film" if media_filter == "Films" else "Épisode"
-        filtered = filtered[filtered["type"] == wanted]
-    filtered = stats_mod.apply_period(filtered, period, datetime.now(PARIS_TZ), custom_start, custom_end)
-    if genre_choice != "Tous":
-        filtered = filtered[filtered["genre"].str.contains(genre_choice, na=False)]
-
-    period_label = period if period != "Période personnalisée" else f"Période personnalisée {custom_start} → {custom_end}"
-    rating_txt = f" · **ma note {rating_lo}–{rating_hi}/10**" if (rating_lo > 0 or rating_hi < 10) else ""
-    st.caption(f"🎯 Filtres appliqués : **{media_filter}** · **{genre_choice}** · **{period_label}**{rating_txt} — {len(filtered)} visionnage(s).")
+def _stats_rated_section(ctx: dict) -> None:
+    """⭐ Mes contenus notés (V154) — onglet Goûts."""
+    dataset = ctx['dataset']
+    rows = ctx['rows']
+    period = ctx['period']
+    media_filter = ctx['media_filter']
+    genre_choice = ctx['genre_choice']
+    rating_lo = ctx['rating_lo']
+    rating_hi = ctx['rating_hi']
+    custom_start = ctx['custom_start']
+    custom_end = ctx['custom_end']
 
     # ── ⭐ Mes contenus notés (retrouver vite ses 10/10, etc.) ──────────────
     rated_rows = _rated_contents_rows(dataset)
@@ -11216,6 +11254,14 @@ def render_basic_stats_page() -> None:
         else:
             st.caption("Aucun contenu noté dans cette plage de notes.")
 
+
+
+def _stats_people_section(ctx: dict) -> None:
+    """👥 Personnes (V154) : réalisateurs/acteurs/studios + recherche. Les collecteurs (filmographies TMDB) ne tournent QUE sur cet onglet → la page est plus rapide ailleurs."""
+    dataset = ctx['dataset']
+    filtered = ctx['filtered']
+    period_label = ctx['period_label']
+
     # ── Acteurs & studios préférés — suit les slicers (période, type, genre) ──
     filtered_tmdb: set[str] = set()
     for ids in filtered.get("ids", []):
@@ -11268,6 +11314,19 @@ def render_basic_stats_page() -> None:
             "Aucun acteur ou studio détecté sur cette sélection. "
             "Vérifie que la clé TMDB_API_KEY est renseignée dans les Secrets Streamlit."
         )
+
+
+
+def _stats_history_section(ctx: dict) -> None:
+    """🗓️ Temps (V154) : historique des vues filtré + exports."""
+    rows = ctx['rows']
+    period = ctx['period']
+    media_filter = ctx['media_filter']
+    genre_choice = ctx['genre_choice']
+    rating_lo = ctx['rating_lo']
+    rating_hi = ctx['rating_hi']
+    custom_start = ctx['custom_start']
+    custom_end = ctx['custom_end']
 
     # ── Historique des vues (filtré, UNE seule fois) ─────────────────────────
     with st.expander("📜 Historique des vues", expanded=False):
@@ -11398,8 +11457,167 @@ def render_basic_stats_page() -> None:
                 key="download_history_json",
             )
 
-    # ── Analyses détaillées (mêmes slicers) ──────────────────────────────────
-    render_detailed_stats_page(filtered, period_label)
+def render_basic_stats_page() -> None:
+    """📊 Statistiques (V154 — REFONTE).
+
+    Fini le fourre-tout (retour utilisateur) : 4 ONGLETS à navigation
+    « glass » — 👁️ Vue d'ensemble / 🎭 Goûts / 👥 Personnes / 🗓️ Temps —
+    avec UN bloc de filtres partagé. Chaque onglet ne calcule QUE sa
+    matière (ex. les filmographies TMDB de Personnes ne tournent plus à
+    chaque affichage) → page beaucoup plus réactive. Le contenu est
+    rassemblé de façon intuitive : vues ET notes ensemble dans Goûts,
+    acteurs/réalisateurs dans Personnes, historique et rythme dans Temps."""
+    st.markdown('<div class="page-title">📊 Statistiques</div>', unsafe_allow_html=True)
+    dataset = _dataset()
+    if not dataset:
+        st.markdown(
+            '<div class="accent-callout"><strong>STATISTIQUES NON CHARGÉES</strong> · '
+            'Charge MDBList depuis le Tableau de bord.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    rows = normalize_history(dataset, timezone_name="Europe/Paris")
+    if not rows:
+        st.caption("Aucun visionnage n’est disponible dans le dataset actuel.")
+        return
+    df = stats_mod.build_frame(rows)
+    if df.empty:
+        st.caption("Aucune donnée datée pour les statistiques.")
+        return
+
+    # ── PANNEAU DE FILTRES partagé (glass, façon Tableau de bord) ──────────
+    st.markdown('<div class="stats-filters-start"></div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        dated_values = [row["watched_at"].date() for row in rows if row.get("watched_at")]
+        earliest = min(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
+        latest = max(dated_values) if dated_values else datetime.now(PARIS_TZ).date()
+
+        period_col, type_col, genre_col = st.columns([0.32, 0.22, 0.46])
+        period = period_col.selectbox("Période", stats_mod.PERIOD_OPTIONS, key="stats_period")
+        media_filter = type_col.selectbox("Type", stats_mod.TYPE_OPTIONS, key="stats_type")
+        all_genres = sorted(
+            {genre for raw in df["genre"].astype(str) for genre in raw.split(" · ") if genre != "Inconnu"},
+            key=str.casefold,
+        )
+        genre_choice = genre_col.selectbox("Genre", ["Tous"] + all_genres, key="stats_genre",
+                                           format_func=_genre_display)  # emoji par genre (V112)
+
+        custom_start = custom_end = None
+        if period == "Période personnalisée":
+            months = stats_mod.available_months(df)
+            if len(months) >= 2:
+                pair = st.select_slider(
+                    "Sélectionne la période (mois)",
+                    options=months,
+                    value=(months[0], months[-1]),
+                    key="stats_months",
+                )
+                custom_start = datetime.strptime(pair[0], "%m-%Y").replace(tzinfo=PARIS_TZ).date()
+                custom_end = (
+                    datetime.strptime(pair[1], "%m-%Y").replace(day=28) + timedelta(days=4)
+                ).replace(tzinfo=PARIS_TZ).date()
+            else:
+                custom_start = df["date_dt"].min().date()
+                custom_end = df["date_dt"].max().date()
+
+        # Ma note personnelle : filtre par plage (ex. uniquement mes 10/10 —
+        # pratique quand tu dois recommander des contenus à quelqu'un).
+        rating_lo, rating_hi = st.select_slider(
+            "Ma note personnelle (plage)",
+            options=list(range(0, 11)),
+            value=(0, 10),
+            key="stats_rating_range",
+        )
+
+    filtered = df.copy()
+    if rating_lo > 0 or rating_hi < 10:
+        _notes = filtered["note"].fillna(0)
+        filtered = filtered[(_notes >= rating_lo) & (_notes <= rating_hi)]
+    if media_filter != "Tous":
+        wanted = "Film" if media_filter == "Films" else "Épisode"
+        filtered = filtered[filtered["type"] == wanted]
+    filtered = stats_mod.apply_period(filtered, period, datetime.now(PARIS_TZ), custom_start, custom_end)
+    if genre_choice != "Tous":
+        filtered = filtered[filtered["genre"].str.contains(genre_choice, na=False)]
+
+    period_label = period if period != "Période personnalisée" else f"Période personnalisée {custom_start} → {custom_end}"
+    rating_txt = f" · **ma note {rating_lo}–{rating_hi}/10**" if (rating_lo > 0 or rating_hi < 10) else ""
+
+    ctx = {
+        "dataset": dataset, "rows": rows, "df": df, "filtered": filtered,
+        "period": period, "media_filter": media_filter, "genre_choice": genre_choice,
+        "rating_lo": rating_lo, "rating_hi": rating_hi,
+        "custom_start": custom_start, "custom_end": custom_end,
+        "period_label": period_label, "rating_txt": rating_txt,
+    }
+
+    # ── NAVIGATION « glass » (4 onglets — style boutons modernes) ──────────
+    tabs = [
+        ("👁️", "Vue d'ensemble"),
+        ("🎭", "Goûts"),
+        ("👥", "Personnes"),
+        ("🗓️", "Temps"),
+    ]
+    if "stats_tab" not in st.session_state:
+        st.session_state["stats_tab"] = tabs[0][1]
+    if st.session_state["stats_tab"] not in [t[1] for t in tabs]:
+        st.session_state["stats_tab"] = tabs[0][1]
+
+    st.markdown('<div class="stats-nav-start"></div>', unsafe_allow_html=True)
+    nav_cols = st.columns(len(tabs))
+    for col, (emoji, label) in zip(nav_cols, tabs):
+        with col:
+            # is_active lu au moment du RENDU de chaque bouton (avant clic)
+            is_active = label == st.session_state["stats_tab"]
+            st.markdown(f'<div class="stab-{"on" if is_active else "off"}"></div>', unsafe_allow_html=True)
+            if st.button(f"{emoji}  {label}", key=f"stats_tab_{label}", use_container_width=True):
+                st.session_state["stats_tab"] = label
+    # V154 — l'onglet actif est (re)lu APRÈS les boutons : au run du CLIC,
+    # le contenu change DÉJÀ (sinon il fallait un 2e run pour voir l'onglet).
+    active_tab = st.session_state["stats_tab"]
+
+    st.markdown(
+        f'<p class="actor-meta" style="margin:.35rem 0 .2rem;">🎯 Filtres appliqués : '
+        f"<strong>{escape(media_filter)}</strong> · <strong>{escape(genre_choice)}</strong> · "
+        f"<strong>{escape(period_label)}</strong>{rating_txt} — {len(filtered)} visionnage(s).</p>",
+        unsafe_allow_html=True,
+    )
+
+    # ── CONTENU DE L'ONGLET ACTIF (matière calculée uniquement ici) ────────
+    if active_tab == "Vue d'ensemble":
+        render_dataset_overview()
+        st.caption(
+            "👆 La vue d'ensemble ci-dessus est **non filtrée** (toutes périodes confondues) ; "
+            "la heatmap et les graphiques ci-dessous suivent les filtres."
+        )
+        _stats_activity_section(filtered, period_label)
+    elif active_tab == "Goûts":
+        st.markdown('<div class="stats-pane-start"></div>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="actor-section-title" style="letter-spacing:.12em;font-size:.78rem;">'
+            "🎭 TES GOÛTS — ADN, ÉVOLUTION ET NOTES</p>",
+            unsafe_allow_html=True,
+        )
+        _stats_tastes_section(filtered, period_label)
+        _stats_rated_section(ctx)
+    elif active_tab == "Personnes":
+        st.markdown('<div class="stats-pane-start"></div>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="actor-section-title" style="letter-spacing:.12em;font-size:.78rem;">'
+            "👥 LES GENS — ACTEURS, RÉALISATEURS, STUDIOS</p>",
+            unsafe_allow_html=True,
+        )
+        _stats_people_section(ctx)
+    else:  # Temps
+        st.markdown('<div class="stats-pane-start"></div>', unsafe_allow_html=True)
+        st.markdown(
+            '<p class="actor-section-title" style="letter-spacing:.12em;font-size:.78rem;">'
+            "🗓️ TON TEMPS — HISTORIQUE ET RYTHME</p>",
+            unsafe_allow_html=True,
+        )
+        _stats_history_section(ctx)
+
 
 
 def _ruban(emoji: str, titre: str, meta: str, body: str, delay: int = 0) -> str:

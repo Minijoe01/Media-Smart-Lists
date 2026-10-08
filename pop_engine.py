@@ -89,13 +89,38 @@ POP_MOODS: dict[str, dict[str, Any]] = {
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
 GEMINI_FALLBACK_MODEL = "gemini-flash-latest"  # alias Google : toujours le dernier Flash stable
+GROQ_BASE = "https://api.groq.com/openai/v1"
+# Préférence Groq : petits modèles RAPIDES d'abord (les quotas gratuits sont
+# par modèle : les petits sont les plus généreux — 2026).
+GROQ_MODEL_PREFERENCE = [
+    "openai/gpt-oss-20b",
+    "llama-3.1-8b-instant",
+    "openai/gpt-oss-120b",
+    "llama-3.3-70b-versatile",
+]
+_GROQ_EXCLUDE = ("whisper", "guard", "embed", "tts", "vision", "compound", "distil-whisper")
 
 # Suffixes de modèles inutilisables pour nos cas d'usage (image/audio/embedding).
 _MODEL_EXCLUDE = ("-image", "-tts", "-live", "-native-audio", "-thinking", "-embedding", "aqa", "-vl")
 
-# Cache du modèle résolu, PAR CLÉ (hashée — jamais la clé en clair), TTL 6 h.
-_model_cache: dict[str, tuple[float, str]] = {}
+# Cache des modèles résolus, PAR CLÉ (hashée — jamais la clé en clair), TTL 6 h.
+_model_cache: dict[str, tuple[float, list[str]]] = {}
 _MODEL_TTL = 6 * 3600.0
+_groq_model_cache: dict[str, tuple[float, str]] = {}
+
+
+def _cache_get(cache: dict, key: str, ttl: float):
+    entry = cache.get(key)
+    if entry and (_time.time() - entry[0]) < ttl:
+        return entry[1]
+    return None
+
+
+def _cache_set(cache: dict, key: str, value) -> None:
+    cache[key] = (_time.time(), value)
+    if len(cache) > 40:  # garde-fou mémoire
+        for old_key, _ in sorted(cache.items(), key=lambda kv: kv[1][0])[:15]:
+            cache.pop(old_key, None)
 
 
 def _ranked_flash_models(raw_names: list[str]) -> list[str]:
@@ -188,16 +213,15 @@ def resolve_gemini_models_ranked(api_key: str, refresh: bool = False) -> list[st
     if not api_key:
         return [GEMINI_FALLBACK_MODEL]
     key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
-    now = _time.time()
-    cached = _model_cache.get(key_hash)
-    if cached and not refresh and (now - cached[0]) < _MODEL_TTL and cached[1]:
-        return cached[1]
+    cached = None if refresh else _cache_get(_model_cache, key_hash, _MODEL_TTL)
+    if cached:
+        return cached
     try:
         names = list_gemini_models(api_key)
     except RuntimeError:
-        return cached[1] if cached else [GEMINI_FALLBACK_MODEL]
+        return cached or [GEMINI_FALLBACK_MODEL]
     ranked = _ranked_flash_models(names) if names else [GEMINI_FALLBACK_MODEL]
-    _model_cache[key_hash] = (now, ranked)
+    _cache_set(_model_cache, key_hash, ranked)
     return ranked
 
 
@@ -368,19 +392,98 @@ def _gemini_post_json(api_key: str, body: dict, what: str) -> dict:
     raise RuntimeError(last_error or "Gemini indisponible")
 
 
-def _gemini_json_body(prompt: str, temperature: float, max_tokens: int) -> dict:
-    return {
+def _gemini_json_body(prompt: str, temperature: float, max_tokens: int,
+                      model: str = "", safe: bool = False) -> dict:
+    """Corps de requête Gemini. V154 — deux garde-fous anti-HTTP 400 :
+      • `safe=True` : corps MINIMAL (aucun thinkingConfig, budget relevé) —
+        utilisé pour le retry automatique si un 400 survient ;
+      • sinon, thinkingConfig ADAPTÉ AU MODÈLE : les Gemini 3.x rejettent
+        `thinkingBudget: 0` avec un 400 (cause du bug V153 après le passage
+        aux flash-lite 3.x) — on ne l'envoie qu'aux Gemini 2.x, qui l'acceptent."""
+    body: dict = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "temperature": temperature,
-            "maxOutputTokens": max_tokens,
+            "maxOutputTokens": int(max_tokens * 1.5) if safe else max_tokens,
             "responseMimeType": "application/json",
-            "thinkingConfig": {"thinkingBudget": 0},
         },
     }
+    if not safe and model and "gemini-3" not in model:
+        body["generationConfig"]["thinkingConfig"] = {"thinkingBudget": 0}
+    return body
+
+
+def _gemini_post_json(api_key: str, body: dict, what: str, model: str = "") -> dict:
+    """POST generateContent Gemini — INFAILLIBLE (V154) :
+
+      • 400 (requête refusée, ex. thinkingConfig non supporté par un modèle
+        neuf) → RETRY immédiat en mode « safe » : corps minimal sans
+        thinkingConfig et budget de tokens relevé ;
+      • 503 → 3 tentatives (pause 1 s puis 2,5 s) ;
+      • 429 (quota du modèle) → bascule sur le modèle suivant de la liste
+        ranked (flash-lite d'abord, quota gratuit plus large) ;
+      • 404 → modèle retiré → modèle suivant aussi."""
+    models = resolve_gemini_models_ranked(api_key)[:3] or [GEMINI_FALLBACK_MODEL]
+    if model and model in models:
+        models = [model] + [m for m in models if m != model]
+    last_error = ""
+    safe_tried = False
+    for current in models[:3]:
+        for attempt in (1, 2, 3):
+            try:
+                response = requests.post(
+                    _gemini_url(api_key, current),
+                    params={"key": api_key},
+                    json=body,
+                    timeout=30,
+                )
+            except requests.RequestException as exc:
+                last_error = f"Réseau indisponible ({exc.__class__.__name__})"
+                if attempt < 3:
+                    _time.sleep(1.0 if attempt == 1 else 2.5)
+                    continue
+                break  # modèle suivant
+            if response.status_code == 400:
+                # V154 — UNE fois par appel : corps MINIMAL (sans
+                # thinkingConfig, budget relevé). Cause typique du 400 :
+                # thinkingBudget refusé par les Gemini 3.x.
+                if not safe_tried:
+                    safe_tried = True
+                    temp0 = (body.get("generationConfig") or {}).get("temperature", 0.9)
+                    body = _gemini_json_body(_LAST_PROMPT[0], temp0, 1400, safe=True)
+                    continue
+                last_error = "Requête refusée (400) même en mode simplifié"
+                break  # modèle suivant
+            if response.status_code == 503:
+                last_error = "Google surchargé (503)"
+                if attempt < 3:
+                    _time.sleep(1.0 if attempt == 1 else 2.5)
+                    continue
+                break
+            if response.status_code in (401, 403):
+                raise RuntimeError("Clé Gemini refusée (401/403) — vérifie GEMINI_API_KEY dans les Secrets")
+            if response.status_code == 429:
+                last_error = f"Quota épuisé pour {current}"
+                break  # modèle suivant
+            if response.status_code == 404:
+                last_error = f"Modèle {current} refusé (404)"
+                break
+            if response.status_code != 200:
+                raise RuntimeError(f"Gemini a répondu HTTP {response.status_code}")
+            return response
+    key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:16]
+    _model_cache.pop(key_hash, None)
+    if "Quota" in last_error:
+        raise RuntimeError("Quota Gemini épuisé pour aujourd'hui (tous les modèles essayés)")
+    raise RuntimeError(last_error or "Gemini indisponible")
+
+
+# Le prompt courant (pour reconstruire un corps « safe » après un 400).
+_LAST_PROMPT: list[str] = [""]
 
 
 def _gemini_text(response: dict) -> str:
+    """Extrait le texte d'une réponse Gemini (candidates[0].content.parts[0])."""
     try:
         candidate0 = (response.json().get("candidates") or [{}])[0]
         return str((candidate0.get("content") or {}).get("parts", [{}])[0].get("text") or "")
@@ -388,7 +491,139 @@ def _gemini_text(response: dict) -> str:
         return ""
 
 
-def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
+def groq_list_models(groq_key: str) -> list[str]:
+    """Modèles de chat disponibles POUR CETTE CLÉ Groq (1 appel lecture
+    seule, 0 quota). Lève RuntimeError (raison lisible)."""
+    if not groq_key:
+        raise RuntimeError("Clé Groq absente")
+    try:
+        response = requests.get(
+            f"{GROQ_BASE}/models",
+            headers={"Authorization": f"Bearer {groq_key}"},
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Réseau indisponible ({exc.__class__.__name__})") from exc
+    if response.status_code in (401, 403):
+        raise RuntimeError("Clé Groq refusée (401/403)")
+    if response.status_code == 429:
+        raise RuntimeError("Quota Groq atteint (429)")
+    if response.status_code != 200:
+        raise RuntimeError(f"HTTP {response.status_code}")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Réponse illisible") from exc
+    out = []
+    for model in (payload.get("data") or []):
+        if not isinstance(model, dict):
+            continue
+        mid = str(model.get("id") or "")
+        if mid and not any(x in mid for x in _GROQ_EXCLUDE):
+            out.append(mid)
+    return out
+
+
+def resolve_groq_model(groq_key: str, refresh: bool = False) -> str:
+    """Le modèle Groq à utiliser (cache 6 h) : premier de la liste de
+    préférence présent pour ta clé, sinon le premier modèle de chat dispo."""
+    if not groq_key:
+        return ""
+    key_hash = hashlib.sha256(groq_key.encode("utf-8")).hexdigest()[:16]
+    cached = None if refresh else _cache_get(_groq_model_cache, key_hash, _MODEL_TTL)
+    if cached:
+        return cached
+    try:
+        names = groq_list_models(groq_key)
+    except RuntimeError:
+        return cached or ""
+    model = next((m for m in GROQ_MODEL_PREFERENCE if m in names), "")
+    if not model and names:
+        model = names[0]
+    if model:
+        _cache_set(_groq_model_cache, key_hash, model)
+    return model
+
+
+def _groq_chat(groq_key: str, prompt: str, temperature: float,
+               max_tokens: int, what: str) -> str:
+    """Un appel Groq (API compatible OpenAI) → le texte de la réponse.
+    JSON strict via response_format. Retry 503/timeout ×2, 429 explicite."""
+    model = resolve_groq_model(groq_key)
+    if not model:
+        raise RuntimeError("Aucun modèle Groq disponible pour cette clé")
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "response_format": {"type": "json_object"},
+    }
+    last_error = ""
+    for attempt in (1, 2):
+        try:
+            response = requests.post(
+                f"{GROQ_BASE}/chat/completions",
+                headers={"Authorization": f"Bearer {groq_key}"},
+                json=body,
+                timeout=30,
+            )
+        except requests.RequestException as exc:
+            last_error = f"Réseau indisponible ({exc.__class__.__name__})"
+            if attempt == 1:
+                _time.sleep(1.0)
+                continue
+            raise RuntimeError(last_error)
+        if response.status_code == 503 and attempt == 1:
+            last_error = "Groq surchargé (503)"
+            _time.sleep(1.0)
+            continue
+        if response.status_code in (401, 403):
+            raise RuntimeError("Clé Groq refusée (401/403) — vérifie GROQ_API_KEY")
+        if response.status_code == 429:
+            raise RuntimeError("Quota Groq atteint (429) — réessaie plus tard")
+        if response.status_code == 404:
+            _groq_model_cache.pop(hashlib.sha256(groq_key.encode("utf-8")).hexdigest()[:16], None)
+            raise RuntimeError(f"Modèle Groq {model} refusé (404)")
+        if response.status_code != 200:
+            raise RuntimeError(f"Groq a répondu HTTP {response.status_code}")
+        try:
+            return str(response.json()["choices"][0]["message"]["content"] or "")
+        except (ValueError, KeyError, IndexError, TypeError):
+            raise RuntimeError("Réponse Groq illisible")
+    raise RuntimeError(last_error or "Groq indisponible")
+
+
+def ia_complete(gemini_key: str, groq_key: str, prompt: str,
+                temperature: float, max_tokens: int, what: str) -> str:
+    """LE point d'entrée unique de l'IA (V154) — provider + secours croisé :
+
+      • si une clé GROQ_API_KEY est posée → Groq D'ABORD (très rapide,
+        quotas gratuits généreux) ;
+      • si l'appel échoue (quota, surcharge…) → bascule sur Gemini
+        (si sa clé est là) — et réciproquement ;
+      • chaque provider a déjà ses propres retries/bascules de modèle.
+
+    Renvoie le TEXTE de la réponse (JSON strict attendu)."""
+    errors: list[str] = []
+    if groq_key:
+        try:
+            return _groq_chat(groq_key, prompt, temperature, max_tokens, what)
+        except RuntimeError as exc:
+            errors.append(f"Groq : {exc}")
+    if gemini_key:
+        try:
+            _LAST_PROMPT[0] = prompt
+            model = resolve_gemini_model(gemini_key)
+            body = _gemini_json_body(prompt, temperature, max_tokens, model=model)
+            response = _gemini_post_json(gemini_key, body, what, model=model)
+            return _gemini_text(response)
+        except RuntimeError as exc:
+            errors.append(f"Gemini : {exc}")
+    raise RuntimeError(" · ".join(errors) or "Aucune clé IA configurée")
+
+
+def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict]) -> dict:
     """Appelle Gemini (endpoint NATIF, compatible clés AQ. et AIza).
 
     Renvoie {"pick_id": int, "reason": str, "model": str} ou lève
@@ -400,14 +635,11 @@ def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
     MAX_TOKENS sans aucun texte) et POP basculait silencieusement en mode
     local (retour utilisateur : « · Local » malgré la clé détectée).
     """
-    if not api_key:
-        raise RuntimeError("Clé Gemini absente")
-    model = resolve_gemini_model(api_key)
-    body = _gemini_json_body(_gemini_prompt(mood, candidates), 0.9, 1200)
-    response = _gemini_post_json(api_key, body, "pop")
-    text = _gemini_text(response)
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    text = ia_complete(gemini_key, groq_key, _gemini_prompt(mood, candidates), 0.9, 1200, "pop")
     if not text.strip():
-        raise RuntimeError("Réponse Gemini vide — relance")
+        raise RuntimeError("Réponse IA vide — relance")
     try:
         parsed = json.loads(text)
     except ValueError:
@@ -423,32 +655,40 @@ def pop_ask_gemini(api_key: str, mood: str, candidates: list[dict]) -> dict:
     reason = str(parsed.get("reason") or "").strip()
     if not pick_id or not reason:
         raise RuntimeError("Réponse Gemini incomplète")
-    return {"pick_id": pick_id, "reason": reason, "model": model}
+    return {"pick_id": pick_id, "reason": reason, "model": "ia"}
 
 
-def gemini_key_check(api_key: str) -> tuple[bool, str]:
-    """Diagnostic de la clé (V150) : 1 appel LECTURE seule (liste des
-    modèles — ne consomme PAS de quota de génération). Renvoie
-    (ok, message lisible) pour l'afficher sur la page POP.
+def ai_key_check(gemini_key: str, groq_key: str) -> tuple[bool, str]:
+    """Diagnostic des clés IA (V154) : 1 appel LECTURE seule par provider
+    (liste des modèles — 0 quota de génération). Indique le provider ACTIF
+    (Groq si sa clé est posée, sinon Gemini), le modèle retenu et les
+    secours. Copie-colle le message à l'assistant en cas de souci."""
+    parts: list[str] = []
+    ok = False
+    if groq_key:
+        try:
+            names = groq_list_models(groq_key)
+            model = next((m for m in GROQ_MODEL_PREFERENCE if m in names), names[0] if names else "")
+            parts.append(f"Groq (ACTIF) : clé valide ✅ · modèle : {model}"
+                         + (f" · {len(names)} modèle(s) visible(s)" if names else ""))
+            ok = True
+        except RuntimeError as exc:
+            parts.append(f"Groq (ACTIF) : ❌ {exc}")
+    if gemini_key:
+        try:
+            names = list_gemini_models(gemini_key)
+            ranked = _ranked_flash_models(names) if names else [GEMINI_FALLBACK_MODEL]
+            role = "secours" if groq_key else "ACTIF"
+            parts.append(f"Gemini ({role}) : clé valide ✅ · modèle : {ranked[0]} (lite d'abord)"
+                         + (f" · secours : {', '.join(ranked[1:4])}" if len(ranked) > 1 else ""))
+            ok = ok or not groq_key
+        except RuntimeError as exc:
+            parts.append(f"Gemini ({'secours' if groq_key else 'ACTIF'}) : ❌ {exc}")
+    if not parts:
+        return False, "Aucune clé IA : ajoute GEMINI_API_KEY et/ou GROQ_API_KEY dans les Secrets."
+    return ok, " · ".join(parts)
 
-    V151 : affiche aussi le MODÈLE qui sera utilisé par POP et les
-    anecdotes (choisi automatiquement parmi les modèles de la clé)."""
-    if not api_key:
-        return False, "Aucune clé GEMINI_API_KEY dans les Secrets."
-    try:
-        names = list_gemini_models(api_key)
-    except RuntimeError as exc:
-        return False, f"{exc} — vérifie la valeur de GEMINI_API_KEY dans les Secrets Streamlit."
-    ranked = _ranked_flash_models(names) if names else [GEMINI_FALLBACK_MODEL]
-    details = f"Clé valide ✅ · modèle utilisé : {ranked[0]} (lite d'abord : quota gratuit plus large)"
-    if len(ranked) > 1:
-        details += f" · secours en cas de quota : {', '.join(ranked[1:4])}"
-    elif names:
-        details += " (aucun modèle Flash visible — voici les modèles : " + ", ".join(n.removeprefix('models/') for n in names[:5]) + ")"
-    return True, details
-
-
-def coulisses_ask_gemini(api_key: str, subject: str, hint: str = "") -> dict:
+def coulisses_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -> dict:
     """🎲 L'INFO DES COULISSES (V152) — un SEUL appel Gemini pour :
       • une ANECDOTE de tournage/casting (zéro spoiler) ;
       • 2-3 POINTS FORTS et 2-3 POINTS DE VIGILANCE « côté spectateurs »
@@ -459,8 +699,8 @@ def coulisses_ask_gemini(api_key: str, subject: str, hint: str = "") -> dict:
     Retourne {"anecdote": str, "pros": [..], "cons": [..]}. Lève
     RuntimeError (raison lisible). Retry 503/timeout inclus.
     """
-    if not api_key:
-        raise RuntimeError("Clé Gemini absente")
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
     prompt = (
         "Tu es un passionné de cinéma et de séries qui connaît les coulisses de "
         "tournage ET le sentiment du public. À propos de "
@@ -482,11 +722,9 @@ def coulisses_ask_gemini(api_key: str, subject: str, hint: str = "") -> dict:
         'Réponds STRICTEMENT en JSON : {"anecdote": "…", "pros": ["…", "…"], '
         '"cons": ["…", "…"]}'
     )
-    body = _gemini_json_body(prompt, 1.1, 1400)
-    response = _gemini_post_json(api_key, body, "coulisses")
-    text = _gemini_text(response)
+    text = ia_complete(gemini_key, groq_key, prompt, 1.1, 1400, "coulisses")
     if not text.strip():
-        raise RuntimeError("Réponse Gemini vide — relance")
+        raise RuntimeError("Réponse IA vide — relance")
     try:
         parsed = json.loads(text)
     except ValueError:
@@ -499,7 +737,7 @@ def coulisses_ask_gemini(api_key: str, subject: str, hint: str = "") -> dict:
     return {"anecdote": anecdote, "pros": pros, "cons": cons}
 
 
-def freeform_ask_gemini(api_key: str, wish: str, candidates: list[dict]) -> dict:
+def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[dict]) -> dict:
     """✍️ POP LIBRE (V152) : l'utilisateur décrit son envie en une phrase
     (« un film d'amour sur un bateau »). Un SEUL appel Gemini :
 
@@ -510,8 +748,8 @@ def freeform_ask_gemini(api_key: str, wish: str, candidates: list[dict]) -> dict
 
     Retourne {"in_list_id": int, "outside": {"title","year","kind"},
     "reason": str}."""
-    if not api_key:
-        raise RuntimeError("Clé Gemini absente")
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
     wish = str(wish or "").strip()
     if len(wish) < 3:
         raise RuntimeError("Décris ton envie en quelques mots")
@@ -539,11 +777,9 @@ def freeform_ask_gemini(api_key: str, wish: str, candidates: list[dict]) -> dict
         "Réponds STRICTEMENT en JSON, sans texte autour :\n"
         f"{json_shape}"
     )
-    body = _gemini_json_body(prompt, 0.9, 1200)
-    response = _gemini_post_json(api_key, body, "pop-libre")
-    text = _gemini_text(response)
+    text = ia_complete(gemini_key, groq_key, prompt, 0.9, 1200, "pop-libre")
     if not text.strip():
-        raise RuntimeError("Réponse Gemini vide — relance")
+        raise RuntimeError("Réponse IA vide — relance")
     try:
         parsed = json.loads(text)
     except ValueError:

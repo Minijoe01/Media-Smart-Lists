@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 8 octobre 2026 · Dernière version déployée : V153.
+> Dernière mise à jour : 8 octobre 2026 · Dernière version déployée : V154.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -782,6 +782,39 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] Banc : 22/22 vérifications (chrono du streaming, couleurs mesurées,
       429→bascule, 503→retry, panneau) + 23/23 tests + smoke test.
 
+### Fait en V154 (retours du 08/10 — double provider + REFONTE STATISTIQUES)
+- [x] 🎯 ERREUR 400 (retour utilisateur avec capture) : cause = thinkingBudget
+      refusé par les Gemini 3.x. DOUBLE CEINTURE : thinkingConfig ADAPTÉ au
+      modèle (aucun sur les 3.x) + si un 400 survient quand même → RETRY
+      immédiat en corps « safe » (sans thinkingConfig, budget relevé).
+      Preuve au banc : 400 forcé au 1er appel → l'info des coulisses
+      s'affiche quand même.
+- [x] ⚡ PROVIDER GROQ (réponse à « faut-il remplacer Gemini ? ») : si une
+      clé GROQ_API_KEY est posée (console.groq.com, gratuit, ~1 000 req/j,
+      très rapide), l'app l'utilise EN PRIORITÉ — Gemini reste en SECOURS
+      (et réciproquement : secours croisé). Modèle Groq résolu dynamiquement
+      (gpt-oss-20b d'après les quotas 2026), JSON strict, retries 503/429.
+      Diagnostic étendu aux deux providers. 19/19 au banc avec Groq actif.
+- [x] ⭐ REFONTE STATISTIQUES (fini le fourre-tout — demande utilisateur :
+      « rassembler mes stats de vu avec les notes, les stats acteur et
+      réal, de façon intuitive ») :
+      • NAVIGATION « glass » 4 onglets (inspiration boutons de l'utilisateur) :
+        👁️ Vue d'ensemble (compteurs ALL-TIME + heatmap + graphiques) ·
+        🎭 Goûts (ADN cinéphile, évolution, studios, marathons, ⭐ contenus
+        notés) · 👥 Personnes (acteurs/réalisateurs/studios + recherche) ·
+        🗓️ Temps (historique + exports) ;
+      • l'onglet ACTIF a le liseré jaune + texte blanc + lueur (mesuré) ;
+      • PANNEAU DE FILTRES partagé en verre (période/type/genre/note) ;
+      • RÉACTIVITÉ : chaque onglet ne calcule que SA matière (les
+        filmographies TMDB de Personnes ne tournent plus à chaque affichage)
+        et l'onglet actif est lu APRÈS les boutons → le contenu change au
+        CLIC, sans second rerun (bug trouvé au banc) ;
+      • animations d'entrée (nav + panneau), hover glass.
+- [x] (fix harnais) sélecteurs nav : les colonnes Streamlit 1.60 sont des
+      stVerticalBlock (plus stColumn) — 10 sélecteurs corrigés.
+- [x] Banc : 19/19 (400→safe, Groq, nav mesurée, 4 onglets, isolation des
+      matières) + 23/23 tests + smoke test app réelle.
+
 ### PROCHAINES ÉTAPES (validées par l'utilisateur 08/10)
 - [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
       livrée) — si « Local » s'affiche encore dans POP, ouvrir le
@@ -792,7 +825,7 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       existent déjà : `add_watchlist_items`, `add_list_items` ; s'inspirer du
       popover « ➕ Ajouter une découverte » des sections hors-listes ;
       uniquement listes statiques, jamais les listes dynamiques/IA).
-- [ ] ⭐ REFONTE STATISTIQUES (chantier V154 — l'utilisateur adore le thème de la fiche film et le look dashboard : futuriste, moderne, très réactif) : onglets : 👁️ Vue d'ensemble / 🎭 Goûts / 👥 Personnes /
+- [x] (fait en V154 — cf. ci-dessus) Ancienne entrée refonte : onglets : 👁️ Vue d'ensemble / 🎭 Goûts / 👥 Personnes /
       🗓️ Temps — animation de transition + UN seul bloc de filtres partagé
       (recherche + période + type). Les infos par acteur/réalisateur restent
       dans Statistiques (décision utilisateur : c'est le bon endroit).
