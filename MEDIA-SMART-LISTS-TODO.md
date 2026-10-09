@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 8 octobre 2026 · Dernière version déployée : V155.
+> Dernière mise à jour : 9 octobre 2026 · Dernière version déployée : V156.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -844,11 +844,52 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       sans latence, toggle notes/historique, Excel proposé, KPI fusionnés,
       IA soudée, non-régressions) + 23/23 tests + smoke test.
 
-### PROCHAINES ÉTAPES (validées par l'utilisateur 08/10)
+### Fait en V156 (retours du 09/10 — La Pépite + stats finies + Groq activé)
+- [x] 🐛 BUG POP LIBRE : la section « ✍️ décris ton envie » n'apparaissait
+      qu'après avoir choisi une humeur (le `return` arrivait avant son
+      rendu). Elle est désormais rendue AVANT toute sortie — toujours
+      visible.
+- [x] 🎲 RENOMMAGE PRUDENT : « 🍿 POP — une pépite ? » devient « 🎲 La
+      Pépite » (inquiétude de plagiat du nom de l'autre outil — retour
+      utilisateur). Badge « 💎 LA PÉPITE », libellés généralisés.
+- [x] 🎯 4 HUMEURS SUPPLÉMENTAIRES (12 au total) : 🕵️ Enquête & mystère ·
+      🍿 Pop-corn fun · 💔 Déchirant · 🤪 Décalé & culte (mapping local
+      inclus pour le repli sans IA).
+- [x] 🔍 RECHERCHE GLOBALE : la recherche du panneau filtre désormais TOUT
+      (heatmap, graphiques, goûts, ADN…), plus seulement l'historique et
+      les notes — appliquée au dataframe filtré.
+- [x] 📊 KPI LISTES : « Films vus (total) » et « Épisodes vus (total) »
+      RETIRÉS (redondants avec les KPI filtrés) ; ajout du DÉTAIL par
+      liste (chips « nom · nb contenus ») sous le sous-titre « Les
+      statistiques de tes listes ».
+- [x] 📜 HISTORIQUE & NOTES : les deux tableaux vivent À PLAT (plus
+      d'expander) → l'état déroulé est STABLE au toggle (retour : « la
+      liste s'enroule sur elle-même »). Case à cocher glass stylée
+      (Streamlit 1.60 rend le toggle en checkbox — découvert au banc).
+- [x] 👥 PERSONNES : titre de section « ACTEURS, RÉALISATEURS & STUDIOS »
+      (fini « LES GENS »).
+- [x] 🎲 IA : bouton « Une autre » au style EXACT du bouton fiche des
+      tuiles — liseré 4px qui PROLONGE celui du bloc (mesuré 0.06 px) ;
+      spinner en COULEUR D'ACCENT de la fiche (injecté par fiche).
+- [x] 🧭 NAV STATS : DOUBLE RAIL sous la barre glass (rail vert lumineux
+      + rail fin jaune — inspiration de l'exemple utilisateur « boutons
+      + 2 barres horizontales »).
+- [x] Banc : 16/16 (POP libre sans humeur, 12 humeurs, double rail
+      mesuré, recherche globale, KPI listes, tableaux à plat stables,
+      bouton IA 0.06 px, non-régressions) + 23/23 tests + smoke test.
+
+### PROCHAINES ÉTAPES (validées par l'utilisateur 09/10)
 - [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
       livrée) — si « Local » s'affiche encore dans POP, ouvrir le
       « 🔧 Diagnostic de la clé Gemini » et me donner le message.
 - [ ] README.md : refonte par l'utilisateur À LA FIN (il gère).
+- [ ] 💡 IDÉES IA (à choisir, demande utilisateur « maximise l'utilisation de la clé ») :
+      • « Pourquoi ce score ? » narratif par l'IA dans la fiche (les signaux expliqués en une phrase vivante) ;
+      • « Résolveur de dilemme » : 2-3 contenus hésitants → l'IA tranche ;
+      • « Après ce film » : depuis la fiche, l'IA propose les 3 suites logiques DANS tes listes ;
+      • « Ton soir parfait » : heure + humeur + temps dispo → mini-programme de soirée ;
+      • anecdotes d'ÉPISODES dans la heatmap (survol prolongé) ;
+      • résumé « saison par saison » pour décider de continuer/abandonner une série en cours.
 - [ ] (facultatif, si simple) Filtre par acteur dans les stats : nombre d'heures/épisodes vus avec lui
 - [ ] Ajouter un contenu à une liste / à la Watchlist DEPUIS LA FICHE CINÉMA
       (demande utilisateur 07/10 — très faisable : les méthodes d'écriture

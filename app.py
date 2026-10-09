@@ -113,7 +113,7 @@ PAGES = [
     "👻 Progression Fantôme",
     "🧹 Nettoyage des listes",
     "🎯 Que regarder ?",
-    "🍿 POP — une pépite ?",
+    "🎲 La Pépite",
     "📅 Calendrier des sorties",
     "📊 Statistiques",
     "🎬 Rendez-vous annuel",
@@ -992,8 +992,56 @@ st.markdown(
         padding: .8rem 1rem .9rem !important;
         box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 24px rgba(0, 163, 146, .07);
     }
-    /* V155 — SPINNER Streamlit : même typographie Manrope + couleurs du
-       thème (le texte par défaut dénotait — retour utilisateur). */
+    /* V156 — TOGGLE notes/vues : en Streamlit 1.60, st.toggle est rendu
+       comme une CHECKBOX stylée (div 16x16) — on en fait une case « glass »
+       moderne : fond sombre translucide, bord vert, lueur au clic. */
+    div[data-testid="stCheckbox"] label > div:first-of-type {
+        background: rgba(4, 34, 30, .55) !important;
+        border: 1px solid rgba(0, 163, 146, .45) !important;
+        border-radius: 6px !important;
+        box-shadow: inset 0 0 6px rgba(0, 0, 0, .30) !important;
+    }
+    div[data-testid="stCheckbox"]:has(input:checked) label > div:first-of-type {
+        background: linear-gradient(140deg, rgba(0, 163, 146, .55), rgba(0, 82, 75, .6)) !important;
+        border-color: rgba(0, 163, 146, .75) !important;
+        box-shadow: 0 0 10px rgba(0, 163, 146, .35) !important;
+    }
+    div[data-testid="stCheckbox"] label p,
+    div[data-testid="stCheckbox"] > div > div > p {
+        color: #9DC5BF !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+    }
+    /* V156 — NAV STATS : DOUBLE RAIL sous la barre glass (style de l'exemple
+       de l'utilisateur : boutons + 2 barres horizontales en dessous) — un
+       rail vert lumineux + un rail fin jaune, avec lueur interne. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
+        + div[data-testid="stLayoutWrapper"],
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
+        + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {
+        position: relative;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
+        + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"]::after {
+        content: "";
+        position: absolute;
+        left: 1.1rem; right: 1.1rem; bottom: .22rem;
+        height: 2px;
+        border-radius: 2px;
+        background: linear-gradient(90deg, transparent, rgba(0, 163, 146, .75) 12%, rgba(0, 163, 146, .75) 88%, transparent);
+        box-shadow: 0 1px 6px rgba(0, 163, 146, .35);
+        pointer-events: none;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
+        + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"]::before {
+        content: "";
+        position: absolute;
+        left: 2.2rem; right: 2.2rem; bottom: .68rem;
+        height: 1px;
+        border-radius: 1px;
+        background: linear-gradient(90deg, transparent, rgba(255, 225, 0, .30) 20%, rgba(255, 225, 0, .30) 80%, transparent);
+        pointer-events: none;
+    }
+    /* Spinner global (thème) — les fiches injectent leur couleur d'accent. */
     [data-testid="stSpinner"] p, .stSpinner p {
         color: #9DC5BF !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
@@ -1006,7 +1054,7 @@ st.markdown(
     .ia-block { margin-bottom: 0 !important; border-radius: 13px 13px 0 0 !important; }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-block)
         + div[data-testid="stElementContainer"] {
-        margin-top: -0.5rem !important;  /* compense le gap vertical (tuiles) */
+        margin-top: -0.61rem !important;  /* compense le gap vertical (tuiles) */
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor) {
         margin-top: 0 !important;
@@ -8614,6 +8662,13 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
         --ia-accent-soft: {accent_soft};
         --ia-text: {accent_text};
     }}
+    /* V156 — spinner en COULEUR D'ACCENTUATION de la fiche. */
+    [data-testid="stSpinner"] p, .stSpinner p {{
+        color: {accent} !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .92rem !important;
+        font-weight: 600 !important;
+    }}
     .ia-block {{
         border: 1px solid var(--ia-accent-soft);
         border-left: 4px solid var(--ia-accent);
@@ -8639,32 +8694,32 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     .ia-pc .cons b {{ color: #FFE27A; }}
     .ia-pc ul {{ margin: 0; padding-left: 1.05rem; }}
     .ia-pc li {{ margin: .09rem 0; color: var(--ia-text); }}
-    /* Bouton « 🎲 Une autre anecdote » : liseré ACCENT, fond verre vert —
-       même famille que les boutons fiche des tuiles. */
+    /* V156 — Bouton « 🎲 Une autre » : style EXACT du bouton « 🎬 Voir la
+       fiche » des tuiles (continuité demandée) — le liseré 4px PROLONGE
+       celui du bloc IA, coins bas, tout soudé. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {{
-        background: rgba(8, 55, 50, .55) !important;
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
-        border: 1px solid var(--ia-accent-soft) !important;
+        background: rgba(8, 55, 50, .62) !important;
+        border: 1px solid rgba(0, 163, 146, .45) !important;
+        border-top: 1px solid rgba(0, 163, 146, .28) !important;
         border-left: 4px solid var(--ia-accent) !important;
-        border-radius: 11px !important;
-        color: var(--ia-text) !important;
+        border-radius: 0 0 13px 13px !important;
+        color: #9DC5BF !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .70rem !important;
+        font-size: .7rem !important;
         font-weight: 800 !important;
-        letter-spacing: .08em !important;
         text-transform: uppercase !important;
-        min-height: 28px !important;
-        padding: .1rem .5rem !important;
+        letter-spacing: .1em !important;
+        min-height: 24px !important;
+        padding: .08rem .55rem !important;
     }}
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"] p,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p {{
-        color: var(--ia-text) !important;
+        color: #9DC5BF !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .70rem !important;
         font-weight: 800 !important;
@@ -8776,7 +8831,7 @@ def _render_pop_result(result: dict) -> None:
         f'<div class="media-list-content" style="width:100%;">'
         f'<div class="mc-head">{_type_chip(result.get("kind") or "")}'
         f'<strong style="font-size:1.08rem;">{title}{year}</strong>'
-        f'<span class="source-badge">💎 PÉPITE POP</span></div>'
+        f'<span class="source-badge">💎 LA PÉPITE</span></div>'
         f'<small>📂 {escape(result.get("source") or "ta liste")}'
         + (f" · {chips}</small>" if chips else "</small>")
         + f'</div></div>',
@@ -8951,12 +9006,12 @@ def _render_pop_free_section(api_key: str, dataset: dict) -> None:
 
 
 def render_pop_page() -> None:
-    """🍿 POP (V149) — LA pépite de tes listes, choisie par Gemini selon
+    """🎲 La Pépite (V149→V156) — LA pépite de tes listes, choisie par l'IA selon
     ton humeur. Candidats = contenus NON vus de ta Watchlist + listes,
     scorés localement (top 40) ; seule leur fiche technique (titre, genres,
     durée, note, source) part chez Google — aucune donnée personnelle.
     Sans clé Gemini (ou en cas d'erreur) : repli local humeur → genres."""
-    st.markdown('<div class="page-title">🍿 POP — LA pépite pour ce soir</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title">🎲 La Pépite — ton prochain coup de cœur</div>', unsafe_allow_html=True)
     dataset = _dataset()
     if not dataset:
         st.markdown(
@@ -8989,6 +9044,10 @@ def render_pop_page() -> None:
 
     # V153 — PANNEAU « glass » (même famille que les cartes du Tableau de
     # bord — retour utilisateur : « on est en dessous des autres pages »).
+    # V156 — le POP LIBRE est rendu AVANT toute sortie anticipée : il est
+    # TOUJOURS visible, même sans humeur choisie (bug retourné : la section
+    # n'apparaissait qu'après avoir sélectionné une humeur).
+    _render_pop_free_section(api_key, dataset)
     st.markdown('<div class="pop-panel-start"></div>', unsafe_allow_html=True)
     with st.container(border=True):
         mood = st.pills("🎯 Ton humeur du moment", list(pop_engine.POP_MOODS), key="pop_mood")
@@ -8997,8 +9056,9 @@ def render_pop_page() -> None:
             default="Peu importe",
         )
         if not mood:
-            st.caption("Cocooning, grand frisson, rire… choisis ton humeur et Gemini "
-                       "(ou le moteur local) ira chercher LE contenu de tes listes qui colle.")
+            st.caption("Cocooning, grand frisson, rire… choisis ton humeur et l'IA "
+                       "(ou le moteur local) ira chercher LE contenu de tes listes qui colle. "
+                       "Ou décris ton envie librement juste en dessous ↓")
         draw_label = "🎲 Une autre pépite !" if st.session_state.get("pop_result") else "🍿 Tire-moi LA pépite !"
         _pop_draw_clicked = st.button(draw_label, type="primary", use_container_width=True, key="pop_draw")
     if not mood:
@@ -9070,10 +9130,6 @@ def render_pop_page() -> None:
             f'<div style="display:flex;flex-wrap:wrap;gap:.35rem;">{"".join(chips)}</div>',
             unsafe_allow_html=True,
         )
-    # V152 — ✍️ POP LIBRE : l'envie en une phrase → une pépite de tes
-    # listes + une œuvre hors listes (retrouvée sur TMDB).
-    _render_pop_free_section(api_key, dataset)
-
     st.caption(
         "🔒 Confidentialité : seuls titre, année, type, genres, durée et note des "
         "40 candidats partent chez Google — jamais tes notes personnelles ni ton "
@@ -10992,23 +11048,33 @@ def _stats_activity_section(filtered: "pd.DataFrame", period_label: str,
         unsafe_allow_html=True,
     )
 
-    # V155 — KPI TOUT-HISTORIQUE fusionnés dans le MÊME onglet (ex-« vue
-    # d'ensemble » séparée — retour utilisateur : c'était redondant).
+    # V156 — LES STATISTIQUES DE TES LISTES (retour utilisateur) :
+    # les KPI « Films vus (total) / Épisodes vus (total) » sont RETIRÉS
+    # (redondants avec les KPI filtrés juste au-dessus) ; on garde
+    # Watchlist + un DÉTAIL par liste (nom + nombre de contenus).
     if ctx:
         _sections_all = (ctx.get("dataset") or {}).get("sections") or {}
-        _watched_all = _sections_all.get("watched") or {}
         _watchlist_all = _sections_all.get("watchlist") or {}
-        _lists_all = _sections_all.get("user_lists") or []
+        _lists_all = [l for l in (_sections_all.get("user_lists") or []) if isinstance(l, dict)]
         st.markdown(
             _metric_cards([
-                {"emoji": "⭐", "k": "Watchlist", "v": len(_watchlist_all.get("movies") or []) + len(_watchlist_all.get("shows") or []), "d": "tout l'historique"},
-                {"emoji": "🗂️", "k": "Listes personnelles", "v": len(_lists_all), "d": "tout l'historique"},
-                {"emoji": "📦", "k": "Contenus en listes", "v": sum(len(l.get("movies") or []) + len(l.get("shows") or []) for l in _lists_all if isinstance(l, dict)), "d": "tout l'historique"},
-                {"emoji": "🎬", "k": "Films vus (total)", "v": len(_watched_all.get("movies") or []), "d": "tout l'historique"},
-                {"emoji": "🎞️", "k": "Épisodes vus (total)", "v": len(_watched_all.get("episodes") or []), "d": "tout l'historique"},
+                {"emoji": "⭐", "k": "Watchlist", "v": len(_watchlist_all.get("movies") or []) + len(_watchlist_all.get("shows") or []), "d": "contenus à voir"},
+                {"emoji": "🗂️", "k": "Listes personnelles", "v": len(_lists_all), "d": "listes statiques"},
+                {"emoji": "📦", "k": "Contenus en listes", "v": sum(len(l.get("movies") or []) + len(l.get("shows") or []) for l in _lists_all), "d": "au total des listes"},
             ]),
             unsafe_allow_html=True,
         )
+        if _lists_all:
+            _chips = "".join(
+                f'<span class="mc-chip">🗂️ {escape(str(l.get("name") or "Liste"))} · '
+                f'{len(l.get("movies") or []) + len(l.get("shows") or [])}</span>'
+                for l in _lists_all[:12]
+            )
+            st.markdown(
+                '<p class="actor-meta" style="margin:.45rem 0 .2rem;">🗂️ Les statistiques de tes listes :</p>'
+                f'<div style="display:flex;flex-wrap:wrap;gap:.35rem;">{_chips}</div>',
+                unsafe_allow_html=True,
+            )
 
     # ── Heatmap d'activité (suit les filtres) ────────────────────────────────
     st.divider()
@@ -11271,7 +11337,8 @@ def _stats_rated_section(ctx: dict) -> None:
         now=datetime.now(PARIS_TZ),
     )
     rating_active = rating_lo > 0 or rating_hi < 10
-    with st.expander(f"⭐ Mes contenus notés ({len(rated_rows)})", expanded=bool(rated_rows) and rating_active):
+    if True:  # V156 — à plat (pas d'expander) : stable au toggle
+        st.markdown(f"**⭐ Mes contenus notés ({len(rated_rows)})**")
         st.caption(
             "Tes films et séries notés, une ligne par contenu. "
             "Suit tous les filtres : note, type, genre, période."
@@ -11443,10 +11510,12 @@ def _stats_history_section(ctx: dict) -> None:
     custom_end = ctx['custom_end']
 
     # ── Historique des vues (filtré, UNE seule fois) ─────────────────────────
-    # V155 : la RECHERCHE vit dans le panneau de filtres en haut de page
-    # (ctx['search']) — plus de champ local. Expander OUVERT : c'est la
-    # matière principale de l'onglet « Historique & notes ».
-    with st.expander(f"📜 Historique des vues ({len([r for r in rows])})", expanded=True):
+    # V156 — PLUS D'EXPANDER : dans son onglet dédié, la liste vit À PLAT et
+    # reste DÉROULÉE quel que soit le toggle notes/vues (retour utilisateur :
+    # « la liste s'enroule sur elle-même »). La recherche vient du panneau
+    # de filtres en haut de page (ctx['search']).
+    if True:
+        st.markdown(f"**📜 Historique des vues ({len(rows)})**")
         st.caption(
             "Films et épisodes de la sélection filtrée ci-dessus. La recherche vient du panneau de filtres en haut de page."
         )
@@ -11675,6 +11744,15 @@ def render_basic_stats_page() -> None:
     filtered = stats_mod.apply_period(filtered, period, datetime.now(PARIS_TZ), custom_start, custom_end)
     if genre_choice != "Tous":
         filtered = filtered[filtered["genre"].str.contains(genre_choice, na=False)]
+    # V156 — la RECHERCHE filtre TOUT (retour utilisateur) : elle s'applique
+    # au dataframe filtré, donc heatmap, graphiques, goûts, ADN… suivent
+    # tous la recherche, comme l'historique et les notes.
+    if str(stats_search or "").strip():
+        _q_all = str(stats_search).strip().casefold()
+        filtered = filtered[
+            filtered["title"].astype(str).str.casefold().str.contains(_q_all, na=False)
+            | filtered["serie"].astype(str).str.casefold().str.contains(_q_all, na=False)
+        ]
 
     period_label = period if period != "Période personnalisée" else f"Période personnalisée {custom_start} → {custom_end}"
     rating_txt = f" · **ma note {rating_lo}–{rating_hi}/10**" if (rating_lo > 0 or rating_hi < 10) else ""
@@ -11744,7 +11822,7 @@ def render_basic_stats_page() -> None:
         st.markdown('<div class="stats-pane-start"></div>', unsafe_allow_html=True)
         st.markdown(
             '<p class="actor-section-title" style="letter-spacing:.12em;font-size:.78rem;">'
-            "👥 LES GENS — ACTEURS, RÉALISATEURS, STUDIOS</p>",
+            "👥 ACTEURS, RÉALISATEURS &amp; STUDIOS</p>",
             unsafe_allow_html=True,
         )
         _stats_people_section(ctx)
@@ -13285,7 +13363,7 @@ elif page == "🧹 Nettoyage des listes":
     render_static_lists_page()
 elif page == "🎯 Que regarder ?":
     render_watchlist_page()
-elif page == "🍿 POP — une pépite ?":
+elif page == "🎲 La Pépite":
     render_pop_page()
 elif page == "📅 Calendrier des sorties":
     render_calendar_page()

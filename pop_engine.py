@@ -85,6 +85,27 @@ POP_MOODS: dict[str, dict[str, Any]] = {
         "genres": [],
         "avoid": [],
     },
+    # V156 — 4 humeurs supplémentaires (demande utilisateur).
+    "🕵️ Enquête & mystère": {
+        "hint": "envie de démêler une énigme, un whodunit, des rebonds intellectuals",
+        "genres": ["Mystère", "Thriller", "Crime"],
+        "avoid": ["Romance", "Famille"],
+    },
+    "🍿 Pop-corn fun": {
+        "hint": "envie de se divertir sans réfléchir, spectacle et fun assumés",
+        "genres": ["Action", "Aventure", "Comédie"],
+        "avoid": ["Documentaire", "Drame"],
+    },
+    "💔 Déchirant": {
+        "hint": "envie d'être ému aux larmes, une histoire qui retourne le cœur",
+        "genres": ["Drame", "Romance", "Histoire"],
+        "avoid": ["Horreur", "Action"],
+    },
+    "🤪 Décalé & culte": {
+        "hint": "envie d'un truc bizarre, culte, improbable, dont on reparle",
+        "genres": [],
+        "avoid": [],
+    },
 }
 
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta"
