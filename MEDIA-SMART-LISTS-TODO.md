@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 8 octobre 2026 · Dernière version déployée : V154.
+> Dernière mise à jour : 8 octobre 2026 · Dernière version déployée : V155.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -815,11 +815,41 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] Banc : 19/19 (400→safe, Groq, nav mesurée, 4 onglets, isolation des
       matières) + 23/23 tests + smoke test app réelle.
 
+### Fait en V155 (retours du 08/10 au soir — stats affinées + IA peaufinée)
+- [x] IA — ANECDOTES : le prompt exige désormais de VARIER les sujets (pas
+      systématiquement l'anecdote du rôle le plus iconique — retour : « ça
+      parle de Breaking Bad, pas de Cranston »).
+- [x] IA — SPINNER stylé (Manrope + couleurs du thème, fin du texte gris
+      standard qui dénotait) et bouton « 🎲 Une autre » SOUDÉ au bloc
+      (gap mesuré ≈ 0 px, coins raccords).
+- [x] STATS — NAVIGATION : les 4 onglets vivent dans UNE BARRE « liquid
+      glass » (blur + lueur interne) ; l'onglet ACTIF est en VERT avec un
+      LÉGER ZOOM (scale 1.05, texte blanc) — le jaune était trop criard
+      (retour utilisateur) ; marqueur aligné DÈS le clic (st.rerun
+      immédiat — fin de la latence « ça ne devient pas actif »).
+- [x] STATS — FILTRES : la RECHERCHE de contenu rejoint le panneau de
+      filtres en haut de page (« tout dans le même bloc ») et filtre
+      l'historique ET les notes. La recherche acteur reste dans Personnes
+      (elle cherche sur TMDB, ce n'est pas un filtre du dataset).
+- [x] STATS — FINI LA REDONDANCE : la vue d'ensemble all-time séparée est
+      supprimée ; ses KPI (Watchlist, Listes, Contenus en listes, totaux)
+      sont FUSIONNÉS dans l'onglet Vue d'ensemble avec les KPI filtrés.
+      Plus de sous-titre « Statistiques détaillées ».
+- [x] STATS — FUSION HISTORIQUE + NOTES (demande clé) : l'onglet « Temps »
+      devient « 📜 Historique & notes » avec un VRAI toggle : off =
+      historique des vues (ouvert), on = ⭐ contenus notés. La recherche
+      du panneau filtre les deux. EXPORT EXCEL 2 ONGLETS (Vues + Notes)
+      ajouté à côté des CSV/JSON.
+- [x] Banc : 19/19 (barre mesurée blur 10/radius 16, actif vert + zoom,
+      sans latence, toggle notes/historique, Excel proposé, KPI fusionnés,
+      IA soudée, non-régressions) + 23/23 tests + smoke test.
+
 ### PROCHAINES ÉTAPES (validées par l'utilisateur 08/10)
 - [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
       livrée) — si « Local » s'affiche encore dans POP, ouvrir le
       « 🔧 Diagnostic de la clé Gemini » et me donner le message.
 - [ ] README.md : refonte par l'utilisateur À LA FIN (il gère).
+- [ ] (facultatif, si simple) Filtre par acteur dans les stats : nombre d'heures/épisodes vus avec lui
 - [ ] Ajouter un contenu à une liste / à la Watchlist DEPUIS LA FICHE CINÉMA
       (demande utilisateur 07/10 — très faisable : les méthodes d'écriture
       existent déjà : `add_watchlist_items`, `add_list_items` ; s'inspirer du

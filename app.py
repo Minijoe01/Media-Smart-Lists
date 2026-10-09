@@ -879,10 +879,91 @@ st.markdown(
        la 1re bulle part du bord de la cellule VERS LA DROITE, les 2e-3e
        ont un retrait contrôlé qui reste dans la boîte visible. */
     /* V153 — PANNEAU « glass » de la page POP (famille Tableau de bord). */
-    /* V154 — STATISTIQUES REFONTE : panneau filtres (même verre que POP)
-       + NAVIGATION par boutons « glass » (inspiration utilisateur : boutons
-       modernes, simples, futuristes — l'onglet ACTIF reçoit le liseré jaune
-       et la lueur du thème) + animations d'entrée. */
+    /* V155 — STATISTIQUES : BARRE « liquid glass » pour la navigation.
+       Les 4 boutons vivent dans UNE barre de verre (blur + lueur interne) ;
+       l'onglet ACTIF est en VERT (le jaune était trop criard — retour
+       utilisateur), légèrement ZOOMÉ (scale 1.05) avec texte blanc. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
+        + div[data-testid="stLayoutWrapper"],
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
+        + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {
+        background: rgba(8, 55, 50, .42);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(0, 163, 146, .32);
+        border-radius: 16px;
+        padding: .4rem .45rem;
+        box-shadow: inset 0 0 22px rgba(0, 163, 146, .06), 0 10px 26px rgba(0, 0, 0, .22);
+        gap: .45rem !important;
+        animation: mslStabIn .35s ease both;
+    }
+    @keyframes mslStabIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: none; }
+    }
+    @keyframes mslPaneIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: none; }
+    }
+    /* Boutons INACTIFS : verre sobre, texte doux */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] {
+        background: rgba(4, 34, 30, .35) !important;
+        border: 1px solid rgba(0, 163, 146, .22) !important;
+        border-radius: 12px !important;
+        color: #9DC5BF !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .8rem !important;
+        font-weight: 700 !important;
+        letter-spacing: .04em !important;
+        min-height: 40px !important;
+        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, color .18s ease, background .18s ease !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover {
+        transform: translateY(-2px);
+        color: #fff !important;
+        border-color: rgba(0, 163, 146, .55) !important;
+        background: rgba(0, 163, 146, .14) !important;
+        box-shadow: 0 10px 22px rgba(0, 163, 146, .16) !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] p {
+        color: #9DC5BF !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .8rem !important;
+        font-weight: 700 !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+    }
+    /* Bouton ACTIF : vert lumineux + zoom léger + texte blanc */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] {
+        background: linear-gradient(150deg, rgba(0, 163, 146, .42), rgba(0, 82, 75, .6)) !important;
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        border: 1px solid rgba(0, 163, 146, .65) !important;
+        border-radius: 12px !important;
+        color: #fff !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .8rem !important;
+        font-weight: 800 !important;
+        letter-spacing: .04em !important;
+        min-height: 40px !important;
+        transform: scale(1.05);
+        box-shadow: 0 12px 26px rgba(0, 163, 146, .30), inset 0 0 16px rgba(255, 255, 255, .05) !important;
+        transition: transform .18s ease, box-shadow .18s ease !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button p,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] p {
+        color: #fff !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .8rem !important;
+        font-weight: 800 !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+    }
+    /* Panneau de filtres (même verre que POP). */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-filters-start)
         + div[data-testid="stLayoutWrapper"] [data-testid="stVerticalBlock"] {
         background: rgba(8, 55, 50, .45);
@@ -894,78 +975,12 @@ st.markdown(
         padding: .7rem 1rem .8rem !important;
         box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 24px rgba(0, 163, 146, .07);
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button,
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] {
-        background: rgba(8, 55, 50, .55) !important;
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
-        border: 1px solid rgba(0, 163, 146, .35) !important;
-        border-radius: 12px !important;
-        color: #9DC5BF !important;
-        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .8rem !important;
-        font-weight: 700 !important;
-        letter-spacing: .04em !important;
-        min-height: 42px !important;
-        transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease, color .16s ease !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover,
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover {
-        transform: translateY(-2px);
-        color: #fff !important;
-        border-color: rgba(0, 163, 146, .6) !important;
-        box-shadow: 0 10px 22px rgba(0, 163, 146, .18) !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button p,
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] p {
-        color: #9DC5BF !important;
-        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .8rem !important;
-        font-weight: 700 !important;
-        line-height: 1 !important;
-        margin: 0 !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button,
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] {
-        background: linear-gradient(150deg, rgba(0, 163, 146, .38), rgba(0, 82, 75, .55)) !important;
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        border: 1px solid rgba(255, 225, 0, .55) !important;
-        border-radius: 12px !important;
-        color: #fff !important;
-        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .8rem !important;
-        font-weight: 800 !important;
-        letter-spacing: .04em !important;
-        min-height: 42px !important;
-        box-shadow: 0 12px 26px rgba(0, 163, 146, .28), inset 0 0 18px rgba(255, 225, 0, .06) !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button p,
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] p {
-        color: #fff !important;
-        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
-        font-size: .8rem !important;
-        font-weight: 800 !important;
-        line-height: 1 !important;
-        margin: 0 !important;
-    }
-    /* Animations : entrée de la nav + du panneau d'onglet (réactivité). */
-    @keyframes mslStabIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: none; }
-    }
-    @keyframes mslPaneIn {
-        from { opacity: 0; transform: translateY(6px); }
-        to { opacity: 1; transform: none; }
-    }
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
-        + div[data-testid="stHorizontalBlock"] {
-        animation: mslStabIn .35s ease both;
-    }
+    /* Transition du panneau d'onglet (réactivité). */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-pane-start)
         + div[data-testid="stElementContainer"] {
         animation: mslPaneIn .4s ease both;
     }
+    /* Panneau « glass » de la page POP. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .pop-panel-start)
         + div[data-testid="stLayoutWrapper"] [data-testid="stVerticalBlock"] {
         background: rgba(8, 55, 50, .45);
@@ -977,6 +992,39 @@ st.markdown(
         padding: .8rem 1rem .9rem !important;
         box-shadow: 0 10px 28px rgba(0, 0, 0, .28), inset 0 0 24px rgba(0, 163, 146, .07);
     }
+    /* V155 — SPINNER Streamlit : même typographie Manrope + couleurs du
+       thème (le texte par défaut dénotait — retour utilisateur). */
+    [data-testid="stSpinner"] p, .stSpinner p {
+        color: #9DC5BF !important;
+        font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
+        font-size: .92rem !important;
+        font-weight: 600 !important;
+    }
+    /* V155 — BOUTON « 🎲 Une autre anecdote » SOUDÉ au bloc IA : le bloc
+       perd ses coins bas, le bouton ses coins hauts, marges à 0 (même
+       technique mesurée que les tuiles « Que regarder ? »). */
+    .ia-block { margin-bottom: 0 !important; border-radius: 13px 13px 0 0 !important; }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-block)
+        + div[data-testid="stElementContainer"] {
+        margin-top: -0.5rem !important;  /* compense le gap vertical (tuiles) */
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor) {
+        margin-top: 0 !important;
+        min-height: 0 !important;
+        margin-bottom: -0.55rem !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] {
+        margin-top: 0 !important;
+        min-height: 0 !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] button[kind="secondary"],
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
+        border-radius: 0 0 13px 13px !important;
+    }
+
     .ep-cell:first-child[data-tooltip]::after {
         left: 0;            /* part du bord de la cellule vers la droite */
         transform: translateY(4px);
@@ -10890,15 +10938,16 @@ def render_calendar_page() -> None:
         calendar_error=cache.get("calendar_error"),
     )
 
-def _stats_activity_section(filtered: "pd.DataFrame", period_label: str) -> None:
-    """👁️ Vue d'ensemble (V154) : compteurs filtrés + heatmap d'activité
-    + les 4 graphiques — ex-section « activité » de la page détaillée."""
+def _stats_activity_section(filtered: "pd.DataFrame", period_label: str,
+                            ctx: dict | None = None) -> None:
+    """👁️ Vue d'ensemble (V155) : KPI filtrés + KPI tout-historique
+    FUSIONNÉS (fini la redondance « statistiques / détaillées ») + heatmap
+    + les 4 graphiques."""
     if filtered.empty:
         st.warning("Aucun résultat pour ces filtres.")
         return
 
     st.divider()
-    st.markdown('<div class="page-title">📊 Statistiques détaillées</div>', unsafe_allow_html=True)
     st.caption(
         f"Graphiques et analyses sur la sélection filtrée ({period_label}). "
         "Les valeurs sont exprimées en **heures** sauf indication contraire. "
@@ -10942,6 +10991,24 @@ def _stats_activity_section(filtered: "pd.DataFrame", period_label: str) -> None
         ]),
         unsafe_allow_html=True,
     )
+
+    # V155 — KPI TOUT-HISTORIQUE fusionnés dans le MÊME onglet (ex-« vue
+    # d'ensemble » séparée — retour utilisateur : c'était redondant).
+    if ctx:
+        _sections_all = (ctx.get("dataset") or {}).get("sections") or {}
+        _watched_all = _sections_all.get("watched") or {}
+        _watchlist_all = _sections_all.get("watchlist") or {}
+        _lists_all = _sections_all.get("user_lists") or []
+        st.markdown(
+            _metric_cards([
+                {"emoji": "⭐", "k": "Watchlist", "v": len(_watchlist_all.get("movies") or []) + len(_watchlist_all.get("shows") or []), "d": "tout l'historique"},
+                {"emoji": "🗂️", "k": "Listes personnelles", "v": len(_lists_all), "d": "tout l'historique"},
+                {"emoji": "📦", "k": "Contenus en listes", "v": sum(len(l.get("movies") or []) + len(l.get("shows") or []) for l in _lists_all if isinstance(l, dict)), "d": "tout l'historique"},
+                {"emoji": "🎬", "k": "Films vus (total)", "v": len(_watched_all.get("movies") or []), "d": "tout l'historique"},
+                {"emoji": "🎞️", "k": "Épisodes vus (total)", "v": len(_watched_all.get("episodes") or []), "d": "tout l'historique"},
+            ]),
+            unsafe_allow_html=True,
+        )
 
     # ── Heatmap d'activité (suit les filtres) ────────────────────────────────
     st.divider()
@@ -11157,7 +11224,8 @@ def _stats_period_bounds(period: str, now: datetime, custom_start=None, custom_e
 
 
 def _stats_rated_section(ctx: dict) -> None:
-    """⭐ Mes contenus notés (V154) — onglet Goûts."""
+    """⭐ Mes contenus notés (V155) — onglet « Historique & notes », via le
+    toggle. La recherche vient du panneau de filtres (ctx['search'])."""
     dataset = ctx['dataset']
     rows = ctx['rows']
     period = ctx['period']
@@ -11177,6 +11245,9 @@ def _stats_rated_section(ctx: dict) -> None:
         rated_rows = [r for r in rated_rows if r.get("type") == wanted_type]
     if genre_choice != "Tous":
         rated_rows = [r for r in rated_rows if genre_choice in (r.get("genres") or [])]
+    _q = ctx.get("search") or ""
+    if _q:
+        rated_rows = [r for r in rated_rows if _q in f"{r.get('title', '')} {r.get('serie', '') or ''}".casefold()]
     # Période : sur la DATE DE NOTATION (bornes traduites — cf. le bug des
     # libellés — et datetimes, comme l'exige le moteur d'historique).
     from history_engine import filter_history as _fh_rated
@@ -11317,6 +11388,49 @@ def _stats_people_section(ctx: dict) -> None:
 
 
 
+def _history_notes_xlsx(history_rows: list, rated_rows: list) -> bytes:
+    """Export Excel à 2 ONGLETS (V155) : « Historique des vues » + « Mes
+    notes » — la fusion demandée, un onglet par tableau."""
+    from openpyxl import Workbook
+
+    def _sheet(ws, rows_list: list) -> None:
+        if not rows_list:
+            return
+        keys: list = []
+        for row in rows_list:
+            if isinstance(row, dict):
+                for key in row:
+                    if key not in keys:
+                        keys.append(key)
+        keys = [k for k in keys if k not in ("ids",)]
+        ws.append(keys)
+        for row in rows_list:
+            ws.append([_xlsx_cell(row.get(k)) for k in keys])
+
+    wb = Workbook()
+    ws1 = wb.active
+    ws1.title = "Historique des vues"
+    _sheet(ws1, history_rows)
+    ws2 = wb.create_sheet("Mes notes")
+    _sheet(ws2, rated_rows)
+    import io as _io
+    buf = _io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _xlsx_cell(value) -> object:
+    """Cellule Excel propre : dict/liste → JSON texte, datetime conservé."""
+    import datetime as _dtmod
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    if isinstance(value, _dtmod.datetime):
+        return value.strftime("%d/%m/%Y %H:%M")
+    if value is None:
+        return ""
+    return value
+
+
 def _stats_history_section(ctx: dict) -> None:
     """🗓️ Temps (V154) : historique des vues filtré + exports."""
     rows = ctx['rows']
@@ -11329,22 +11443,21 @@ def _stats_history_section(ctx: dict) -> None:
     custom_end = ctx['custom_end']
 
     # ── Historique des vues (filtré, UNE seule fois) ─────────────────────────
-    with st.expander("📜 Historique des vues", expanded=False):
+    # V155 : la RECHERCHE vit dans le panneau de filtres en haut de page
+    # (ctx['search']) — plus de champ local. Expander OUVERT : c'est la
+    # matière principale de l'onglet « Historique & notes ».
+    with st.expander(f"📜 Historique des vues ({len([r for r in rows])})", expanded=True):
         st.caption(
-            "Films et épisodes de la sélection filtrée ci-dessus, avec recherche et export CSV/JSON."
+            "Films et épisodes de la sélection filtrée ci-dessus. La recherche vient du panneau de filtres en haut de page."
         )
-        search_col, limit_col = st.columns([0.75, 0.25])
-        search = search_col.text_input(
-            "Recherche",
-            key="history_search",
-            placeholder="Film, série ou épisode…",
-        )
+        limit_col = st.columns(1)[0]
         display_choice = limit_col.selectbox(
             "Afficher",
             [100, 500, 1000, "Tout"],
             key="history_limit",
         )
-        query = str(search or "").strip().casefold()
+        query = ctx.get("search") or ""
+        search = query  # le moteur d'historique attend `search` (minuscules)
         visible = [
             row for row in rows
             if row.get("type") in (("Film", "Épisode") if media_filter == "Tous" else ("Film",) if media_filter == "Films" else ("Épisode",))
@@ -11456,6 +11569,20 @@ def _stats_history_section(ctx: dict) -> None:
                 type="primary",
                 key="download_history_json",
             )
+        # V155 — EXPORT EXCEL 2 ONGLETS (vues + notes) : la fusion demandée,
+        # un onglet par tableau.
+        try:
+            _xlsx = _history_notes_xlsx(visible, _rated_contents_rows(ctx.get("dataset") or {}))
+            st.download_button(
+                "📥 Export Excel (Vues + Notes, 2 onglets)",
+                data=_xlsx,
+                file_name="media-smart-lists-historique-et-notes.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary",
+                key="download_history_notes_xlsx",
+            )
+        except Exception as exc:
+            st.caption(f"Export Excel indisponible : {exc}")
 
 def render_basic_stats_page() -> None:
     """📊 Statistiques (V154 — REFONTE).
@@ -11529,6 +11656,14 @@ def render_basic_stats_page() -> None:
             value=(0, 10),
             key="stats_rating_range",
         )
+        # V155 — RECHERCHE partagée (retour utilisateur : « tous les filtres
+        # en haut, tout dans le même bloc ») : filtre l'historique des vues
+        # ET les contenus notés de l'onglet « Historique & notes ».
+        stats_search = st.text_input(
+            "🔍 Rechercher un contenu",
+            key="stats_search",
+            placeholder="Film, série ou épisode… (filtre l'historique et les notes)",
+        )
 
     filtered = df.copy()
     if rating_lo > 0 or rating_hi < 10:
@@ -11550,6 +11685,7 @@ def render_basic_stats_page() -> None:
         "rating_lo": rating_lo, "rating_hi": rating_hi,
         "custom_start": custom_start, "custom_end": custom_end,
         "period_label": period_label, "rating_txt": rating_txt,
+        "search": str(stats_search or "").strip().casefold(),
     }
 
     # ── NAVIGATION « glass » (4 onglets — style boutons modernes) ──────────
@@ -11557,7 +11693,7 @@ def render_basic_stats_page() -> None:
         ("👁️", "Vue d'ensemble"),
         ("🎭", "Goûts"),
         ("👥", "Personnes"),
-        ("🗓️", "Temps"),
+        ("📜", "Historique & notes"),
     ]
     if "stats_tab" not in st.session_state:
         st.session_state["stats_tab"] = tabs[0][1]
@@ -11566,6 +11702,7 @@ def render_basic_stats_page() -> None:
 
     st.markdown('<div class="stats-nav-start"></div>', unsafe_allow_html=True)
     nav_cols = st.columns(len(tabs))
+    nav_clicked = False
     for col, (emoji, label) in zip(nav_cols, tabs):
         with col:
             # is_active lu au moment du RENDU de chaque bouton (avant clic)
@@ -11573,8 +11710,12 @@ def render_basic_stats_page() -> None:
             st.markdown(f'<div class="stab-{"on" if is_active else "off"}"></div>', unsafe_allow_html=True)
             if st.button(f"{emoji}  {label}", key=f"stats_tab_{label}", use_container_width=True):
                 st.session_state["stats_tab"] = label
-    # V154 — l'onglet actif est (re)lu APRÈS les boutons : au run du CLIC,
-    # le contenu change DÉJÀ (sinon il fallait un 2e run pour voir l'onglet).
+                nav_clicked = True
+    if nav_clicked:
+        # V155 — un rerun IMMÉDIAT : le marqueur actif (rendu AVANT le clic
+        # dans ce run) et le contenu s'alignent d'un coup, sans latence
+        # visuelle (retour utilisateur : « ça ne devient pas actif »).
+        st.rerun()
     active_tab = st.session_state["stats_tab"]
 
     st.markdown(
@@ -11586,21 +11727,19 @@ def render_basic_stats_page() -> None:
 
     # ── CONTENU DE L'ONGLET ACTIF (matière calculée uniquement ici) ────────
     if active_tab == "Vue d'ensemble":
-        render_dataset_overview()
-        st.caption(
-            "👆 La vue d'ensemble ci-dessus est **non filtrée** (toutes périodes confondues) ; "
-            "la heatmap et les graphiques ci-dessous suivent les filtres."
-        )
-        _stats_activity_section(filtered, period_label)
+        # V155 — la vue d'ensemble ALL-TIME séparée est FUSIONNÉE ici (fini
+        # la redondance « statistiques / statistiques détaillées ») : les
+        # KPI tout-historique (watchlist, listes…) vivent avec les KPI
+        # filtrés, dans le même bandeau (retour utilisateur).
+        _stats_activity_section(filtered, period_label, ctx)
     elif active_tab == "Goûts":
         st.markdown('<div class="stats-pane-start"></div>', unsafe_allow_html=True)
         st.markdown(
             '<p class="actor-section-title" style="letter-spacing:.12em;font-size:.78rem;">'
-            "🎭 TES GOÛTS — ADN, ÉVOLUTION ET NOTES</p>",
+            "🎭 TES GOÛTS — ADN ET ÉVOLUTION</p>",
             unsafe_allow_html=True,
         )
         _stats_tastes_section(filtered, period_label)
-        _stats_rated_section(ctx)
     elif active_tab == "Personnes":
         st.markdown('<div class="stats-pane-start"></div>', unsafe_allow_html=True)
         st.markdown(
@@ -11609,14 +11748,25 @@ def render_basic_stats_page() -> None:
             unsafe_allow_html=True,
         )
         _stats_people_section(ctx)
-    else:  # Temps
+    else:  # Historique & notes
         st.markdown('<div class="stats-pane-start"></div>', unsafe_allow_html=True)
         st.markdown(
             '<p class="actor-section-title" style="letter-spacing:.12em;font-size:.78rem;">'
-            "🗓️ TON TEMPS — HISTORIQUE ET RYTHME</p>",
+            "📜 TON HISTORIQUE DE VISIONNAGE ET TES NOTES</p>",
             unsafe_allow_html=True,
         )
-        _stats_history_section(ctx)
+        # V155 — FUSION demandée : UN seul tableau à la fois, avec un VRAI
+        # toggle (l'utilisateur aime les toggles) : off = historique des
+        # vues, on = contenus notés. Export Excel = 2 onglets.
+        _show_notes = st.toggle(
+            "⭐ Afficher mes contenus notés",
+            key="stats_show_notes",
+            help="Bascule entre l'historique de tes visionnages et tes notes.",
+        )
+        if _show_notes:
+            _stats_rated_section(ctx)
+        else:
+            _stats_history_section(ctx)
 
 
 
