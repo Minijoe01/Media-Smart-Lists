@@ -1026,7 +1026,10 @@ st.markdown(
         position: relative;
         animation: mslStabIn .35s ease both;
     }
-    /* Barre 1 : verte lumineuse, pleine largeur, juste sous les boutons. */
+    /* Barre 1 : verte lumineuse, pleine largeur, juste sous les boutons.
+       V158 — UNE SEULE barre (retour utilisateur : « enlève l'une des barres,
+       je voudrais garder la barre verte lumineuse ») — la barre jaune fine
+       est retirée. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
         + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"]::after {
         content: "";
@@ -1036,17 +1039,6 @@ st.markdown(
         border-radius: 3px;
         background: linear-gradient(90deg, transparent 0%, rgba(0, 163, 146, .85) 8%, rgba(0, 163, 146, .85) 92%, transparent 100%);
         box-shadow: 0 1px 8px rgba(0, 163, 146, .45);
-        pointer-events: none;
-    }
-    /* Barre 2 : fine, jaune, en retrait — la seconde ligne de l'exemple. */
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
-        + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"]::before {
-        content: "";
-        position: absolute;
-        left: 1.6rem; right: 1.6rem; bottom: -.38rem;
-        height: 1.5px;
-        border-radius: 1.5px;
-        background: linear-gradient(90deg, transparent, rgba(255, 225, 0, .38) 18%, rgba(255, 225, 0, .38) 82%, transparent);
         pointer-events: none;
     }
     /* Spinner global (thème) — les fiches injectent leur couleur d'accent. */
@@ -1824,6 +1816,12 @@ st.markdown(
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) {
         margin-top: -0.75rem !important;
+    }
+    /* V158 — PÉPITE : titres de section (« 📂 DANS TES LISTES » / « 🌐 HORS
+       DE TES LISTES ») collés à leur tuile (retour utilisateur avec capture :
+       « trop d'espace » entre le titre et la tuile correspondante). */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .pepite-section-title) {
+        margin-bottom: -0.62rem !important;
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
@@ -3812,6 +3810,13 @@ def _forget_saved_session() -> None:
     except Exception:
         pass
     st.session_state.pop("_dataset_cache_key", None)
+    # V158 — retire AUSSI le marqueur URL de session active (sinon la
+    # self-heal retiendrait la restauration après une déconnexion).
+    try:
+        if "msl_on" in st.query_params:
+            st.query_params.pop("msl_on")
+    except Exception:
+        pass
     try:
         snap = _session_snapshots()
         snap["page"].clear()
@@ -3894,6 +3899,50 @@ def _auto_restore_session() -> None:
     ):
         st.session_state["_msl_auto_load_tried"] = True
         load_mdblist_dataset()  # sert les caches serveur, sinon API MDBList
+
+
+def _session_self_heal() -> None:
+    """V158 — AUTO-RÉPARATION de session (retour utilisateur : « après
+    ~5 min sans rien faire, l'app perd ma connexion MDBList et il faut
+    repasser par le Tableau de bord, c'est vraiment pénible »).
+
+    CAUSE RACINE (démontrée au banc Chromium) : après une période
+    d'inactivité, la connexion au serveur se coupe et Streamlit DÉTRUIT
+    la session (TTL par défaut : 120 s). La session de remplacement
+    démarre avec un état VIDE : la restauration doit alors attendre le
+    « handshake » du contrôleur de cookies (composant navigateur qui ne
+    livre ses valeurs qu'avec un léger délai). Si le rerun déclenché par
+    ce handshake n'arrive pas, la page reste bloquée sur
+    « DONNÉES NON CHARGÉES » jusqu'à ce que l'utilisateur change de menu.
+
+    SOLUTION : le marqueur d'URL `msl_on=1` (posé au chargement réussi
+    des données, retiré à la déconnexion — l'URL SURVIT à la perte de
+    session, contrairement au session_state) prouve qu'une session
+    existait. On force alors quelques reruns rapprochés (bornés, jamais
+    de boucle infinie) : le handshake a le temps de se faire et TOUTE la
+    chaîne de restauration est relancée à chaque rerun — mémoire serveur
+    → cookies → rechargement automatique. Résultat : tu restes sur ta
+    page, tes données reviennent toutes seules.
+    """
+    if st.session_state.get("_normalized_dataset"):
+        st.session_state.pop("_msl_selfheal_nudges", None)
+        return
+    try:
+        was_on = str(st.query_params.get("msl_on") or "") == "1"
+    except Exception:
+        was_on = False
+    if not was_on:
+        return  # jamais chargé (ou déconnecté volontairement) : rien à tenter
+    if st.session_state.get("pending_source") not in (None, "mdblist"):
+        return  # import ZIP Trakt en cours : la restauration MDBList n'a pas lieu d'être
+    nudges = int(st.session_state.get("_msl_selfheal_nudges") or 0)
+    if nudges >= 8:
+        return  # épuisée : on laisse la page afficher son message normal
+        # (la chaîne de restauration reste réexécutée à CHAQUE interaction
+        #  ultérieure — _auto_restore_session tourne à chaque run)
+    st.session_state["_msl_selfheal_nudges"] = nudges + 1
+    time.sleep(0.45)
+    st.rerun()
 
 
 def _enrich_in_background(cache_key: str, data: dict) -> None:
@@ -3981,6 +4030,13 @@ def load_mdblist_dataset() -> None:
         mdb_oauth.expire_local_session(cookies)
         _clear_mdblist_caches()
         st.session_state.pop("_normalized_dataset", None)
+        # V158 — plus de marqueur « session active » : la self-heal ne doit
+        # pas tourner pour un compte réellement déconnecté.
+        try:
+            if "msl_on" in st.query_params:
+                st.query_params.pop("msl_on")
+        except Exception:
+            pass
         st.markdown(
             '<div class="accent-callout"><strong>SESSION EXPIRÉE</strong> · '
             'La connexion MDBList n’est plus valide. Reconnecte-toi depuis le Tableau de bord.</div>',
@@ -3991,6 +4047,16 @@ def load_mdblist_dataset() -> None:
     # V136 — mémorise la clé du dataset (session + cookie) pour la
     # restauration automatique au retour d'arrière-plan (GSM).
     _remember_dataset_key(key)
+    # V158 — MARQUEUR D'URL « session active » : contrairement au
+    # session_state, il SURVIT à la destruction de la session (TTL 120 s
+    # du serveur après inactivité). La self-heal (_session_self_heal)
+    # l'utilise pour savoir qu'elle doit retenter la restauration.
+    # ⚠️ La pose réelle se fait en FIN DE SCRIPT (voir tout en bas) : une
+    # écriture directe de st.query_params ICI déclencherait un rerun
+    # immédiat qui démonterait l'iframe du contrôleur de cookies AVANT
+    # qu'elle n'ait écrit les cookies posés à l'instant (race découverte
+    # au banc — les cookies disparaissaient silencieusement).
+    st.session_state["_msl_flag_pending"] = True
     # Marqueur cookie : permet de recharger depuis le cache après un F5.
     try:
         cookies.set("msl_mdblist_data_loaded", "1", expires=datetime.now() + timedelta(days=30))
@@ -4664,6 +4730,12 @@ def _render_cinema_detail_body(row: dict) -> None:
         fr_payload = _fetch_tmdb_details_fr(
             "tv" if row.get("type") == "Série" else "movie", tmdb_id, api_key
         )
+    # V158 — BACKDROP DE SECOURS : les contenus HORS de tes listes (tirages
+    # Pépite) n'ont pas de backdrop en mémoire → la fiche s'ouvrait SANS
+    # bannière ni couleur d'accentuation (retour utilisateur). La fiche
+    # TMDB (déjà chargée juste au-dessus, cachée) fournit le backdrop.
+    if not backdrop:
+        backdrop = str(fr_payload.get("backdrop_path") or "").strip()
     logo = _pick_logo_from_payload(fr_payload)
     synopsis = str(fr_payload.get("overview") or "").strip()
     # V134 — infos bonus TMDB, GRATUITES (déjà dans le même appel FR) :
@@ -5673,7 +5745,10 @@ def _open_cinema_detail(row: dict) -> None:
     _cinema_detail_dialog()
 
 
-def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
+def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix: str = "cin_") -> None:
+    # V158 — key_prefix : La Pépite réutilise CETTE tuile à l'identique ;
+    # le préfixe évite les collisions de clés Streamlit quand la même œuvre
+    # est proposée à plusieurs endroits (humeur + libre + Que regarder).
     item = row.get("item") or {}
     raw_title = _media_title(item)
     title = escape(raw_title)
@@ -5794,7 +5869,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False) -> None:
     # exact des tuiles (CSS :has() ci-dessus — même fond, même liseré,
     # même surbrillance au survol).
     st.markdown(card_html, unsafe_allow_html=True)
-    detail_key = f"cin_{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
+    detail_key = f"{key_prefix}{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
     if st.button(
         "🎬 Voir la fiche",
         key=detail_key,
@@ -8702,19 +8777,20 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     .ia-pc .cons b {{ color: #FFE27A; }}
     .ia-pc ul {{ margin: 0; padding-left: 1.05rem; }}
     .ia-pc li {{ margin: .09rem 0; color: var(--ia-text); }}
-    /* V156 — Bouton « 🎲 Une autre » : style EXACT du bouton « 🎬 Voir la
-       fiche » des tuiles (continuité demandée) — le liseré 4px PROLONGE
-       celui du bloc IA, coins bas, tout soudé. */
+    /* V158 — Bouton « 🎲 Une autre » : AUX COULEURS DU BLOC « L'INFO DES
+       COULISSES » (retour utilisateur : il prenait les couleurs du thème)
+       — même fond verre, même liseré accent, texte en accent clair, et un
+       EFFET DE SURBRILLANCE au survol pour montrer qu'il est cliquable. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {{
-        background: rgba(8, 55, 50, .62) !important;
-        border: 1px solid rgba(0, 163, 146, .45) !important;
-        border-top: 1px solid rgba(0, 163, 146, .28) !important;
+        background: rgba(3, 22, 19, .52) !important;
+        border: 1px solid var(--ia-accent-soft) !important;
+        border-top: 1px solid var(--ia-accent-soft) !important;
         border-left: 4px solid var(--ia-accent) !important;
         border-radius: 0 0 13px 13px !important;
-        color: #9DC5BF !important;
+        color: var(--ia-text) !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .7rem !important;
         font-weight: 800 !important;
@@ -8722,17 +8798,36 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
         letter-spacing: .1em !important;
         min-height: 24px !important;
         padding: .08rem .55rem !important;
+        transition: background .18s ease, border-color .18s ease, color .18s ease,
+                     box-shadow .18s ease !important;
     }}
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"] p,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p {{
-        color: #9DC5BF !important;
+        color: var(--ia-text) !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .70rem !important;
         font-weight: 800 !important;
         line-height: 1 !important;
         margin: 0 !important;
+    }}
+    /* Surbrillance au survol : le bouton « s'allume » aux couleurs du bloc. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover {{
+        background: var(--ia-accent-soft) !important;
+        border-color: var(--ia-accent) !important;
+        border-left-color: var(--ia-accent) !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 0 16px var(--ia-accent-soft), inset 0 0 12px rgba(255, 255, 255, .06) !important;
+    }}
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] button[kind="secondary"]:hover p,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover p {{
+        color: #FFFFFF !important;
     }}
     </style>
     """
@@ -8821,63 +8916,101 @@ def _groq_api_key() -> str:
         return ""
 
 
-def _render_pepite_card(pick: dict, badge: str = "📂") -> None:
-    """Tuile d'une proposition de La Pépite — STRUCTURE EXACTE des tuiles
-    « Que regarder ? » (retour utilisateur : « copier-coller ces tuiles ») :
-    poster + mc-head (chip type + titre) + chips + bouton fiche soudé.
-    Pastilles d'état standard : 📂 source / 🌐 Hors de tes listes."""
-    poster = escape(_poster_url({"poster": pick.get("poster")}), quote=True)
-    image_html = _poster_html(poster, pick.get("kind") or "")
-    title = escape(pick.get("title") or "?")
-    year = f" ({pick['year']})" if pick.get("year") else ""
-    note = f"⭐ {pick['note']:.1f}" if pick.get("note") else ""
-    genres = " · ".join(pick.get("genres") or [])
-    runtime = _format_minutes(int(pick.get("runtime") or 0)) if pick.get("runtime") else ""
-    chips = " · ".join(x for x in (genres, runtime, note) if x)
+def _pepite_scored_row(pick: dict, profile: dict | None = None) -> dict:
+    """V158 — construit pour une pépite la MÊME ligne que « Que regarder ? » :
+    score personnel + friction + signaux via score_item (retour utilisateur :
+    « reprends vraiment la tuile, dans son look OU son contenu »).
+
+    • Proposition DANS tes listes : le média ORIGINAL du dataset est retrouvé
+      par id TMDB + type (données enrichies complètes : acteurs, studios…).
+    • Proposition HORS listes : fiche TMDB complète (1 appel, caché 30 j) →
+      genres, durée, note, backdrop… et score/friction calculés pareil.
+    • Repli minimal si TMDB indisponible : tuile quand même (score de base).
+    """
+    dataset = _dataset()
+    kind = str(pick.get("kind") or "Film")
+    endpoint = "tv" if kind == "Série" else "movie"
+    try:
+        pid = int(pick.get("id") or 0)
+    except (TypeError, ValueError):
+        pid = 0
     source = str(pick.get("source") or "").strip()
-    badge_html = (f'<span class="source-badge">📂 {escape(source)}</span>' if source
-                  else '<span class="mc-outside" data-tooltip="Découverte — pas dans tes listes">🌐 Hors de tes listes</span>')
-    st.markdown(
-        f'<div class="media-list-card poster-card">{image_html}'
-        f'<div class="media-list-content" style="width:100%;">'
-        f'<div class="mc-head">{_type_chip(pick.get("kind") or "")}'
-        f'<strong style="font-size:1.06rem;">{title}{year}</strong>'
-        f"{badge_html}</div>"
-        + (f"<small>{chips}</small>" if chips else "")
-        + "</div></div>",
-        unsafe_allow_html=True,
-    )
-    if st.button("🎬 Voir la fiche", key=f"pepite_{badge}_{pick['id']}", use_container_width=True, type="secondary"):
-        _pop_row = _history_fiche_row({
-            "ids": {"tmdb": pick["id"]}, "title": pick.get("title") or "",
-            "type": pick.get("kind") or "Film",
-        })
-        if not _pop_row:
-            _pop_row = {"item": {"ids": {"tmdb": pick["id"]}, "title": pick.get("title")},
-                        "type": pick.get("kind") or "Film", "key": f"pepite_{pick['id']}"}
-        _open_cinema_detail(_pop_row)
+    outside = not source
+    if profile is None:
+        profile = build_profile(dataset)
+    item = None
+    if not outside:
+        for media, media_kind in _all_media(dataset):
+            if media_kind == endpoint and _media_tmdb_id(media) == pid:
+                # Copie légère + type EXPLICITE : le pick connaît déjà le type
+                # (pool typé Film/Série) — on ne laisse pas media_type() le
+                # deviner (des items sans champ « mediatype » passaient pour
+                # des séries — vu au banc).
+                item = dict(media)
+                item.setdefault("mediatype", endpoint)
+                break
+    if item is None:
+        api_key = _tmdb_api_key()
+        if pid and api_key:
+            try:
+                payload = _fetch_tmdb_item(endpoint, pid, api_key)
+            except Exception:
+                payload = None
+            if payload:
+                item = _build_item_from_tmdb(pid, endpoint, payload)
+        if item is None:
+            item = {"ids": {"tmdb": pid} if pid else {}, "mediatype": endpoint,
+                    "title": str(pick.get("title") or "?")}
+            year_txt = str(pick.get("year") or "")
+            if year_txt.isdigit():
+                item["year"] = int(year_txt)
+            if pick.get("poster"):
+                item["poster"] = pick["poster"]
+            if pick.get("note"):
+                try:
+                    item["score_average"] = float(pick["note"]) * 10
+                except (TypeError, ValueError):
+                    pass
+    row = score_item(item, profile, source_name=source or "🌐 Hors de tes listes")
+    if outside:
+        row["_outside"] = True
+    return row
 
 
-def _render_pop_result(result: dict) -> None:
+def _render_pepite_card(pick: dict, badge: str = "📂", profile: dict | None = None) -> None:
+    """Tuile d'une proposition de La Pépite — V158 : la VRAIE tuile
+    « Que regarder ? », sans la réinventer : même fonction de rendu
+    (_render_recommendation_card) alimentée par une vraie ligne scorée
+    (score, friction, signaux, chips genres/studios/acteurs, liens
+    TMDB/MDBList/JustWatch, année en pastille, bouton fiche soudé).
+    Seule différence : le préfixe de clé du bouton (anti-collision)."""
+    row = _pepite_scored_row(pick, profile)
+    _render_recommendation_card(row, key_prefix=f"pepite_{badge}_")
+
+
+def _render_pop_result(result: dict, profile: dict | None = None) -> None:
     """Résultat d'un tirage par humeur (V157) : DEUX propositions — une dans
     tes listes ET une œuvre hors de tes listes (demande utilisateur) — en
-    tuiles identiques à « Que regarder ? », puis la justification."""
+    tuiles identiques à « Que regarder ? », puis la justification.
+    V158 : `profile` est passé par render_pop_page (1 seul calcul par rendu)."""
     in_pick = result.get("in")
     st.markdown(
-        '<p style="color:#9DC5BF;font-size:.82rem;margin:.55rem 0 .3rem;font-weight:700;'
+        '<p class="pepite-section-title" style="color:#9DC5BF;font-size:.82rem;'
+        'margin:.55rem 0 .3rem;font-weight:700;'
         'letter-spacing:.08em;">📂 DANS TES LISTES</p>',
         unsafe_allow_html=True,
     )
     if in_pick:
-        _render_pepite_card(in_pick, "humeur_in")
+        _render_pepite_card(in_pick, "humeur_in", profile)
     outside = result.get("outside")
     if isinstance(outside, dict) and outside.get("id"):
         st.markdown(
-            '<p style="color:#9DC5BF;font-size:.82rem;margin:.55rem 0 .3rem;font-weight:700;'
+            '<p class="pepite-section-title" style="color:#9DC5BF;font-size:.82rem;'
+            'margin:.55rem 0 .3rem;font-weight:700;'
             'letter-spacing:.08em;">🌐 HORS DE TES LISTES</p>',
             unsafe_allow_html=True,
         )
-        _render_pepite_card(outside, "humeur_out")
+        _render_pepite_card(outside, "humeur_out", profile)
     engine = str(result.get("engine") or "Local")
     st.markdown(
         f'<div class="accent-callout"><strong>💎 Pourquoi ces pépites ?</strong> '
@@ -8936,11 +9069,13 @@ def _tmdb_search_media(kind: str, query: str, year: int | None, key: str) -> dic
 # (V157 — _render_pop_free_card retirée : les tuiles libres
 # passent par _render_pepite_card, identiques à « Que regarder ? ».)
 
-def _render_pop_free_section(api_key: str, groq_key: str, dataset: dict, kind: str = "Peu importe") -> None:
+def _render_pop_free_section(api_key: str, groq_key: str, dataset: dict, kind: str = "Peu importe",
+                             profile: dict | None = None) -> None:
     """✍️ La Pépite LIBRE (V157) : l'envie en une phrase → une pépite de tes
     listes + une œuvre hors listes (TMDB). Le TYPE (Film/Série) du panneau
     est RESPECTÉ (retour : « j'ai demandé un film, il me sort Shogun ») et
-    les tuiles sont IDENTIQUES à « Que regarder ? »."""
+    les tuiles sont IDENTIQUES à « Que regarder ? » (V158 : la vraie tuile
+    scorée, profil passé par render_pop_page)."""
     with st.expander("✍️ Ou décris ton envie en une phrase", expanded=False):
         wish = st.text_area(
             "Ton envie",
@@ -8987,21 +9122,21 @@ def _render_pop_free_section(api_key: str, groq_key: str, dataset: dict, kind: s
             unsafe_allow_html=True,
         )
         st.markdown(
-            '<p style="color:#9DC5BF;font-size:.82rem;margin:.45rem 0 .3rem;font-weight:700;'
+            '<p class="pepite-section-title" style="color:#9DC5BF;font-size:.82rem;margin:.45rem 0 .3rem;font-weight:700;'
             'letter-spacing:.08em;">📂 DANS TES LISTES</p>',
             unsafe_allow_html=True,
         )
         if free.get("in"):
-            _render_pepite_card(free["in"], "libre_in")
+            _render_pepite_card(free["in"], "libre_in", profile)
         else:
             st.caption("Aucun contenu de tes listes ne collait à cette envie.")
         if isinstance(free.get("outside"), dict) and free["outside"].get("id"):
             st.markdown(
-                '<p style="color:#9DC5BF;font-size:.82rem;margin:.55rem 0 .3rem;font-weight:700;'
+                '<p class="pepite-section-title" style="color:#9DC5BF;font-size:.82rem;margin:.55rem 0 .3rem;font-weight:700;'
                 'letter-spacing:.08em;">🌐 HORS DE TES LISTES</p>',
                 unsafe_allow_html=True,
             )
-            _render_pepite_card(free["outside"], "libre_out")
+            _render_pepite_card(free["outside"], "libre_out", profile)
         else:
             st.caption("🌐 La proposition hors listes n'a pas été retrouvée sur TMDB — reformule ton envie.")
         if free.get("reason"):
@@ -9063,8 +9198,17 @@ def render_pop_page() -> None:
     # n'apparaissait qu'après avoir sélectionné une humeur).
     # kind est défini plus bas (pills du panneau) — sa valeur vit dans
     # session_state via la key « pop_kind » : lisible dès maintenant.
+    # V158 — PROFIL : les tuiles pépite sont de vraies tuiles « Que
+    # regarder ? » (score/friction/signaux) → 1 seul build_profile par
+    # rendu, partagé par toutes les tuiles de la page.
+    _pop_profile = (
+        build_profile(dataset)
+        if (st.session_state.get("pop_free") or st.session_state.get("pop_result"))
+        else None
+    )
     _render_pop_free_section(api_key, _groq_api_key(), dataset,
-                             st.session_state.get("pop_kind") or "Peu importe")
+                             st.session_state.get("pop_kind") or "Peu importe",
+                             _pop_profile)
     st.markdown('<div class="pop-panel-start"></div>', unsafe_allow_html=True)
     with st.container(border=True):
         mood = st.pills("🎯 Ton humeur du moment", list(pop_engine.POP_MOODS), key="pop_mood")
@@ -9136,7 +9280,7 @@ def render_pop_page() -> None:
 
     result = st.session_state.get("pop_result")
     if result:
-        _render_pop_result(result)
+        _render_pop_result(result, _pop_profile)
     error = st.session_state.get("pop_error")
     if error:
         st.markdown(f'<div class="accent-callout"><strong>⚠️ POP</strong> · {escape(error)}</div>',
@@ -11057,6 +11201,14 @@ def _stats_activity_section(filtered: "pd.DataFrame", period_label: str,
     jours_actifs = int((daily > 0).sum())
     eps_par_semaine = (nb_episodes * 7.0 / nb_jours) if nb_jours else 0.0
 
+    # V158 — TITRES DE SECTION pour chaque groupe de tuiles (retour
+    # utilisateur : « nomme les 2 premières lignes de tuiles, à l'image de
+    # LES STATISTIQUES DE TES LISTES »).
+    st.markdown(
+        '<p class="actor-section-title" style="letter-spacing:.1em;font-size:.76rem;'
+        'margin:.1rem 0 .15rem;">📈 LES STATISTIQUES DE TES VISIONNAGES</p>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         _metric_cards([
             {"emoji": "🎬", "k": "Films", "v": nb_films, "d": "dans la sélection"},
@@ -11078,39 +11230,31 @@ def _stats_activity_section(filtered: "pd.DataFrame", period_label: str,
         unsafe_allow_html=True,
     )
 
-    # V156 — LES STATISTIQUES DE TES LISTES (retour utilisateur) :
-    # les KPI « Films vus (total) / Épisodes vus (total) » sont RETIRÉS
-    # (redondants avec les KPI filtrés juste au-dessus) ; on garde
-    # Watchlist + un DÉTAIL par liste (nom + nombre de contenus).
+    # V158 — LES STATISTIQUES DE TES LISTES : UN SEUL groupe de tuiles
+    # (retour utilisateur : « regrouper les tuiles sur la ligne avec
+    # Watchlist / Listes personnelles / Contenus en listes ») — les 3 KPI
+    # + une tuile par liste personnelle coulent ENSEMBLE sous le titre.
     if ctx:
         _sections_all = (ctx.get("dataset") or {}).get("sections") or {}
         _watchlist_all = _sections_all.get("watchlist") or {}
         _lists_all = [l for l in (_sections_all.get("user_lists") or []) if isinstance(l, dict)]
         st.markdown(
-            _metric_cards([
-                {"emoji": "⭐", "k": "Watchlist", "v": len(_watchlist_all.get("movies") or []) + len(_watchlist_all.get("shows") or []), "d": "contenus à voir"},
-                {"emoji": "🗂️", "k": "Listes personnelles", "v": len(_lists_all), "d": "listes statiques"},
-                {"emoji": "📦", "k": "Contenus en listes", "v": sum(len(l.get("movies") or []) + len(l.get("shows") or []) for l in _lists_all), "d": "au total des listes"},
-            ]),
+            '<p class="actor-section-title" style="letter-spacing:.1em;font-size:.76rem;'
+            'margin-top:.6rem;">🗂️ LES STATISTIQUES DE TES LISTES</p>',
             unsafe_allow_html=True,
         )
-        if _lists_all:
-            # V157 — des TUILES par liste (retour utilisateur : « des tuiles
-            # avec le nom de mes listes et le nombre de contenu »), sous le
-            # sous-titre « Les statistiques de tes listes ».
-            st.markdown(
-                '<p class="actor-section-title" style="letter-spacing:.1em;font-size:.76rem;'
-                'margin-top:.6rem;">🗂️ LES STATISTIQUES DE TES LISTES</p>',
-                unsafe_allow_html=True,
-            )
-            _list_cards = [
-                {"emoji": "🗂️", "k": str(l.get("name") or "Liste")[:28],
-                 "v": len(l.get("movies") or []) + len(l.get("shows") or []),
-                 "d": "contenus"}
-                for l in _lists_all[:8]
-            ]
-            if _list_cards:
-                st.markdown(_metric_cards(_list_cards), unsafe_allow_html=True)
+        _list_cards = [
+            {"emoji": "⭐", "k": "Watchlist", "v": len(_watchlist_all.get("movies") or []) + len(_watchlist_all.get("shows") or []), "d": "contenus à voir"},
+            {"emoji": "🗂️", "k": "Listes personnelles", "v": len(_lists_all), "d": "listes statiques"},
+            {"emoji": "📦", "k": "Contenus en listes", "v": sum(len(l.get("movies") or []) + len(l.get("shows") or []) for l in _lists_all), "d": "au total des listes"},
+        ] + [
+            {"emoji": "🗂️", "k": str(l.get("name") or "Liste")[:28],
+             "v": len(l.get("movies") or []) + len(l.get("shows") or []),
+             "d": "contenus"}
+            for l in _lists_all[:8]
+        ]
+        if _list_cards:
+            st.markdown(_metric_cards(_list_cards), unsafe_allow_html=True)
 
     # ── Heatmap d'activité (suit les filtres) ────────────────────────────────
     st.divider()
@@ -11492,31 +11636,288 @@ def _stats_people_section(ctx: dict) -> None:
 
 
 def _history_notes_xlsx(history_rows: list, rated_rows: list) -> bytes:
-    """Export Excel à 2 ONGLETS (V155) : « Historique des vues » + « Mes
-    notes » — la fusion demandée, un onglet par tableau."""
-    from openpyxl import Workbook
+    """Export Excel (V158 — REFONTE, retour utilisateur) :
 
-    def _sheet(ws, rows_list: list) -> None:
-        if not rows_list:
-            return
-        keys: list = []
-        for row in rows_list:
-            if isinstance(row, dict):
-                for key in row:
-                    if key not in keys:
-                        keys.append(key)
-        keys = [k for k in keys if k not in ("ids",)]
-        ws.append(keys)
-        for row in rows_list:
-            ws.append([_xlsx_cell(row.get(k)) for k in keys])
+    • Onglet « Historique des vues » : colonnes PROPRES (plus de poster ni
+      de clés techniques), vraies dates Excel, tableau strié + filtres +
+      ligne d'en-tête figée, largeurs ajustées au contenu.
+    • Onglet « Mes notes » : même mise en forme.
+    • Onglet « Analyses » : TCD-like — visionnages par mois, top genres,
+      répartition films/épisodes, distribution de tes notes — avec
+      GRAPHIQUES Excel natifs (barres, camembert).
+
+    NB : ce fichier est un document d'ANALYSE (à ouvrir dans Excel). Il
+    n'est pas au format d'import Trakt/MDBList — voir ETAPE-158.
+    """
+    import io as _io
+    from collections import defaultdict
+    from datetime import datetime as _dt
+
+    from openpyxl import Workbook
+    from openpyxl.chart import BarChart, PieChart, Reference
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.worksheet.table import Table, TableStyleInfo
+
+    GREEN_DARK = "00594B"
+    GREEN = "00A392"
+    YELLOW = "FFE100"
+    HEADER_FILL = PatternFill("solid", fgColor=GREEN_DARK)
+    HEADER_FONT = Font(color="FFFFFF", bold=True, size=11)
+    CENTER = Alignment(horizontal="center", vertical="center")
+    DATE_FMT = "DD/MM/YYYY HH:MM"
+
+    def _excel_date(value):
+        """datetime (éventuellement tz-aware) → datetime naïf pour Excel."""
+        if isinstance(value, _dt):
+            return value.replace(tzinfo=None) if value.tzinfo else value
+        return value
+
+    def _auto_widths(ws, headers: list, rows: list, min_w: float = 9.0, max_w: float = 42.0) -> None:
+        for col_idx, header in enumerate(headers, start=1):
+            width = len(str(header or ""))
+            for row in rows:
+                cell = row[col_idx - 1] if col_idx - 1 < len(row) else ""
+                if isinstance(cell, _dt):
+                    text = "31/12/2099 23:59"
+                else:
+                    text = str(cell if cell is not None else "")
+                width = max(width, len(text))
+            ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = \
+                max(min_w, min(max_w, width + 2.5))
+
+    def _style_table(ws, n_rows: int, n_cols: int, table_name: str) -> None:
+        """Tableau Excel strié + filtres + en-tête vert, première ligne figée."""
+        for col in range(1, n_cols + 1):
+            cell = ws.cell(row=1, column=col)
+            cell.fill = HEADER_FILL
+            cell.font = HEADER_FONT
+            cell.alignment = CENTER
+        if n_rows > 0:
+            ref = f"A1:{ws.cell(row=n_rows + 1, column=n_cols).column_letter}{n_rows + 1}"
+            table = Table(displayName=table_name, ref=ref)
+            table.tableStyleInfo = TableStyleInfo(
+                name="TableStyleMedium9", showFirstColumn=False,
+                showLastColumn=False, showRowStripes=True, showColumnStripes=False,
+            )
+            try:
+                ws.add_table(table)
+            except Exception:
+                pass  # nom déjà pris (re-génération) : garde la mise en forme simple
+        ws.freeze_panes = "A2"
 
     wb = Workbook()
+
+    # ══ Onglet 1 : Historique des vues ══════════════════════════════════════
     ws1 = wb.active
     ws1.title = "Historique des vues"
-    _sheet(ws1, history_rows)
+    hist_headers = ["Date", "Type", "Titre", "Épisode", "Année", "Genres",
+                    "Durée (min)", "Lectures", "Temps total (min)", "Ma note"]
+    hist_rows_out = []
+    for row in history_rows:
+        watched_at = row.get("watched_at")
+        hist_rows_out.append([
+            _excel_date(watched_at) if watched_at else "",
+            row.get("type") or "",
+            row.get("title") or "",
+            row.get("episode_label") or "",
+            int(row["year"]) if str(row.get("year") or "").isdigit() else "",
+            " · ".join(row.get("genres") or []),
+            int(row.get("runtime") or 0),
+            int(row.get("plays") or 1),
+            int(row.get("total_minutes") or 0),
+            row.get("personal_rating") if row.get("personal_rating") else "",
+        ])
+    ws1.append(hist_headers)
+    for row in hist_rows_out:
+        ws1.append(row)
+    for r in range(2, len(hist_rows_out) + 2):
+        cell = ws1.cell(row=r, column=1)
+        if isinstance(cell.value, _dt):
+            cell.number_format = DATE_FMT
+    _auto_widths(ws1, hist_headers, hist_rows_out)
+    _style_table(ws1, len(hist_rows_out), len(hist_headers), "HistoriqueVues")
+
+    # ══ Onglet 2 : Mes notes ════════════════════════════════════════════════
     ws2 = wb.create_sheet("Mes notes")
-    _sheet(ws2, rated_rows)
-    import io as _io
+    notes_headers = ["Type", "Titre", "Année", "Genres", "Ma note /10",
+                     "Note publique /10", "Noté le"]
+    notes_rows_out = []
+    for row in rated_rows:
+        rated_at = row.get("rated_at")
+        note_pub = row.get("note_publique")
+        try:
+            note_pub = round(float(note_pub) / 10.0, 1) if note_pub else ""
+        except (TypeError, ValueError):
+            note_pub = ""
+        notes_rows_out.append([
+            row.get("type") or "",
+            row.get("title") or "",
+            int(row["year"]) if str(row.get("year") or "").isdigit() else "",
+            " · ".join(row.get("genres") or []),
+            row.get("rating") or "",
+            note_pub,
+            _excel_date(rated_at) if rated_at else "",
+        ])
+    ws2.append(notes_headers)
+    for row in notes_rows_out:
+        ws2.append(row)
+    for r in range(2, len(notes_rows_out) + 2):
+        cell = ws2.cell(row=r, column=7)
+        if isinstance(cell.value, _dt):
+            cell.number_format = "DD/MM/YYYY"
+    _auto_widths(ws2, notes_headers, notes_rows_out)
+    _style_table(ws2, len(notes_rows_out), len(notes_headers), "MesNotes")
+
+    # ══ Onglet 3 : Analyses (TCD-like + graphiques) ═════════════════════════
+    ws3 = wb.create_sheet("Analyses")
+    ws3.sheet_view.showGridLines = False
+
+    total_plays = sum(int(r.get("plays") or 1) for r in history_rows)
+    total_minutes = sum(int(r.get("total_minutes") or 0) for r in history_rows)
+    rated_values = [r.get("personal_rating") for r in history_rows if r.get("personal_rating")]
+    ws3["A1"] = "📊 ANALYSES DE TON HISTORIQUE"
+    ws3["A1"].font = Font(bold=True, size=14, color=GREEN_DARK)
+    ws3["A3"] = (f"{len(history_rows)} visionnage(s) · {total_plays} lecture(s) · "
+                 f"{total_minutes / 60:.0f} h · note moyenne "
+                 f"{(sum(rated_values) / len(rated_values)):.1f}/10" if rated_values
+                 else f"{len(history_rows)} visionnage(s) · {total_plays} lecture(s) · "
+                 f"{total_minutes / 60:.0f} h")
+    ws3["A3"].font = Font(size=11, color="4A6B66")
+
+    def _mini_header(cell_ref: str, text: str) -> None:
+        ws3[cell_ref] = text
+        ws3[cell_ref].font = HEADER_FONT
+        ws3[cell_ref].fill = HEADER_FILL
+        ws3[cell_ref].alignment = CENTER
+
+    def _green_bar(chart, hex_color: str = GREEN) -> None:
+        for series in chart.series:
+            series.graphicalProperties.solidFill = hex_color
+
+    # — 1. Visionnages par mois —
+    by_month: dict[str, dict] = defaultdict(lambda: {"n": 0, "min": 0})
+    for row in history_rows:
+        watched_at = row.get("watched_at")
+        if not isinstance(watched_at, _dt):
+            continue
+        label = watched_at.strftime("%Y-%m")
+        by_month[label]["n"] += int(row.get("plays") or 1)
+        by_month[label]["min"] += int(row.get("total_minutes") or 0)
+    months = sorted(by_month)
+    r0 = 5
+    ws3[f"A{r0 - 1}"] = "🗓️ Visionnages par mois"
+    ws3[f"A{r0 - 1}"].font = Font(bold=True, size=12, color=GREEN_DARK)
+    _mini_header(f"A{r0}", "Mois")
+    _mini_header(f"B{r0}", "Visionnages")
+    _mini_header(f"C{r0}", "Temps (h)")
+    for i, month in enumerate(months):
+        ws3.cell(row=r0 + 1 + i, column=1, value=month)
+        ws3.cell(row=r0 + 1 + i, column=2, value=by_month[month]["n"])
+        c = ws3.cell(row=r0 + 1 + i, column=3, value=round(by_month[month]["min"] / 60.0, 1))
+        c.number_format = "0.0"
+    if months:
+        chart = BarChart()
+        chart.type = "col"
+        chart.title = "Visionnages par mois"
+        chart.height, chart.width = 7.2, 17
+        data = Reference(ws3, min_col=2, min_row=r0, max_row=r0 + len(months))
+        cats = Reference(ws3, min_col=1, min_row=r0 + 1, max_row=r0 + len(months))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        chart.legend = None
+        chart.y_axis.majorGridlines = None
+        _green_bar(chart)
+        ws3.add_chart(chart, f"E{r0}")
+    row_cursor = r0 + len(months) + 3
+
+    # — 2. Top genres —
+    by_genre: dict[str, int] = defaultdict(int)
+    for row in history_rows:
+        for genre in row.get("genres") or []:
+            by_genre[str(genre)] += int(row.get("plays") or 1)
+    genres_sorted = sorted(by_genre.items(), key=lambda kv: -kv[1])[:15]
+    r0 = row_cursor
+    ws3[f"A{r0 - 1}"] = "🎭 Tes genres les plus regardés (top 15)"
+    ws3[f"A{r0 - 1}"].font = Font(bold=True, size=12, color=GREEN_DARK)
+    _mini_header(f"A{r0}", "Genre")
+    _mini_header(f"B{r0}", "Visionnages")
+    for i, (genre, count) in enumerate(genres_sorted):
+        ws3.cell(row=r0 + 1 + i, column=1, value=genre)
+        ws3.cell(row=r0 + 1 + i, column=2, value=count)
+    if genres_sorted:
+        chart = BarChart()
+        chart.type = "bar"  # barres horizontales
+        chart.title = "Top genres"
+        chart.height, chart.width = min(2.2 + 0.45 * len(genres_sorted), 12), 15
+        data = Reference(ws3, min_col=2, min_row=r0, max_row=r0 + len(genres_sorted))
+        cats = Reference(ws3, min_col=1, min_row=r0 + 1, max_row=r0 + len(genres_sorted))
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        chart.legend = None
+        _green_bar(chart, "00594B")
+        ws3.add_chart(chart, f"E{r0}")
+    row_cursor = r0 + len(genres_sorted) + 3
+
+    # — 3. Répartition films / épisodes —
+    n_films = sum(1 for r in history_rows if r.get("type") == "Film")
+    n_eps = sum(1 for r in history_rows if r.get("type") == "Épisode")
+    r0 = row_cursor
+    ws3[f"A{r0 - 1}"] = "🎬 Films vs épisodes"
+    ws3[f"A{r0 - 1}"].font = Font(bold=True, size=12, color=GREEN_DARK)
+    _mini_header(f"A{r0}", "Type")
+    _mini_header(f"B{r0}", "Lignes d'historique")
+    ws3.cell(row=r0 + 1, column=1, value="Films")
+    ws3.cell(row=r0 + 1, column=2, value=n_films)
+    ws3.cell(row=r0 + 2, column=1, value="Épisodes")
+    ws3.cell(row=r0 + 2, column=2, value=n_eps)
+    if n_films or n_eps:
+        pie = PieChart()
+        pie.title = "Films vs épisodes"
+        pie.height, pie.width = 7, 11
+        data = Reference(ws3, min_col=2, min_row=r0, max_row=r0 + 2)
+        cats = Reference(ws3, min_col=1, min_row=r0 + 1, max_row=r0 + 2)
+        pie.add_data(data, titles_from_data=True)
+        pie.set_categories(cats)
+        from openpyxl.chart.label import DataLabelList
+        pie.dataLabels = DataLabelList()
+        pie.dataLabels.showPercent = True
+        ws3.add_chart(pie, f"E{r0}")
+    row_cursor = r0 + 5
+
+    # — 4. Distribution de tes notes —
+    by_rating: dict[int, int] = defaultdict(int)
+    for row in history_rows:
+        rating = row.get("personal_rating")
+        try:
+            rating = int(round(float(rating)))
+        except (TypeError, ValueError):
+            continue
+        if 1 <= rating <= 10:
+            by_rating[rating] += 1
+    r0 = row_cursor
+    ws3[f"A{r0 - 1}"] = "⭐ Répartition de tes notes"
+    ws3[f"A{r0 - 1}"].font = Font(bold=True, size=12, color=GREEN_DARK)
+    _mini_header(f"A{r0}", "Note")
+    _mini_header(f"B{r0}", "Visionnages notés")
+    for i, rating in enumerate(range(1, 11)):
+        ws3.cell(row=r0 + 1 + i, column=1, value=f"{rating}/10")
+        ws3.cell(row=r0 + 1 + i, column=2, value=by_rating.get(rating, 0))
+    if any(by_rating.values()):
+        chart = BarChart()
+        chart.type = "col"
+        chart.title = "Ta répartition de notes (1 à 10)"
+        chart.height, chart.width = 7, 12
+        data = Reference(ws3, min_col=2, min_row=r0, max_row=r0 + 10)
+        cats = Reference(ws3, min_col=1, min_row=r0 + 1, max_row=r0 + 10)
+        chart.add_data(data, titles_from_data=True)
+        chart.set_categories(cats)
+        chart.legend = None
+        _green_bar(chart, YELLOW)
+        ws3.add_chart(chart, f"E{r0}")
+
+    for col, width in (("A", 24), ("B", 16), ("C", 12)):
+        ws3.column_dimensions[col].width = width
+
     buf = _io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -13408,6 +13809,7 @@ except Exception:
     pass
 
 _auto_restore_session()  # V136 — retour d'arrière-plan GSM : données+page+filtres restaurés sans appel API
+_session_self_heal()    # V158 — session perdue après inactivité : reruns de relance jusqu'à restauration
 page = navigation()
 header()
 if page == "🏠 Tableau de bord":
@@ -13438,4 +13840,15 @@ else:
     placeholder(page)
 
 _save_session_snapshot()  # V136 — mémorise page + filtres pour la prochaine session (GSM)
+# V158 — pose DIFFÉRÉE du marqueur d'URL « session active » : ici le rendu
+# est terminé, l'iframe des cookies a eu tout le temps d'écrire — le rerun
+# déclenché par l'écriture ne peut plus casser la sauvegarde des cookies.
+try:
+    if (
+        st.session_state.pop("_msl_flag_pending", None)
+        and st.query_params.get("msl_on") != "1"
+    ):
+        st.query_params["msl_on"] = "1"
+except Exception:
+    pass
 st.caption(f"{APP_NAME} · {APP_VERSION} · aucun accès Trakt requis")

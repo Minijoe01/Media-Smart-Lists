@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 9 octobre 2026 · Dernière version déployée : V157.
+> Dernière mise à jour : 10 octobre 2026 · Dernière version déployée : V158.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -916,19 +916,74 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       phrase entière, type, nav sans cadre + 2 barres, tuiles listes,
       compte filtré, non-régressions) + 23/23 tests + smoke test.
 
-### PROCHAINES ÉTAPES (validées par l'utilisateur 09/10)
-- [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
-      livrée) — si « Local » s'affiche encore dans POP, ouvrir le
-      « 🔧 Diagnostic de la clé Gemini » et me donner le message.
-- [ ] README.md : refonte par l'utilisateur À LA FIN (il gère).
-- [ ] 💡 IDÉES IA (à choisir, demande utilisateur « maximise l'utilisation de la clé ») :
+### Fait en V158 (retours du 10/10 — pépites parfaites + Excel + session)
+- [x] 🎲 LA PÉPITE — LA VRAIE TUILE « Que regarder ? » (retour : « reprends
+      vraiment la tuile, dans son look OU son contenu ») : les propositions
+      passent par `_pepite_scored_row` → `score_item` → le MÊME rendu que
+      les tuiles de reco. Concrètement : année en PASTILLE (fini les
+      parenthèses à côté du titre), pastille durée/saisons-épisodes, note ⭐,
+      SCORE perso /100 + FRICTION (oui, compatibles : calculés pareil pour
+      le contenu de tes listes ET pour le hors-listes via la fiche TMDB),
+      signaux « ℹ️ Pourquoi ce score ? », chips genres/studios/acteurs,
+      LIENS 🔎 JustWatch · TMDB · MDBL, bouton fiche soudé. Le média
+      original est retrouvé dans le dataset (données enrichies complètes).
+- [x] 🎲 FICHE DES PROPOSITIONS HORS LISTES : bannière + couleur
+      d'accentuation RÉPARÉES (le backdrop manquait dans l'item → il est
+      désormais récupéré depuis la fiche TMDB déjà chargée par la fiche).
+- [x] 🎲 ESPACEMENT : titres « 📂 DANS TES LISTES » / « 🌐 HORS DE TES
+      LISTES » collés à leur tuile (retour avec capture : « trop
+      d'espace ») — marge négative ciblée.
+- [x] 🧭 NAV STATS : UNE SEULE barre sous les boutons (la VERTE lumineuse
+      3px) — la barre jaune fine est retirée (retour utilisateur).
+- [x] 📊 STATS : « 📈 LES STATISTIQUES DE TES VISIONNAGES » (titre des KPI
+      filtrés) + UN SEUL groupe « 🗂️ LES STATISTIQUES DE TES LISTES » :
+      Watchlist · Listes personnelles · Contenus en listes + les tuiles
+      par liste coulent ENSEMBLE (fini les lignes éparpillées).
+- [x] 📥 EXPORT EXCEL REFONDU (onglet Historique & notes) : vrais tableaux
+      striés + filtres + en-tête figé, colonnes PROPRES (fini poster/clés
+      techniques), vraies dates, largeurs auto, genres « · » — + 3e onglet
+      « Analyses » : visionnages par mois, top genres, films vs épisodes,
+      répartition de tes notes, avec GRAPHIQUES Excel natifs (barres,
+      barres horizontales, camembert). Réponse donnée : CSV/JSON/Excel ne
+      sont PAS des formats d'import Trakt/MDBList (aucun import d'historique
+      n'existe côté Trakt web ; MDBList synchronise AVEC Trakt) — ce sont
+      des formats d'analyse/sauvegarde.
+- [x] 🎲 BOUTON « Une autre » (info des coulisses) : AUX COULEURS DU BLOC
+      (fond verre + liseré accent + texte accent clair) avec SURBRILLANCE
+      au survol (fond accent, lueur) pour montrer qu'il est cliquable.
+- [x] 🐛 SESSION QUI « SE DÉCONNECTE » après ~5 min d'inactivité (retour :
+      « il faut que je repasse par le Tableau de bord, c'est vraiment
+      pénible ») : cause racine analysée AU BANC — le serveur Streamlit
+      DÉTRUIT la session après inactivité (TTL 120 s), la nouvelle session
+      démarre vide et dépend du handshake du contrôleur de cookies. Fix :
+      marqueur d'URL `msl_on=1` (survit à la perte de session, retiré à la
+      déconnexion) + `_session_self_heal` : quelques reruns rapprochés
+      (bornés, jamais de boucle) relancent TOUTE la chaîne de
+      restauration — tu restes sur ta page, les données reviennent seules.
+      Vérifié au banc (mini-app dédiée + coupure websocket + redémarrage
+      serveur : restauration auto sans passer par le Tableau de bord).
+- [x] Décisions notées : transitions/flèches entre widgets des stats →
+      DÉCONSEILLÉ (fragile en Streamlit + mobile), le scroll reste ;
+      recherche par acteur dans la recherche globale → idée ajoutée au
+      TODO (possible via TMDB, coût d'appels à évaluer).
+- [x] Banc : verify158 + mini-banc session dédié + 23/23 tests + smoke test.
+
+### PROCHAINES ÉTAPES (validées par l'utilisateur 10/10)
+- [ ] 💡 IDÉES IA — V159 (l'utilisateur pensait qu'elles étaient déjà
+      livrées : elles étaient VALIDÉES, pas encore codées — clarifié) :
       • « Pourquoi ce score ? » narratif par l'IA dans la fiche (les signaux expliqués en une phrase vivante) ;
       • « Résolveur de dilemme » : 2-3 contenus hésitants → l'IA tranche ;
       • « Après ce film » : depuis la fiche, l'IA propose les 3 suites logiques DANS tes listes ;
       • « Ton soir parfait » : heure + humeur + temps dispo → mini-programme de soirée.
       (Retirées à la demande de l'utilisateur — risque de spoil : anecdotes
       d'épisodes, résumé saison par saison.)
-- [ ] (facultatif, si simple) Filtre par acteur dans les stats : nombre d'heures/épisodes vus avec lui
+- [ ] 🔎 RECHERCHE PAR ACTEUR dans la recherche globale des stats
+      (demande utilisateur 10/10 : « serait-ce intéressant ? » — oui :
+      possible via la mécanique filmo TMDB déjà en place, à chiffrer).
+- [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
+      livrée) — si « Local » s'affiche encore dans POP, ouvrir le
+      « 🔧 Diagnostic de la clé Gemini » et me donner le message.
+- [ ] README.md : refonte par l'utilisateur À LA FIN (il gère).
 - [ ] Ajouter un contenu à une liste / à la Watchlist DEPUIS LA FICHE CINÉMA
       (demande utilisateur 07/10 — très faisable : les méthodes d'écriture
       existent déjà : `add_watchlist_items`, `add_list_items` ; s'inspirer du
