@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 9 octobre 2026 · Dernière version déployée : V156.
+> Dernière mise à jour : 9 octobre 2026 · Dernière version déployée : V157.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -878,6 +878,44 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       mesuré, recherche globale, KPI listes, tableaux à plat stables,
       bouton IA 0.06 px, non-régressions) + 23/23 tests + smoke test.
 
+### Fait en V157 (retours du 09/10 — pépites unifiées + crash corrigé)
+- [x] 🐛 CRASH RECHERCHE STATS (traceback utilisateur) : KeyError « title »
+      — la colonne du DataFrame s'appelle « titre ». Corrigé avec repli
+      sûr + recherche étendue à l'étiquette d'épisode. La recherche filtre
+      TOUT : KPI, heatmap, graphiques, goûts (testé « blade » → Films 1).
+- [x] 🎲 LA PÉPITE — TUILES UNIFIÉES avec « Que regarder ? » (demande :
+      « copier-coller ces tuiles ») : poster + chip type + titre + CHIPS
+      (genres/durée/note) + pastilles D'ÉTAT STANDARD (📂 source pour
+      dans tes listes, 🌐 Hors de tes listes) + bouton fiche soudé
+      (gap 0, même largeur — mesuré). Fini les tuiles spéciales.
+- [x] 🎲 TIRAGE PAR HUMEUR : propose désormais DEUX contenus — un DANS
+      tes listes ET une œuvre HORS de tes listes (demande utilisateur),
+      comme l'envie libre. Sections titrées « 📂 DANS TES LISTES » /
+      « 🌐 HORS DE TES LISTES ».
+- [x] 🎯 TYPE RESPECTÉ : l'envie libre hérite du pills Film/Série du
+      panneau — règle ABSOLUE dans le prompt (fini Shogun pour « un film
+      d'amour sur un bateau ») ; les candidats de tes listes sont aussi
+      filtrés par type.
+- [x] ✍️ Phrase d'intro de l'envie libre : entière, dans un encart
+      dédié (elle était tronquée sous la 1re tuile).
+- [x] 🧭 NAV STATS : retour à l'inspiration utilisateur — les BOUTONS
+      AU-DESSUS, nus (fini le cadre englobant « trop de cadre »), puis
+      DEUX BARRES horizontales en dessous : verte lumineuse (3px, lueur)
+      + jaune fine (1.5px, en retrait).
+- [x] 📊 KPI LISTES : de vraies TUILES par liste (demande : « des tuiles
+      avec le nom de mes listes et le nombre de contenu ») sous le
+      sous-titre « Les statistiques de tes listes » — jusqu'à 8 listes.
+- [x] 📜 HISTORIQUE : le compte suit les FILTRES (fini le 6753 all-time
+      avec une période restreinte) ; colonne « Ma note » retirée du
+      détail des visionnages (le toggle ⭐ y pourvoit) ; toggle rendu
+      plus visible (titre « Vues ou notes ? » + libellé éclairci).
+- [x] (fix interne) collision de clés de boutons pépite quand le tirage
+      humeur ET l'envie libre proposaient la même œuvre — badges
+      préfixés (humeur_/libre_).
+- [x] Banc : 16/16 (crash, tuiles fusion 0px, 2 propositions humeur,
+      phrase entière, type, nav sans cadre + 2 barres, tuiles listes,
+      compte filtré, non-régressions) + 23/23 tests + smoke test.
+
 ### PROCHAINES ÉTAPES (validées par l'utilisateur 09/10)
 - [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
       livrée) — si « Local » s'affiche encore dans POP, ouvrir le
@@ -887,9 +925,9 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       • « Pourquoi ce score ? » narratif par l'IA dans la fiche (les signaux expliqués en une phrase vivante) ;
       • « Résolveur de dilemme » : 2-3 contenus hésitants → l'IA tranche ;
       • « Après ce film » : depuis la fiche, l'IA propose les 3 suites logiques DANS tes listes ;
-      • « Ton soir parfait » : heure + humeur + temps dispo → mini-programme de soirée ;
-      • anecdotes d'ÉPISODES dans la heatmap (survol prolongé) ;
-      • résumé « saison par saison » pour décider de continuer/abandonner une série en cours.
+      • « Ton soir parfait » : heure + humeur + temps dispo → mini-programme de soirée.
+      (Retirées à la demande de l'utilisateur — risque de spoil : anecdotes
+      d'épisodes, résumé saison par saison.)
 - [ ] (facultatif, si simple) Filtre par acteur dans les stats : nombre d'heures/épisodes vus avec lui
 - [ ] Ajouter un contenu à une liste / à la Watchlist DEPUIS LA FICHE CINÉMA
       (demande utilisateur 07/10 — très faisable : les méthodes d'écriture

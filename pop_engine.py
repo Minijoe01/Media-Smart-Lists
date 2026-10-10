@@ -346,14 +346,17 @@ def _gemini_prompt(mood: str, candidates: list[dict]) -> str:
         f"L'humeur du moment de l'utilisateur : « {mood} » — {mood_cfg['hint']}.\n"
         "Voici les contenus disponibles dans SES listes (JSON) :\n"
         f"{json.dumps(payload, ensure_ascii=False)}\n\n"
-        "Choisis LE contenu qui correspond le mieux à cette humeur, en privilégiant :\n"
-        "1. l'accord émotionnel avec l'humeur demandée (critère n°1) ;\n"
-        "2. les pépites un peu méconnues plutôt que les blockbusters ultra-connus ;\n"
-        "3. la qualité (note) et la facilité (durée raisonnable).\n"
-        "Réponds STRICTEMENT en JSON, sans aucun texte autour :\n"
-        '{"pick_id": <le champ i du contenu choisi>, "reason": "<2 à 3 phrases '
-        "en français, ton enthousiaste et personnel, SANS SPOILER, qui explique "
-        'pourquoi ce contenu colle parfaitement à cette humeur>"}'
+        "Choisis DEUX propositions :\n"
+        "1. LE meilleur contenu DE SA LISTE qui correspond à l'humeur (champ i) ;\n"
+        "2. UNE AUTRE œuvre, RÉELLE et reconnue, qui n'est PAS dans cette liste "
+        "et qui colle encore mieux à l'humeur — titre exact, année, Film ou Série. "
+        "Pour une série très connue, son titre français usuel convient.\n"
+        "Réponds STRICTEMENT en JSON, sans texte autour :\n"
+        '{"in_list_id": <champ i du contenu choisi>, '
+        '"outside": {"title": "<titre>", "year": <année int>, "kind": "Film"|"Série"}, '
+        '"reason": "<2 à 3 phrases en français, ton enthousiaste et personnel, '
+        "sans spoiler, qui explique les DEUX choix au regard de l'humeur>"
+        '"}'
     )
 
 
@@ -664,19 +667,32 @@ def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict]
     try:
         parsed = json.loads(text)
     except ValueError:
-        match = re.search(r'"pick_id"\s*:\s*(\d+)', text)
+        match = re.search(r'"(?:pick_id|in_list_id)"\s*:\s*(\d+)', text)
         if not match:
-            raise RuntimeError("Réponse Gemini sans choix exploitable")
-        parsed = {"pick_id": int(match.group(1)),
+            raise RuntimeError("Réponse IA sans choix exploitable")
+        parsed = {"in_list_id": int(match.group(1)),
                   "reason": (re.sub(r'^[{}\s"]+|[}\s"]+$', "", text) or "").strip()}
     try:
-        pick_id = int(parsed.get("pick_id") or 0)
+        in_list_id = int(parsed.get("in_list_id") or parsed.get("pick_id") or 0)
     except (TypeError, ValueError):
-        pick_id = 0
+        in_list_id = 0
     reason = str(parsed.get("reason") or "").strip()
-    if not pick_id or not reason:
-        raise RuntimeError("Réponse Gemini incomplète")
-    return {"pick_id": pick_id, "reason": reason, "model": "ia"}
+    outside = parsed.get("outside") if isinstance(parsed.get("outside"), dict) else {}
+    if not in_list_id or not reason:
+        raise RuntimeError("Réponse IA incomplète")
+    try:
+        year = int(outside.get("year") or 0) or None
+    except (TypeError, ValueError):
+        year = None
+    return {
+        "in_list_id": in_list_id,
+        "outside": {
+            "title": str(outside.get("title") or "").strip(),
+            "year": year,
+            "kind": "Série" if str(outside.get("kind") or "").strip().lower() in ("série", "serie", "tv") else "Film",
+        },
+        "reason": reason, "model": "ia",
+    }
 
 
 def ai_key_check(gemini_key: str, groq_key: str) -> tuple[bool, str]:
@@ -761,7 +777,8 @@ def coulisses_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "
     return {"anecdote": anecdote, "pros": pros, "cons": cons}
 
 
-def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[dict]) -> dict:
+def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[dict],
+                    kind: str = "Peu importe") -> dict:
     """✍️ POP LIBRE (V152) : l'utilisateur décrit son envie en une phrase
     (« un film d'amour sur un bateau »). Un SEUL appel Gemini :
 
@@ -788,10 +805,17 @@ def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[
         '"reason": "<2 à 3 phrases en français, ton enthousiaste et personnel, '
         'sans spoiler, qui explique les deux choix au regard de ton envie>"}'
     )
+    kind_rule = ""
+    if kind in ("Film", "Série"):
+        kind_rule = (
+            f"\nRÈGLE ABSOLUE : l'utilisateur a choisi le type « {kind} » — les DEUX "
+            f"propositions doivent être des {kind.lower()}s, jamais l'autre type.\n"
+        )
     prompt = (
         "Tu es un conseiller cinéma et séries francophone. L'envie du moment de "
         f"l'utilisateur : « {wish} ».\n"
-        "Voici les contenus disponibles dans SES listes (JSON) :\n"
+        + kind_rule
+        + "Voici les contenus disponibles dans SES listes (JSON) :\n"
         f"{json.dumps(payload, ensure_ascii=False)}\n\n"
         "Choisis :\n"
         "1. LE meilleur contenu DE SA LISTE qui correspond à l'envie (champ i) ;\n"

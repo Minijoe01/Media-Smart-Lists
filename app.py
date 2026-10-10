@@ -1011,34 +1011,42 @@ st.markdown(
         color: #9DC5BF !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
     }
-    /* V156 — NAV STATS : DOUBLE RAIL sous la barre glass (style de l'exemple
-       de l'utilisateur : boutons + 2 barres horizontales en dessous) — un
-       rail vert lumineux + un rail fin jaune, avec lueur interne. */
+    /* V157 — NAV STATS : BOUTONS NUS au-dessus + DEUX BARRES horizontales
+       marquées en dessous (retour utilisateur : « on devrait avoir 2 tuiles
+       en dessous puis les boutons au dessus… il y a trop de cadre ») —
+       plus de cadre glass englobant, les boutons se suffisent à eux-mêmes. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
         + div[data-testid="stLayoutWrapper"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
         + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
         position: relative;
+        animation: mslStabIn .35s ease both;
     }
+    /* Barre 1 : verte lumineuse, pleine largeur, juste sous les boutons. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
         + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"]::after {
         content: "";
         position: absolute;
-        left: 1.1rem; right: 1.1rem; bottom: .22rem;
-        height: 2px;
-        border-radius: 2px;
-        background: linear-gradient(90deg, transparent, rgba(0, 163, 146, .75) 12%, rgba(0, 163, 146, .75) 88%, transparent);
-        box-shadow: 0 1px 6px rgba(0, 163, 146, .35);
+        left: .4rem; right: .4rem; bottom: -.18rem;
+        height: 3px;
+        border-radius: 3px;
+        background: linear-gradient(90deg, transparent 0%, rgba(0, 163, 146, .85) 8%, rgba(0, 163, 146, .85) 92%, transparent 100%);
+        box-shadow: 0 1px 8px rgba(0, 163, 146, .45);
         pointer-events: none;
     }
+    /* Barre 2 : fine, jaune, en retrait — la seconde ligne de l'exemple. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
         + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"]::before {
         content: "";
         position: absolute;
-        left: 2.2rem; right: 2.2rem; bottom: .68rem;
-        height: 1px;
-        border-radius: 1px;
-        background: linear-gradient(90deg, transparent, rgba(255, 225, 0, .30) 20%, rgba(255, 225, 0, .30) 80%, transparent);
+        left: 1.6rem; right: 1.6rem; bottom: -.38rem;
+        height: 1.5px;
+        border-radius: 1.5px;
+        background: linear-gradient(90deg, transparent, rgba(255, 225, 0, .38) 18%, rgba(255, 225, 0, .38) 82%, transparent);
         pointer-events: none;
     }
     /* Spinner global (thème) — les fiches injectent leur couleur d'accent. */
@@ -8813,43 +8821,66 @@ def _groq_api_key() -> str:
         return ""
 
 
-def _render_pop_result(result: dict) -> None:
-    """Carte-résultat d'un tirage POP (V149 → V153) : TUILE + bouton
-    « Voir la fiche » fusionnés EXACTEMENT comme « Que regarder ? » (retour
-    utilisateur), PUIS la justification IA en dessous (thème conservé)."""
-    poster = escape(_poster_url({"poster": result.get("poster")}), quote=True)
-    image_html = _poster_html(poster, result.get("kind") or "")
-    title = escape(result.get("title") or "?")
-    year = f" ({result['year']})" if result.get("year") else ""
-    note = f"⭐ {result['note']:.1f}" if result.get("note") else ""
-    genres = " · ".join(result.get("genres") or [])
-    runtime = _format_minutes(int(result.get("runtime") or 0)) if result.get("runtime") else ""
+def _render_pepite_card(pick: dict, badge: str = "📂") -> None:
+    """Tuile d'une proposition de La Pépite — STRUCTURE EXACTE des tuiles
+    « Que regarder ? » (retour utilisateur : « copier-coller ces tuiles ») :
+    poster + mc-head (chip type + titre) + chips + bouton fiche soudé.
+    Pastilles d'état standard : 📂 source / 🌐 Hors de tes listes."""
+    poster = escape(_poster_url({"poster": pick.get("poster")}), quote=True)
+    image_html = _poster_html(poster, pick.get("kind") or "")
+    title = escape(pick.get("title") or "?")
+    year = f" ({pick['year']})" if pick.get("year") else ""
+    note = f"⭐ {pick['note']:.1f}" if pick.get("note") else ""
+    genres = " · ".join(pick.get("genres") or [])
+    runtime = _format_minutes(int(pick.get("runtime") or 0)) if pick.get("runtime") else ""
     chips = " · ".join(x for x in (genres, runtime, note) if x)
-    engine = str(result.get("engine") or "Local")
+    source = str(pick.get("source") or "").strip()
+    badge_html = (f'<span class="source-badge">📂 {escape(source)}</span>' if source
+                  else '<span class="mc-outside" data-tooltip="Découverte — pas dans tes listes">🌐 Hors de tes listes</span>')
     st.markdown(
         f'<div class="media-list-card poster-card">{image_html}'
         f'<div class="media-list-content" style="width:100%;">'
-        f'<div class="mc-head">{_type_chip(result.get("kind") or "")}'
-        f'<strong style="font-size:1.08rem;">{title}{year}</strong>'
-        f'<span class="source-badge">💎 LA PÉPITE</span></div>'
-        f'<small>📂 {escape(result.get("source") or "ta liste")}'
-        + (f" · {chips}</small>" if chips else "</small>")
-        + f'</div></div>',
+        f'<div class="mc-head">{_type_chip(pick.get("kind") or "")}'
+        f'<strong style="font-size:1.06rem;">{title}{year}</strong>'
+        f"{badge_html}</div>"
+        + (f"<small>{chips}</small>" if chips else "")
+        + "</div></div>",
         unsafe_allow_html=True,
     )
-    # V152 — bouton DIRECT sous la tuile (pas de colonnes) → fusion
-    # automatique par le sélecteur :has(.media-list-card), comme partout.
-    if st.button("🎬 Voir la fiche", key=f"pop_fiche_{result['id']}", use_container_width=True, type="secondary"):
+    if st.button("🎬 Voir la fiche", key=f"pepite_{badge}_{pick['id']}", use_container_width=True, type="secondary"):
         _pop_row = _history_fiche_row({
-            "ids": {"tmdb": result["id"]}, "title": result.get("title") or "",
-            "type": result.get("kind") or "Film",
+            "ids": {"tmdb": pick["id"]}, "title": pick.get("title") or "",
+            "type": pick.get("kind") or "Film",
         })
         if not _pop_row:
-            _pop_row = {"item": {"ids": {"tmdb": result["id"]}, "title": result.get("title")},
-                        "type": result.get("kind") or "Film", "key": f"pop_{result['id']}"}
+            _pop_row = {"item": {"ids": {"tmdb": pick["id"]}, "title": pick.get("title")},
+                        "type": pick.get("kind") or "Film", "key": f"pepite_{pick['id']}"}
         _open_cinema_detail(_pop_row)
+
+
+def _render_pop_result(result: dict) -> None:
+    """Résultat d'un tirage par humeur (V157) : DEUX propositions — une dans
+    tes listes ET une œuvre hors de tes listes (demande utilisateur) — en
+    tuiles identiques à « Que regarder ? », puis la justification."""
+    in_pick = result.get("in")
     st.markdown(
-        f'<div class="accent-callout"><strong>💎 Pourquoi cette pépite ?</strong> '
+        '<p style="color:#9DC5BF;font-size:.82rem;margin:.55rem 0 .3rem;font-weight:700;'
+        'letter-spacing:.08em;">📂 DANS TES LISTES</p>',
+        unsafe_allow_html=True,
+    )
+    if in_pick:
+        _render_pepite_card(in_pick, "humeur_in")
+    outside = result.get("outside")
+    if isinstance(outside, dict) and outside.get("id"):
+        st.markdown(
+            '<p style="color:#9DC5BF;font-size:.82rem;margin:.55rem 0 .3rem;font-weight:700;'
+            'letter-spacing:.08em;">🌐 HORS DE TES LISTES</p>',
+            unsafe_allow_html=True,
+        )
+        _render_pepite_card(outside, "humeur_out")
+    engine = str(result.get("engine") or "Local")
+    st.markdown(
+        f'<div class="accent-callout"><strong>💎 Pourquoi ces pépites ?</strong> '
         f'<span style="color:var(--am-text-muted);font-size:.75rem;">· {engine}</span><br>'
         f"{escape(result.get('reason') or '')}</div>",
         unsafe_allow_html=True,
@@ -8902,44 +8933,14 @@ def _tmdb_search_media(kind: str, query: str, year: int | None, key: str) -> dic
     return {}
 
 
-def _render_pop_free_card(pick: dict, badge: str) -> None:
-    """Tuile d'une proposition du POP libre (dans tes listes / hors listes)
-    + bouton « Voir la fiche » fusionné (même mécanique que le résultat POP)."""
-    poster = escape(_poster_url({"poster": pick.get("poster")}), quote=True)
-    image_html = _poster_html(poster, pick.get("kind") or "")
-    title = escape(pick.get("title") or "?")
-    year = f" ({pick['year']})" if pick.get("year") else ""
-    note = f"⭐ {pick['note']:.1f}" if pick.get("note") else ""
-    genres = " · ".join(pick.get("genres") or [])
-    runtime = _format_minutes(int(pick.get("runtime") or 0)) if pick.get("runtime") else ""
-    source = pick.get("source")
-    chips = " · ".join(x for x in ([genres] if genres else []) + ([runtime] if runtime else []) + ([note] if note else []) + ([f"📂 {source}"] if source else []))
-    st.markdown(
-        f'<div class="media-list-card poster-card">{image_html}'
-        f'<div class="media-list-content" style="width:100%;">'
-        f'<div class="mc-head">{_type_chip(pick.get("kind") or "")}'
-        f'<strong style="font-size:1.05rem;">{title}{year}</strong>'
-        f'<span class="source-badge">{badge}</span></div>'
-        + (f"<small>{chips}</small>" if chips else "")
-        + "</div></div>",
-        unsafe_allow_html=True,
-    )
-    if st.button("🎬 Voir la fiche", key=f"popfree_{badge}_{pick['id']}", use_container_width=True, type="secondary"):
-        _pop_row = _history_fiche_row({
-            "ids": {"tmdb": pick["id"]}, "title": pick.get("title") or "",
-            "type": pick.get("kind") or "Film",
-        })
-        if not _pop_row:
-            _pop_row = {"item": {"ids": {"tmdb": pick["id"]}, "title": pick.get("title")},
-                        "type": pick.get("kind") or "Film", "key": f"popfree_{pick['id']}"}
-        _open_cinema_detail(_pop_row)
+# (V157 — _render_pop_free_card retirée : les tuiles libres
+# passent par _render_pepite_card, identiques à « Que regarder ? ».)
 
-
-def _render_pop_free_section(api_key: str, dataset: dict) -> None:
-    """✍️ POP LIBRE (V152) : l'utilisateur décrit son envie en une phrase
-    (« un film d'amour sur un bateau ») → Gemini propose UNE pépite de ses
-    listes ET UNE œuvre hors de ses listes (retrouvée ensuite sur TMDB)."""
-    groq_key = _groq_api_key()
+def _render_pop_free_section(api_key: str, groq_key: str, dataset: dict, kind: str = "Peu importe") -> None:
+    """✍️ La Pépite LIBRE (V157) : l'envie en une phrase → une pépite de tes
+    listes + une œuvre hors listes (TMDB). Le TYPE (Film/Série) du panneau
+    est RESPECTÉ (retour : « j'ai demandé un film, il me sort Shogun ») et
+    les tuiles sont IDENTIQUES à « Que regarder ? »."""
     with st.expander("✍️ Ou décris ton envie en une phrase", expanded=False):
         wish = st.text_area(
             "Ton envie",
@@ -8947,25 +8948,26 @@ def _render_pop_free_section(api_key: str, dataset: dict) -> None:
             key="pop_wish",
             height=90,
         )
+        _kind_hint = "" if kind in ("Peu importe", None, "") else f" (uniquement des {kind.lower()}s)"
         if st.button("🍿 Trouve-moi ça !", type="primary", use_container_width=True,
                      key="pop_free_go", disabled=not (api_key or groq_key)):
             wish_txt = str(wish or "").strip()
             if len(wish_txt) < 3:
                 st.session_state["pop_free_error"] = "Décris ton envie en quelques mots 😉"
             else:
-                candidates = pop_engine.pop_candidate_pool(dataset, "Peu importe")
+                candidates = pop_engine.pop_candidate_pool(dataset, kind or "Peu importe")
                 try:
                     with st.spinner("✨ L'IA cherche dans tes listes ET au-delà…"):
-                        res = pop_engine.freeform_ask_ai(api_key, groq_key, wish_txt, candidates)
+                        res = pop_engine.freeform_ask_ai(api_key, groq_key, wish_txt, candidates, kind or "Peu importe")
                     in_pick = next((c for c in candidates if c["id"] == res["in_list_id"]), None)
                     outside = _tmdb_search_media(
                         res["outside"].get("kind") or "Film",
                         res["outside"].get("title") or "",
                         res["outside"].get("year"),
                         _tmdb_api_key(),
-                    )
+                    ) if (res.get("outside") or {}).get("title") else {}
                     st.session_state["pop_free"] = {
-                        "in": in_pick, "outside": outside,
+                        "in": in_pick, "outside": outside or None,
                         "reason": res["reason"], "wish": wish_txt,
                     }
                     st.session_state.pop("pop_free_error", None)
@@ -8976,18 +8978,30 @@ def _render_pop_free_section(api_key: str, dataset: dict) -> None:
 
     free = st.session_state.get("pop_free")
     if free:
+        # V157 — phrase d'intro sur sa PROPRE ligne, marge généreuse (elle
+        # était tronquée sous la première tuile — retour utilisateur).
         st.markdown(
-            f'<p class="actor-meta" style="margin:.55rem 0 .2rem;">Pour ton envie « {escape(str(free.get("wish") or ""))} » :</p>',
+            f'<div class="accent-callout" style="margin:.6rem 0 .5rem;">'
+            f"<strong>Pour ton envie « {escape(str(free.get('wish') or ''))} »</strong> — "
+            "deux propositions :</div>",
             unsafe_allow_html=True,
         )
-        in_pick = free.get("in")
-        if in_pick:
-            _render_pop_free_card(in_pick, "DANS TES LISTES")
+        st.markdown(
+            '<p style="color:#9DC5BF;font-size:.82rem;margin:.45rem 0 .3rem;font-weight:700;'
+            'letter-spacing:.08em;">📂 DANS TES LISTES</p>',
+            unsafe_allow_html=True,
+        )
+        if free.get("in"):
+            _render_pepite_card(free["in"], "libre_in")
         else:
             st.caption("Aucun contenu de tes listes ne collait à cette envie.")
-        outside = free.get("outside")
-        if isinstance(outside, dict) and outside.get("id"):
-            _render_pop_free_card(outside, "HORS DE TES LISTES")
+        if isinstance(free.get("outside"), dict) and free["outside"].get("id"):
+            st.markdown(
+                '<p style="color:#9DC5BF;font-size:.82rem;margin:.55rem 0 .3rem;font-weight:700;'
+                'letter-spacing:.08em;">🌐 HORS DE TES LISTES</p>',
+                unsafe_allow_html=True,
+            )
+            _render_pepite_card(free["outside"], "libre_out")
         else:
             st.caption("🌐 La proposition hors listes n'a pas été retrouvée sur TMDB — reformule ton envie.")
         if free.get("reason"):
@@ -8998,7 +9012,7 @@ def _render_pop_free_section(api_key: str, dataset: dict) -> None:
             )
     if st.session_state.get("pop_free_error"):
         st.markdown(
-            f'<div class="accent-callout"><strong>⚠️ POP libre</strong> · '
+            f'<div class="accent-callout"><strong>⚠️ La Pépite libre</strong> · '
             f"{escape(str(st.session_state['pop_free_error']))}</div>",
             unsafe_allow_html=True,
         )
@@ -9047,7 +9061,10 @@ def render_pop_page() -> None:
     # V156 — le POP LIBRE est rendu AVANT toute sortie anticipée : il est
     # TOUJOURS visible, même sans humeur choisie (bug retourné : la section
     # n'apparaissait qu'après avoir sélectionné une humeur).
-    _render_pop_free_section(api_key, dataset)
+    # kind est défini plus bas (pills du panneau) — sa valeur vit dans
+    # session_state via la key « pop_kind » : lisible dès maintenant.
+    _render_pop_free_section(api_key, _groq_api_key(), dataset,
+                             st.session_state.get("pop_kind") or "Peu importe")
     st.markdown('<div class="pop-panel-start"></div>', unsafe_allow_html=True)
     with st.container(border=True):
         mood = st.pills("🎯 Ton humeur du moment", list(pop_engine.POP_MOODS), key="pop_mood")
@@ -9073,11 +9090,23 @@ def render_pop_page() -> None:
         note = ""
         if (api_key or groq_key) and fresh:
             try:
-                with st.spinner("💎 L'IA fouille tes listes…"):
+                with st.spinner("💎 L'IA fouille tes listes ET au-delà…"):
                     res = pop_engine.pop_ask_ai(api_key, groq_key, mood, fresh)
-                pick = next((c for c in fresh if c["id"] == res["pick_id"]), None)
+                pick = next((c for c in fresh if c["id"] == res["in_list_id"]), None)
                 if pick:
-                    result = {**pick, "reason": res["reason"], "engine": "Groq" if groq_key else "Gemini"}
+                    # V157 — le tirage par humeur propose AUSSI une œuvre
+                    # hors des listes (demande utilisateur), retrouvée sur
+                    # TMDB comme pour l'envie libre.
+                    _outside = res.get("outside") or {}
+                    outside_found = _tmdb_search_media(
+                        _outside.get("kind") or "Film",
+                        _outside.get("title") or "",
+                        _outside.get("year"),
+                        _tmdb_api_key(),
+                    ) if _outside.get("title") else {}
+                    result = {"in": pick, "outside": outside_found or None,
+                              "reason": res["reason"],
+                              "engine": "Groq" if groq_key else "Gemini"}
             except RuntimeError as exc:
                 note = str(exc)
         if result is None and fresh:
@@ -9085,11 +9114,12 @@ def render_pop_page() -> None:
             if res:
                 pick = next((c for c in fresh if c["id"] == res["pick_id"]), None)
                 if pick:
-                    result = {**pick, "reason": res["reason"], "engine": "Local"}
+                    result = {"in": pick, "outside": None, "reason": res["reason"], "engine": "Local"}
         if result:
             st.session_state["pop_result"] = result
-            drawn.append({"id": result["id"], "title": result.get("title") or "?",
-                          "kind": result.get("kind") or "Film"})
+            _in_pick = result.get("in") or {}
+            drawn.append({"id": _in_pick.get("id"), "title": _in_pick.get("title") or "?",
+                          "kind": _in_pick.get("kind") or "Film"})
             st.session_state["pop_drawn"] = drawn
             # V150 : l'erreur Gemini reste AFFICHÉE (caption discrète sous le
             # résultat) même quand le mode local prend le relais — avant, elle
@@ -11065,16 +11095,22 @@ def _stats_activity_section(filtered: "pd.DataFrame", period_label: str,
             unsafe_allow_html=True,
         )
         if _lists_all:
-            _chips = "".join(
-                f'<span class="mc-chip">🗂️ {escape(str(l.get("name") or "Liste"))} · '
-                f'{len(l.get("movies") or []) + len(l.get("shows") or [])}</span>'
-                for l in _lists_all[:12]
-            )
+            # V157 — des TUILES par liste (retour utilisateur : « des tuiles
+            # avec le nom de mes listes et le nombre de contenu »), sous le
+            # sous-titre « Les statistiques de tes listes ».
             st.markdown(
-                '<p class="actor-meta" style="margin:.45rem 0 .2rem;">🗂️ Les statistiques de tes listes :</p>'
-                f'<div style="display:flex;flex-wrap:wrap;gap:.35rem;">{_chips}</div>',
+                '<p class="actor-section-title" style="letter-spacing:.1em;font-size:.76rem;'
+                'margin-top:.6rem;">🗂️ LES STATISTIQUES DE TES LISTES</p>',
                 unsafe_allow_html=True,
             )
+            _list_cards = [
+                {"emoji": "🗂️", "k": str(l.get("name") or "Liste")[:28],
+                 "v": len(l.get("movies") or []) + len(l.get("shows") or []),
+                 "d": "contenus"}
+                for l in _lists_all[:8]
+            ]
+            if _list_cards:
+                st.markdown(_metric_cards(_list_cards), unsafe_allow_html=True)
 
     # ── Heatmap d'activité (suit les filtres) ────────────────────────────────
     st.divider()
@@ -11515,10 +11551,6 @@ def _stats_history_section(ctx: dict) -> None:
     # « la liste s'enroule sur elle-même »). La recherche vient du panneau
     # de filtres en haut de page (ctx['search']).
     if True:
-        st.markdown(f"**📜 Historique des vues ({len(rows)})**")
-        st.caption(
-            "Films et épisodes de la sélection filtrée ci-dessus. La recherche vient du panneau de filtres en haut de page."
-        )
         limit_col = st.columns(1)[0]
         display_choice = limit_col.selectbox(
             "Afficher",
@@ -11548,6 +11580,14 @@ def _stats_history_section(ctx: dict) -> None:
             start_date=_hist_lo,
             end_date=_hist_hi,
             now=datetime.now(PARIS_TZ),
+        )
+
+        # V157 — le compte est celui de la sélection FILTRÉE (période, type,
+        # genre, recherche) : avant, le total all-time s'affichait même avec
+        # une période restreinte (retour : « 6753 »).
+        st.markdown(f"**📜 Historique des vues ({len(visible)})**")
+        st.caption(
+            "Films et épisodes de la sélection filtrée ci-dessus. La recherche vient du panneau de filtres en haut de page."
         )
         if media_filter != "Tous":
             wanted = "Film" if media_filter == "Films" else "Épisode"
@@ -11582,7 +11622,8 @@ def _stats_history_section(ctx: dict) -> None:
                     "Genres": " · ".join(row.get("genres") or []) or "—",
                     "Durée": _format_minutes(int(row.get("runtime") or 0)),
                     "Lectures": row.get("plays") or 1,
-                    "Ma note": f"{row['personal_rating']:.1f}/10" if row.get("personal_rating") else "—",
+                    # V157 — « Ma note » retirée ici : le toggle ⭐ de
+                    # l'onglet y consacre toute la place (retour utilisateur).
                 }
             )
         st.markdown(f"#### Détail des visionnages ({len(visible)})")
@@ -11748,11 +11789,17 @@ def render_basic_stats_page() -> None:
     # au dataframe filtré, donc heatmap, graphiques, goûts, ADN… suivent
     # tous la recherche, comme l'historique et les notes.
     if str(stats_search or "").strip():
+        # V157 — FIX KeyError : la colonne du DataFrame s'appelle « titre »
+        # (pas « title ») — crash remonté par l'utilisateur avec traceback.
         _q_all = str(stats_search).strip().casefold()
-        filtered = filtered[
-            filtered["title"].astype(str).str.casefold().str.contains(_q_all, na=False)
-            | filtered["serie"].astype(str).str.casefold().str.contains(_q_all, na=False)
-        ]
+        _title_col = "titre" if "titre" in filtered.columns else ("title" if "title" in filtered.columns else None)
+        if _title_col:
+            _mask = filtered[_title_col].astype(str).str.casefold().str.contains(_q_all, na=False)
+            if "episode_label" in filtered.columns:
+                _mask = _mask | filtered["episode_label"].astype(str).str.casefold().str.contains(_q_all, na=False)
+            filtered = filtered[_mask]
+        else:
+            filtered = filtered.iloc[0:0]
 
     period_label = period if period != "Période personnalisée" else f"Période personnalisée {custom_start} → {custom_end}"
     rating_txt = f" · **ma note {rating_lo}–{rating_hi}/10**" if (rating_lo > 0 or rating_hi < 10) else ""
@@ -11836,8 +11883,18 @@ def render_basic_stats_page() -> None:
         # V155 — FUSION demandée : UN seul tableau à la fois, avec un VRAI
         # toggle (l'utilisateur aime les toggles) : off = historique des
         # vues, on = contenus notés. Export Excel = 2 onglets.
+        # V157 — toggle PLUS VISIBLE (retour utilisateur) : titre de section
+        # dédié + libellé agrandi, le tout dans le même verre que la nav.
+        st.markdown(
+            '<p style="font-family:ManropeMSL,DejaVu Sans,sans-serif;font-size:1.02rem;'
+            'font-weight:800;color:#EAF6F3;margin:.1rem 0 .15rem;">'
+            "📖 Vues ou ⭐ notes ?</p>"
+            '<p style="color:#9DC5BF;font-size:.8rem;margin:0 0 .3rem;">'
+            "Le même tableau, deux lectures : ton historique complet, ou tes contenus notés.</p>",
+            unsafe_allow_html=True,
+        )
         _show_notes = st.toggle(
-            "⭐ Afficher mes contenus notés",
+            "Afficher mes contenus notés (⭐)",
             key="stats_show_notes",
             help="Bascule entre l'historique de tes visionnages et tes notes.",
         )
