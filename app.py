@@ -905,7 +905,10 @@ st.markdown(
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: none; }
     }
-    /* Boutons INACTIFS : verre sobre, texte doux */
+    /* Boutons INACTIFS : verre sobre, texte doux
+       V160 — LIQUID GLASS (demande utilisateur, inspiration capture) :
+       transitions plus amples et « ressort » doux, halo radial qui se
+       diffuse comme une goutte d'eau au survol, zoom léger. */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] {
         background: rgba(4, 34, 30, .35) !important;
@@ -917,18 +920,29 @@ st.markdown(
         font-weight: 700 !important;
         letter-spacing: .04em !important;
         min-height: 40px !important;
-        transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease, color .18s ease, background .18s ease !important;
+        position: relative !important;
+        overflow: hidden;
+        transition: transform .32s cubic-bezier(.34, 1.35, .42, 1), box-shadow .32s ease,
+                    border-color .32s ease, color .32s ease, background .32s ease !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover,
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover {
-        transform: translateY(-2px);
-        color: #fff !important;
-        border-color: rgba(0, 163, 146, .55) !important;
-        background: rgba(0, 163, 146, .14) !important;
-        box-shadow: 0 10px 22px rgba(0, 163, 146, .16) !important;
+    /* GOUTTE D'EAU : halo radial discret, centré, qui s'étend au survol */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button::before,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: radial-gradient(circle at 50% 55%, rgba(0, 163, 146, .34), rgba(0, 163, 146, .10) 55%, transparent 72%);
+        transform: scale(.35);
+        opacity: 0;
+        transition: transform .5s cubic-bezier(.25, .8, .3, 1), opacity .5s ease;
+        pointer-events: none;
+        z-index: 0;
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button p,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] p {
+        position: relative;
+        z-index: 1;
         color: #9DC5BF !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .8rem !important;
@@ -936,7 +950,21 @@ st.markdown(
         line-height: 1 !important;
         margin: 0 !important;
     }
-    /* Bouton ACTIF : vert lumineux + zoom léger + texte blanc */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover {
+        transform: translateY(-2px) scale(1.04);
+        color: #fff !important;
+        border-color: rgba(0, 163, 146, .60) !important;
+        background: rgba(0, 163, 146, .16) !important;
+        box-shadow: 0 12px 26px rgba(0, 163, 146, .22), inset 0 0 14px rgba(0, 163, 146, .10) !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover::before,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover::before {
+        transform: scale(1.18);
+        opacity: 1;
+    }
+    /* Bouton ACTIF : vert lumineux + zoom léger + texte blanc
+       V160 — même ressort doux qu'au survol (transition unifiée). */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] {
         background: linear-gradient(150deg, rgba(0, 163, 146, .42), rgba(0, 82, 75, .6)) !important;
@@ -952,7 +980,7 @@ st.markdown(
         min-height: 40px !important;
         transform: scale(1.05);
         box-shadow: 0 12px 26px rgba(0, 163, 146, .30), inset 0 0 16px rgba(255, 255, 255, .05) !important;
-        transition: transform .18s ease, box-shadow .18s ease !important;
+        transition: transform .32s cubic-bezier(.34, 1.35, .42, 1), box-shadow .32s ease !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button p,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] p {
@@ -1343,8 +1371,11 @@ st.markdown(
        capture de son dashboard Spotify) : la partie « déjà » (verte) et la
        partie « à voir » (jaune) sont SÉPARÉES par un espace vide, avec un
        CURSEUR (tiret blanc lumineux) au point de progression. La position
-       se pilote par la variable --pct posée sur le conteneur. */
+       se pilote par la variable --pct posée sur le conteneur.
+       V160 — ESPACE VIDÉE BIEN VISIBLE (retour : « je ne vois pas l'espace,
+       juste le curseur ») : 9 px de chaque côté du curseur, réglable. */
     .progress-bar-container {
+        --msl-bargap: 9px;
         position: relative;
         background: transparent;
         border-radius: 8px;
@@ -1356,8 +1387,8 @@ st.markdown(
         content: "";
         position: absolute;
         left: 0; top: 0; bottom: 0;
-        width: calc(var(--pct, 0%) - 3px);
-        max-width: calc(100% - 3px);
+        width: calc(var(--pct, 0%) - var(--msl-bargap));
+        max-width: calc(100% - var(--msl-bargap));
         background: var(--am-green);
         border-radius: 8px 0 0 8px;
     }
@@ -1377,9 +1408,46 @@ st.markdown(
     .progress-rest {
         position: absolute;
         top: 0; bottom: 0; right: 0;
-        left: calc(var(--pct, 0%) + 3px);
+        left: calc(var(--pct, 0%) + var(--msl-bargap));
         background: linear-gradient(90deg, #FFE100, #FFC400);
         border-radius: 0 8px 8px 0;
+    }
+    /* V160 — ANIMATION D'INITIALISATION (demande utilisateur) : la barre
+       part de ZÉRO et s'arrête au score, UNE SEULE fois, à la création de
+       l'élément (ouverture d'une fiche, nouvelle tuile qui apparaît au
+       scroll). L'enregistrement @property rend la variable --pct
+       animable ; « inherits: true » pour que .progress-rest (élément
+       enfant) suive la valeur animée. Navigateurs sans @property : la
+       barre reste simplement statique (dégradation gracieuse). */
+    @property --pct {
+        syntax: '<percentage>';
+        inherits: true;
+        initial-value: 0%;
+    }
+    .progress-bar-container {
+        animation: mslBarGrow 1.05s cubic-bezier(.22, .61, .31, 1) 1 both;
+    }
+    @keyframes mslBarGrow {
+        from { --pct: 0%; }
+    }
+    /* Barres qui changent souvent (enrichissement TMDB) : pas d'animation
+       — elles rebougeraient de zéro à chaque rafraîchissement. */
+    .progress-bar-container.msl-bar-plain { animation: none; }
+    /* V160 — VAGUE DE LA FICHE : révélation de gauche à droite à
+       l'ouverture (la largeur du rectangle de découpe part de zéro), le
+       trait plat et le curseur apparaissent en fondu juste après. */
+    .msl-wavebar .msl-wave-cliprect {
+        animation: mslWaveGrow 1.15s cubic-bezier(.22, .61, .31, 1) 1 both;
+    }
+    @keyframes mslWaveGrow {
+        from { width: 0px; }
+    }
+    .msl-wavebar .msl-wave-rest,
+    .msl-wavebar .msl-wave-knob {
+        animation: mslWaveFade .55s ease .8s 1 both;
+    }
+    @keyframes mslWaveFade {
+        from { opacity: 0; }
     }
     .media-list-card strong {
         color: var(--am-text);
@@ -4438,20 +4506,20 @@ def _wave_bar_html(
 
     if animated and px > 4:
         played = (
-            f'<clipPath id="wvc{uid}"><rect x="0" y="0" width="{max(px - gap, 0):.1f}" height="{height}"/></clipPath>'
+            f'<clipPath id="wvc{uid}"><rect class="msl-wave-cliprect" x="0" y="0" width="{max(px - gap, 0):.1f}" height="{height}"/></clipPath>'
             f'<g clip-path="url(#wvc{uid})">'
             f'<path class="msl-wave-drift" d="{_pts(0, px * 3)}" fill="none" stroke="{played_color}"'
             f' stroke-width="{stroke_w:.1f}" stroke-linecap="round"/></g>'
         )
     elif px > 1:
         played = (
-            f'<path d="{_pts(0, max(px - gap, 0.5))}" fill="none" stroke="{played_color}"'
+            f'<path class="msl-wave-rest" d="{_pts(0, max(px - gap, 0.5))}" fill="none" stroke="{played_color}"'
             f' stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>'
         )
     else:
         played = ""
     rest = (
-        f'<path d="M{min(px + gap, width):.1f},{y} L{width},{y}" fill="none" stroke="{rest_color}"'
+        f'<path class="msl-wave-rest" d="M{min(px + gap, width):.1f},{y} L{width},{y}" fill="none" stroke="{rest_color}"'
         f' stroke-width="2.6" stroke-linecap="round" opacity=".75"/>'
         if px + gap < width else ""
     )
@@ -4462,13 +4530,13 @@ def _wave_bar_html(
     knob_h = max(11.0, height * 0.60)
     knob_x = min(px, width - knob_w / 2 - 1)
     knob = (
-        f'<rect x="{knob_x - knob_w / 2:.1f}" y="{y - knob_h / 2:.1f}" '
+        f'<rect class="msl-wave-knob" x="{knob_x - knob_w / 2:.1f}" y="{y - knob_h / 2:.1f}" '
         f'width="{knob_w:.1f}" height="{knob_h:.1f}" rx="{knob_w / 2:.1f}" fill="#fff" '
         f'stroke="#001412" stroke-width="1.2"/>'
         if px > 2 else ""
     )
     return (
-        f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none"'
+        f'<svg class="msl-wavebar" viewBox="0 0 {width} {height}" preserveAspectRatio="none"'
         f' style="width:100%;height:{height}px;display:block;">{played}{rest}{knob}</svg>'
     )
 
@@ -7847,6 +7915,24 @@ def _render_search_bookmarks() -> None:
                 st.caption("⚠️ Le lien est long — c'est normal, il contient tous tes signets.")
 
 
+def _msl_bar_html(pct: float, animated: bool = True) -> str:
+    """V160 — barre de progression « Spotify » en HTML, pour remplacer les
+    st.progress natifs (retour utilisateur : la barre de chargement TMDB
+    du Tableau de bord était restée à l'ancien style). `animated=False`
+    pour les barres qui bougent souvent (enrichissement) : elles ne
+    rejoueraient pas l'animation d'initialisation de zéro à chaque
+    rafraîchissement."""
+    try:
+        value = max(0.0, min(100.0, float(pct or 0)))
+    except (TypeError, ValueError):
+        value = 0.0
+    cls = "" if animated else " msl-bar-plain"
+    return (
+        f'<div class="progress-bar-container{cls}" style="--pct:{value:.1f}%">'
+        f'<div class="progress-rest"></div></div>'
+    )
+
+
 @st.fragment(run_every=2.5)
 def _qr_tmdb_wait_fragment() -> None:
     """Écran d'attente TMDB de « Que regarder ? » — V121.
@@ -7873,7 +7959,7 @@ def _qr_tmdb_wait_fragment() -> None:
         unsafe_allow_html=True,
     )
     if total > 0:
-        st.progress(min(done / total, 1.0))
+        st.markdown(_msl_bar_html(done * 100.0 / total, animated=False), unsafe_allow_html=True)
         st.caption(
             f"🎬 Enrichissement TMDB : **{done}/{total}** titre(s) traités "
             f"({int(done * 100 / total)} %) — genres, acteurs, studios, pays, mots-clés."
@@ -9293,11 +9379,18 @@ def render_pop_page() -> None:
     # V158 — PROFIL : les tuiles pépite sont de vraies tuiles « Que
     # regarder ? » (score/friction/signaux) → 1 seul build_profile par
     # rendu, partagé par toutes les tuiles de la page.
-    _pop_profile = (
-        build_profile(dataset)
-        if (st.session_state.get("pop_free") or st.session_state.get("pop_result"))
-        else None
-    )
+    # V160 — CACHE du profil (anti-lenteur) : le profil ne dépend que des
+    # vues + notes (pas de l'enrichissement TMDB en arrière-plan) — on le
+    # mémorise en session tant que le dataset n'est pas rechargé.
+    _pop_profile = None
+    if st.session_state.get("pop_free") or st.session_state.get("pop_result"):
+        _prof_sig = (id(dataset), str(dataset.get("loaded_at") or ""))
+        _prof_cache = st.session_state.get("_pop_profile_cache")
+        if _prof_cache and _prof_cache[0] == _prof_sig:
+            _pop_profile = _prof_cache[1]
+        else:
+            _pop_profile = build_profile(dataset)
+            st.session_state["_pop_profile_cache"] = (_prof_sig, _pop_profile)
     _render_pop_free_section(api_key, _groq_api_key(), dataset,
                              st.session_state.get("pop_kind") or "Peu importe",
                              _pop_profile)
@@ -11339,8 +11432,13 @@ def _stats_activity_section(filtered: "pd.DataFrame", period_label: str,
             unsafe_allow_html=True,
         )
         _list_cards = [
-            {"emoji": "⭐", "k": "Watchlist", "v": len(_watchlist_all.get("movies") or []) + len(_watchlist_all.get("shows") or []), "d": "contenus à voir"},
+            # V160 — ORDRE (retour utilisateur : « passer d'une somme à un
+            # nombre puis de nouveau des sommes ») : le NOMBRE de listes
+            # d'abord (le contenant), puis les VOLUMES (le contenu) — la
+            # lecture devient : « 2 listes · 305 contenus à voir · 306 en
+            # tout », avant le détail liste par liste.
             {"emoji": "🗂️", "k": "Listes personnelles", "v": len(_lists_all), "d": "listes statiques"},
+            {"emoji": "⭐", "k": "Watchlist", "v": len(_watchlist_all.get("movies") or []) + len(_watchlist_all.get("shows") or []), "d": "contenus à voir"},
             {"emoji": "📦", "k": "Contenus en listes", "v": sum(len(l.get("movies") or []) + len(l.get("shows") or []) for l in _lists_all), "d": "au total des listes"},
         ] + [
             {"emoji": "🗂️", "k": str(l.get("name") or "Liste")[:28],
@@ -11409,12 +11507,12 @@ def _stats_tastes_section(filtered: "pd.DataFrame", period_label: str) -> None:
         total_genre_hours = sum(hours for _, hours in genre_hours) or 1
         for genre, hours in genre_hours:
             st.markdown(f"**{escape(genre)}** — {round(hours / total_genre_hours * 100)}%")
-            st.progress(min(hours / total_genre_hours, 1.0))
+            st.markdown(_msl_bar_html(hours * 100.0 / total_genre_hours), unsafe_allow_html=True)
     with dna2:
         st.markdown("**🧭 Tes grands équilibres**")
         for item in stats_mod.dna_balances(filtered, datetime.now(PARIS_TZ)):
             st.markdown(item["label"])
-            st.progress(min(item["pct"], 1.0))
+            st.markdown(_msl_bar_html(float(item["pct"]) * 100.0), unsafe_allow_html=True)
 
     # ── Studios préférés (séries) ────────────────────────────────────────────
     studios = stats_mod.studio_rank(filtered)
@@ -11431,7 +11529,7 @@ def _stats_tastes_section(filtered: "pd.DataFrame", period_label: str) -> None:
                     f"**{escape(studio['name'])}** — {_format_minutes(int(round(studio['hours'] * 60)))} · "
                     f"**{round(studio['pct'] * 100)}%** de tes heures"
                 )
-                st.progress(min(studio["pct"], 1.0))
+                st.markdown(_msl_bar_html(float(studio["pct"]) * 100.0), unsafe_allow_html=True)
 
     # ── Marathons ────────────────────────────────────────────────────────────
     marathons_df = stats_mod.marathons(filtered)
@@ -12175,18 +12273,38 @@ def _stats_history_section(ctx: dict) -> None:
                 type="primary",
                 key="download_history_json",
             )
-        # V155 — EXPORT EXCEL 2 ONGLETS (vues + notes) : la fusion demandée,
-        # un onglet par tableau.
+        # V160 — EXPORT EXCEL PRÉPARÉ AU CLIC (fini la lenteur) : le fichier
+        # (3 onglets + graphiques) met ~2 s à se construire sur un gros
+        # historique — il était reconstruit À CHAQUE rendu de l'onglet
+        # (chaque frappe de recherche, chaque filtre…), d'où la lenteur
+        # ressentie en navigation (retour utilisateur V159). Désormais :
+        # 1 clic « Préparer » → spinner → bouton de téléchargement.
         try:
-            _xlsx = _history_notes_xlsx(visible, _rated_contents_rows(ctx.get("dataset") or {}))
-            st.download_button(
-                "📥 Export Excel (Vues + Notes, 2 onglets)",
-                data=_xlsx,
-                file_name="media-smart-lists-historique-et-notes.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
-                key="download_history_notes_xlsx",
-            )
+            _xlsx_sig = (len(visible),
+                         str((visible[0] or {}).get("watched_at") or ""),
+                         str((visible[-1] or {}).get("watched_at") or ""))
+            if st.button(
+                "📥 Export Excel (Vues + Notes, 3 onglets)",
+                type="primary", use_container_width=True, key="prep_history_xlsx",
+            ):
+                with st.spinner("Préparation du fichier Excel (tableaux + graphiques)…"):
+                    st.session_state["_stats_xlsx_bytes"] = _history_notes_xlsx(
+                        visible, _rated_contents_rows(ctx.get("dataset") or {})
+                    )
+                    st.session_state["_stats_xlsx_sig"] = _xlsx_sig
+                st.rerun()
+            if st.session_state.get("_stats_xlsx_bytes"):
+                if st.session_state.get("_stats_xlsx_sig") != _xlsx_sig:
+                    st.caption("🔄 Les filtres ont changé depuis la préparation — "
+                               "re-clique pour régénérer le fichier à jour.")
+                st.download_button(
+                    "⬇️ Télécharger le fichier Excel",
+                    data=st.session_state["_stats_xlsx_bytes"],
+                    file_name="media-smart-lists-historique-et-notes.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    key="download_history_notes_xlsx",
+                )
         except Exception as exc:
             st.caption(f"Export Excel indisponible : {exc}")
 
@@ -12293,10 +12411,12 @@ def render_basic_stats_page() -> None:
         # V155 — RECHERCHE partagée (retour utilisateur : « tous les filtres
         # en haut, tout dans le même bloc ») : filtre l'historique des vues
         # ET les contenus notés de l'onglet « Historique & notes ».
+        # V160 — si AUCUN titre ne correspond, la recherche cherche une
+        # PERSONNE (acteur/réalisateur) et filtre par sa filmographie.
         stats_search = st.text_input(
             "🔍 Rechercher un contenu",
             key="stats_search",
-            placeholder="Film, série ou épisode… (filtre l'historique et les notes)",
+            placeholder="Film, série, épisode… ou un acteur / réalisateur (si aucun titre ne correspond)",
         )
 
     filtered = df.copy()
@@ -12312,6 +12432,7 @@ def render_basic_stats_page() -> None:
     # V156 — la RECHERCHE filtre TOUT (retour utilisateur) : elle s'applique
     # au dataframe filtré, donc heatmap, graphiques, goûts, ADN… suivent
     # tous la recherche, comme l'historique et les notes.
+    _pre_search = filtered
     if str(stats_search or "").strip():
         # V157 — FIX KeyError : la colonne du DataFrame s'appelle « titre »
         # (pas « title ») — crash remonté par l'utilisateur avec traceback.
@@ -12324,6 +12445,59 @@ def render_basic_stats_page() -> None:
             filtered = filtered[_mask]
         else:
             filtered = filtered.iloc[0:0]
+
+    # V160 — RECHERCHE PAR ACTEUR / RÉALISATEUR (demande utilisateur) : si
+    # la recherche ne matche AUCUN titre, on cherche une PERSONNE sur TMDB
+    # (recherche cachée 7 j) et on filtre l'historique par sa filmographie
+    # (aussi cachée 7 j — mécanique des fiches personnes V149). Coût : 2
+    # appels TMDB au maximum par recherche infructueuse, puis plus rien.
+    _person_filter = None
+    if str(stats_search or "").strip() and filtered.empty and len(str(stats_search).strip()) >= 3:
+        _q_person = str(stats_search).strip()
+        _api_key = _tmdb_api_key()
+        if _api_key:
+            try:
+                _found = _tmdb_search_person(_q_person, _api_key)
+            except Exception:
+                _found = []
+            if _found:
+                _person = _found[0]
+                try:
+                    _facets = _person_filmography(int(_person.get("id") or 0), _api_key) or {}
+                except Exception:
+                    _facets = {}
+                _flomo_keys = set()
+                _facet_hits = []
+                for _facet_name in ("acteur", "realisateur"):
+                    _facet = _facets.get(_facet_name) or {}
+                    _facet_keys = set()
+                    for _cid, _credit in _facet.items():
+                        try:
+                            _cid_int = int(_cid)
+                        except (TypeError, ValueError):
+                            continue
+                        _prefix = "tv" if str((_credit or {}).get("kind")) == "Série" else "movie"
+                        _facet_keys.add(f"{_prefix}:{_cid_int}")
+                    if _facet_keys:
+                        _facet_hits.append(_facet_name)
+                        _flomo_keys |= _facet_keys
+                if _flomo_keys:
+                    def _row_person_keys(ids) -> set:
+                        try:
+                            _tmdb = int((ids or {}).get("tmdb") or 0)
+                        except (TypeError, ValueError):
+                            return set()
+                        return {f"movie:{_tmdb}", f"tv:{_tmdb}"} if _tmdb else set()
+
+                    _mask_person = _pre_search["ids"].apply(lambda ids: bool(_row_person_keys(ids) & _flomo_keys))
+                    _hit = _pre_search[_mask_person]
+                    _person_filter = {
+                        "name": str(_person.get("name") or _q_person),
+                        "count": int(len(_hit)),
+                        "facets": _facet_hits,
+                    }
+                    if not _hit.empty:
+                        filtered = _hit
 
     period_label = period if period != "Période personnalisée" else f"Période personnalisée {custom_start} → {custom_end}"
     rating_txt = f" · **ma note {rating_lo}–{rating_hi}/10**" if (rating_lo > 0 or rating_hi < 10) else ""
@@ -12381,6 +12555,19 @@ def render_basic_stats_page() -> None:
         f"<strong>{escape(period_label)}</strong>{rating_txt} — {len(filtered)} visionnage(s).</p>",
         unsafe_allow_html=True,
     )
+    # V160 — indicateur « recherche par personne » : la recherche a matché
+    # un acteur/réalisateur (aucun titre ne correspondait).
+    if _person_filter:
+        _facet_labels = {"acteur": "acteur", "realisateur": "réalisateur"}
+        _facets_txt = " · ".join(_facet_labels.get(f, f) for f in _person_filter["facets"]) or "cinéma"
+        st.markdown(
+            f'<div class="accent-callout"><strong>🎭 PERSONNE DÉTECTÉE : '
+            f'{escape(_person_filter["name"])}</strong> — '
+            f'{_person_filter["count"]} visionnage(s) trouvé(s) dans son œuvre '
+            f'({_facets_txt}). Toute la page (heatmap, graphiques, goûts, historique) '
+            f'suit cette sélection.</div>',
+            unsafe_allow_html=True,
+        )
 
     # ── CONTENU DE L'ONGLET ACTIF (matière calculée uniquement ici) ────────
     if active_tab == "Vue d'ensemble":
@@ -13043,7 +13230,7 @@ def _dashboard_tmdb_progress_fragment() -> None:
     done = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("done") or 0) for k in active)
     total = sum(int((_ENRICH_STATE["progress"].get(k) or {}).get("total") or 0) for k in active)
     if total > 0:
-        st.progress(min(done / total, 1.0))
+        st.markdown(_msl_bar_html(done * 100.0 / total, animated=False), unsafe_allow_html=True)
         st.caption(f"⏳ Chargement TMDB : {done}/{total} titre(s) ({int(done * 100 / total)} %) — cette barre se rafraîchit toute seule.")
     else:
         st.caption("⏳ Chargement TMDB en cours…" )

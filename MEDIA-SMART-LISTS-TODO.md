@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 10 octobre 2026 (soir) · Dernière version déployée : V159.
+> Dernière mise à jour : 11 octobre 2026 · Dernière version déployée : V160.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -998,11 +998,47 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       rx, non-régressions) + preuve scroll dédiée (remonte OUI / stable
       sans changement) + 23/23 tests + smoke test app réelle.
 
+### Fait en V160 (retours du 10/10 soir — barres, lenteur, acteur)
+- [x] 🎨 BARRES SPOTIFY : ESPACE VIDÉE clairement visible entre le vert et
+      le jaune (9 px de chaque côté du curseur — avant, le curseur
+      remplissait l'espace ; retour : « je ne vois pas d'espace »).
+- [x] 🎨 ANIMATION D'INITIALISATION (demande utilisateur) : la barre part
+      de ZÉRO et s'arrête au score, UNE fois — à l'ouverture d'une fiche
+      et quand une nouvelle tuile apparaît. Sur la fiche, la VAGUE se
+      révèle de gauche à droite (largeur du clip animée) puis le trait
+      plat et le curseur apparaissent en fondu. Technique : @property
+      CSS (variable --pct animable) + animation des largeurs SVG.
+- [x] 🐛 BARRE TMDB DU TABLEAU DE BORD (oubli V159) : tous les st.progress
+      natifs sont remplacés par les barres Spotify (dashboard, Que
+      regarder pendant l'enrichissement, Goûts : genres/équilibres/
+      studios) — sans animation pour celles qui se rafraîchissent toutes
+      les 2,5 s.
+- [x] ⚡ LENTEUR EN NAVIGATION (retour V159) : CAUSE TROUVÉE AU BANC —
+      l'export Excel (~2 s sur 7000 lignes) était reconstruit À CHAQUE
+      rendu de l'onglet Historique. Il est désormais PRÉPARÉ AU CLIC
+      (bouton Préparer → spinner → Télécharger). + cache du profil de
+      goûts sur la page Pépite. NB : après chaque déploiement, les caches
+      serveur se reconstruisent (enrichissement en arrière-plan) —
+      quelques minutes de relative lenteur sont normales.
+- [x] 🎨 ONGLETS STATS : effet LIQUID GLASS « goutte d'eau » (demande avec
+      capture) — transitions ressort doux, halo radial qui se diffuse au
+      survol, zoom 1.04 + illumination ; le bouton actif garde son zoom.
+- [x] 📊 ORDRE DES TUILES « LES STATISTIQUES DE TES LISTES » (retour) :
+      Listes personnelles (le contenant) → Watchlist → Contenus en
+      listes (les volumes) → détail par liste.
+- [x] 🔎 RECHERCHE PAR ACTEUR/RÉALISATEUR dans la recherche globale des
+      stats (demande utilisateur) : si aucun titre ne correspond, la
+      personne est cherchée sur TMDB (cache 7 j) et l'historique est
+      filtré par sa filmographie — encart « 🎭 PERSONNE DÉTECTÉE » avec
+      le nombre de visionnages ; toute la page suit (KPI, heatmap,
+      graphiques, historique). Coût : 2 appels TMDB max par recherche
+      infructueuse, ensuite le cache prend le relais.
+- [x] Banc : 24/24 (espace 9 px mesuré, animations mslBarGrow/mslWaveGrow,
+      hover mesuré matrix(1.04…), ordre des tuiles, Cranston → 5
+      visionnages, Excel au clic 3 onglets + 4 graphiques,
+      non-régressions) + 23/23 tests + smoke test.
+
 ### PROCHAINES ÉTAPES (validées par l'utilisateur 10/10 soir)
-- [ ] V160 — 🔎 RECHERCHE PAR ACTEUR dans la recherche globale des stats
-      (« on peut maintenant attaquer ça » — demande utilisateur) : taper
-      un nom d'acteur/réalisateur filtre l'historique ; mécanique filmo
-      TMDB déjà en place (cache 7 j), à chiffrer.
 - [ ] V161+ — 💡 LES 4 IDÉES IA (« tu peux attaquer ça aussi maintenant ») :
       • « Pourquoi ce score ? » narratif par l'IA dans la fiche (les signaux expliqués en une phrase vivante) ;
       • « Résolveur de dilemme » : 2-3 contenus hésitants → l'IA tranche ;
