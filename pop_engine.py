@@ -908,3 +908,199 @@ def pop_pick_local(mood: str, candidates: list[dict], exclude_ids: set[int] | No
         "sur mesure !"
     )
     return {"pick_id": best["id"], "reason": reason, "model": "local"}
+
+
+# ═══════════════════════════════════════════════════════════════════
+# V162 — LES 4 IDÉES IA (demande utilisateur : « maximise la clé Groq »)
+# ═══════════════════════════════════════════════════════════════════
+
+def _candidate_payload(candidates: list[dict]) -> str:
+    """JSON compact des candidats (mêmes champs que le pool pépite)."""
+    payload = [
+        {"i": c["id"], "t": c["title"], "k": c["kind"], "y": c["year"],
+         "g": c["genres"], "d": c["runtime"], "r": c["note"], "s": c["source"]}
+        for c in candidates
+    ]
+    return json.dumps(payload, ensure_ascii=False)
+
+
+def score_story_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -> dict:
+    """💬 « Pourquoi ce score ? » NARRATIF (V162, idée validée) : les
+    signaux du moteur de recommandation, expliqués en UNE phrase vivante.
+
+    Signature identique à coulisses_ask_ai (mécanique de précalcul
+    partagée). Retourne {"story": str} ou lève RuntimeError lisible."""
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    prompt = (
+        "Tu es un critique de cinéma et séries francophone, chaleureux, "
+        "avec du tempérament. Le moteur de recommandation de l'utilisateur "
+        f"a attribué un score à ce contenu : {subject}. "
+        f"Les signaux qui expliquent ce score : {hint or 'score de base'}. "
+        "Explique CE SCORE en UNE SEULE phrase française naturelle et "
+        "vivante (tutoiement), qui tisse les signaux sans les recopier en "
+        "liste — avec une pointe de personnalité. Maximum 40 mots. "
+        'Réponds STRICTEMENT en JSON, sans texte autour : {"story": "<ta phrase>"}'
+    )
+    text = ia_complete(gemini_key, groq_key, prompt, 0.85, 300, "score-story")
+    try:
+        parsed = json.loads(text)
+        story = str(parsed.get("story") or "").strip()
+    except ValueError:
+        story = re.sub(r'^[{}\s"]+|[}\s"]+$', "", text or "").strip()
+    if not story:
+        raise RuntimeError("Réponse IA vide — relance")
+    return {"story": story}
+
+
+def dilemma_ask_ai(gemini_key: str, groq_key: str, choices: list[dict]) -> dict:
+    """⚖️ RÉSOLVEUR DE DILEMME (V162, idée validée) : l'utilisateur hésite
+    entre 2-3 contenus de ses listes → l'IA tranche et explique.
+
+    Retourne {"pick_id": int, "reason": str, "order": [ids]}. Lève
+    RuntimeError lisible."""
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    if not choices or len(choices) < 2:
+        raise RuntimeError("Choisis au moins deux contenus")
+    prompt = (
+        "Tu es un ami fin connaisseur de cinéma et séries, francophone, "
+        "décisif et chaleureux (tutoiement). L'utilisateur hésite entre ces "
+        "contenus (JSON, champ i = identifiant, d = durée en minutes, "
+        "r = note publique) :\n"
+        f"{_candidate_payload(choices)}\n\n"
+        "TRANCHE pour SA prochaine soirée : désigne LE contenu à regarder "
+        "premier (champ i), propose l'ordre conseillé des autres (champ i, "
+        "du meilleur au moins urgent), et explique ton verdict en 2-3 "
+        "phrases vivantes (durée dispo implicite : une soirée), sans "
+        "spoiler. Réponds STRICTEMENT en JSON, sans texte autour :\n"
+        '{"pick_id": <champ i>, "reason": "<2-3 phrases>", '
+        '"order": [<champ i>, <champ i>…]}'
+    )
+    text = ia_complete(gemini_key, groq_key, prompt, 0.9, 500, "dilemme")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        match = re.search(r'"(?:pick_id)"\s*:\s*(\d+)', text or "")
+        if not match:
+            raise RuntimeError("Réponse IA illisible — relance")
+        parsed = {"pick_id": int(match.group(1)), "reason": ""}
+    try:
+        pick_id = int(parsed.get("pick_id") or 0)
+    except (TypeError, ValueError):
+        pick_id = 0
+    order = []
+    for value in (parsed.get("order") or [])[:3]:
+        try:
+            order.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    reason = str(parsed.get("reason") or "").strip()
+    if not pick_id or not reason:
+        raise RuntimeError("Réponse IA incomplète — relance")
+    return {"pick_id": pick_id, "reason": reason, "order": order}
+
+
+def after_movie_ask_ai(gemini_key: str, groq_key: str, title: str, year: str,
+                       kind: str, candidates: list[dict]) -> dict:
+    """🎬 « APRÈS CE FILM » (V162, idée validée) : depuis la fiche d'un
+    contenu, l'IA propose les 3 suites logiques DANS les listes de
+    l'utilisateur (enchaînement d'ambiance, pas forcément de saga).
+
+    Retourne {"suggestions": [{"id": int, "title": str, "why": str}…]}."""
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    if not candidates:
+        raise RuntimeError("Aucun candidat dans tes listes")
+    prompt = (
+        "Tu es un programmateur de soirée cinéma/séries francophone, fin "
+        f"stratège des enchaînements. L'utilisateur vient de voir « {title} »"
+        f" ({year}, {kind}). Voici les contenus DISPONIBLES dans ses listes "
+        "(JSON, champ i = identifiant) :\n"
+        f"{_candidate_payload(candidates)}\n\n"
+        "Propose les 3 MEILLEURES suites de soirée : ce qui se regarde "
+        "juste après, en écho d'ambiance, de thème ou d'énergie (pas "
+        "forcément la même saga). Pour chacune : le champ i, et UNE phrase "
+        "courte et alléchante qui explique l'enchaînement (sans spoiler). "
+        "Réponds STRICTEMENT en JSON, sans texte autour :\n"
+        '{"suggestions": [{"id": <champ i>, "title": "<titre>", '
+        '"why": "<une phrase>"}, …]}'
+    )
+    text = ia_complete(gemini_key, groq_key, prompt, 0.9, 500, "apres-film")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        raise RuntimeError("Réponse IA illisible — relance")
+    suggestions = []
+    for entry in (parsed.get("suggestions") or [])[:3]:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            sid = int(entry.get("id") or 0)
+        except (TypeError, ValueError):
+            sid = 0
+        if sid:
+            suggestions.append({
+                "id": sid,
+                "title": str(entry.get("title") or "").strip(),
+                "why": str(entry.get("why") or "").strip(),
+            })
+    if not suggestions:
+        raise RuntimeError("Réponse IA sans suggestion — relance")
+    return {"suggestions": suggestions}
+
+
+def perfect_night_ask_ai(gemini_key: str, groq_key: str, hour: str, mood: str,
+                         minutes: int, kind: str, candidates: list[dict]) -> dict:
+    """🌙 « TON SOIR PARFAIT » (V162, idée validée) : heure + humeur +
+    temps disponible → l'IA compose un mini-programme avec les contenus
+    DES LISTES de l'utilisateur (durées réelles respectées).
+
+    Retourne {"vibe": str, "program": [{"id", "title", "slot", "minutes",
+    "why"}…]}."""
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    if not candidates:
+        raise RuntimeError("Aucun candidat dans tes listes")
+    prompt = (
+        "Tu es un directeur de programmation personnel, francophone, "
+        "chaleureux et précis (tutoiement). Compose la SOIRÉE PARFAITE de "
+        f"l'utilisateur : il est {hour}, son humeur : « {mood} », et il a "
+        f"environ {minutes} minutes devant lui"
+        + (f" (uniquement des {kind.lower()}s)" if kind in ("Film", "Série") else "")
+        + ". Contenus disponibles dans SES listes (JSON, champ i = "
+          "identifiant, d = durée en minutes — respecte les durées !) :\n"
+        f"{_candidate_payload(candidates)}\n\n"
+        "Construis un programme de 1 à 3 contenus dont la SOMME des durées "
+        "reste SOUS la limite, avec l'horaire de début de chaque partie "
+        "(format HHhMM) et une phrase courte par choix. Termine par une "
+        "phrase d'ambiance pour la soirée. Réponds STRICTEMENT en JSON, "
+        "sans texte autour :\n"
+        '{"vibe": "<phrase d\'ambiance>", "program": [{"id": <champ i>, '
+        '"title": "<titre>", "slot": "<HHhMM>", "minutes": <durée>, '
+        '"why": "<une phrase>"}, …]}'
+    )
+    text = ia_complete(gemini_key, groq_key, prompt, 0.9, 700, "soir-parfait")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        raise RuntimeError("Réponse IA illisible — relance")
+    program = []
+    for entry in (parsed.get("program") or [])[:3]:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            pid = int(entry.get("id") or 0)
+        except (TypeError, ValueError):
+            pid = 0
+        if pid:
+            program.append({
+                "id": pid,
+                "title": str(entry.get("title") or "").strip(),
+                "slot": str(entry.get("slot") or "").strip(),
+                "minutes": int(entry.get("minutes") or 0),
+                "why": str(entry.get("why") or "").strip(),
+            })
+    if not program:
+        raise RuntimeError("Réponse IA sans programme — relance")
+    return {"vibe": str(parsed.get("vibe") or "").strip(), "program": program}

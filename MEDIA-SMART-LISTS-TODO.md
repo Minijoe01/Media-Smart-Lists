@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 11 octobre 2026 (après-midi) · Dernière version déployée : V161.
+> Dernière mise à jour : 11 octobre 2026 (soir) · Dernière version déployée : V162.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1070,8 +1070,43 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       The Office ▶️, Dynasty complète, non-régressions) + 23/23 tests +
       smoke test.
 
+### Fait en V162 (retours du 11/10 soir — LES 4 IDÉES IA + finitions)
+- [x] 💬 « POURQUOI CE SCORE ? » NARRATIF (idée IA validée) : dans chaque
+      fiche, sous les pastilles de signaux, l'IA résume le score en UNE
+      phrase vivante (tutoiement, 40 mots max). Précalculée en thread au
+      chargement de la fiche (Groq prioritaire) — jamais bloquante : si
+      l'IA n'est pas prête, les pastilles seules s'affichent.
+- [x] ⚖️ RÉSOLVEUR DE DILEMME (idée IA validée) : sur « Que regarder ? »,
+      un panneau « J'hésite entre deux ou trois… » — multiselect des
+      résultats filtrés (2-3 max) → l'IA tranche (gagnant + ordre conseillé
+      + 2-3 phrases) + bouton fiche du gagnant.
+- [x] 🎬 « APRÈS CE FILM » (idée IA validée) : dans la fiche, un bouton
+      « Que regarder ensuite ? » → les 3 MEILLEURES suites de soirée dans
+      TES listes (échos d'ambiance/thème/énergie), avec une phrase
+      alléchante par enchaînement + lien TMDB.
+- [x] 🌙 « TON SOIR PARFAIT » (idée IA validée) : sur La Pépite, un panneau
+      heure + temps dispo + humeur (les 12) + type → l'IA compose un
+      mini-programme avec les contenus de tes listes (durées réelles
+      respectées, somme sous la limite), horaires par étape, phrase
+      d'ambiance + boutons fiche par étape.
+- [x] 🏷️ PASTILLES : UNE SEULE par tuile (retour : « une série peut être
+      en cours, watchlist ET déjà vue ») — priorité demandée : 1. ▶️ En
+      cours · 2. 🚫 Abandonnée · 3. 📂 ta liste · 4. ✅ Vu · 5. 🌐 Hors.
+- [x] 🎨 COULEURS distinctes (retour : « en cours » était jaune comme la
+      Watchlist) : ▶️ En cours = ORANGE (#ffc069), 🚫 Abandonnée = ROUGE
+      doux (#ff9aab) — sur tuiles ET fiches. Vert = vu, jaune = liste,
+      bleu = hors (inchangés).
+- [x] 🎨 ONGLETS GLASS v3 (retour : « enlève les bordures des boutons, un
+      seul encadré clear glass ») : UNE pilule translucide englobe les 4
+      boutons (999px, flou 16px, liseré unique) ; boutons NUS (sans
+      bordure) ; survol = goutte + shine + zoom locaux ; ACTIF = verre
+      givré vert (liseré interne lumineux, pas de bordure dure).
+- [x] Banc : 17/17 (phrase 💬 dans la fiche, dilemme parsé, après-film 3
+      suggestions, soir parfait (programme + boutons), pastille unique
+      Severance en orange, pilule unique + boutons nus + actif givré
+      mesurés, non-régressions) + 23/23 tests + smoke test.
+
 ### PROCHAINES ÉTAPES (validées par l'utilisateur)
-- [ ] V162 — 💡 LES 4 IDÉES IA (« tu peux attaquer ça aussi maintenant ») :
       • « Pourquoi ce score ? » narratif par l'IA dans la fiche (les signaux expliqués en une phrase vivante) ;
       • « Résolveur de dilemme » : 2-3 contenus hésitants → l'IA tranche ;
       • « Après ce film » : depuis la fiche, l'IA propose les 3 suites logiques DANS tes listes ;
