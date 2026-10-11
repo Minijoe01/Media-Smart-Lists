@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 11 octobre 2026 · Dernière version déployée : V160.
+> Dernière mise à jour : 11 octobre 2026 (après-midi) · Dernière version déployée : V161.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1038,8 +1038,40 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       visionnages, Excel au clic 3 onglets + 4 graphiques,
       non-régressions) + 23/23 tests + smoke test.
 
-### PROCHAINES ÉTAPES (validées par l'utilisateur 10/10 soir)
-- [ ] V161+ — 💡 LES 4 IDÉES IA (« tu peux attaquer ça aussi maintenant ») :
+### Fait en V161 (retours du 11/10 — glass v2, acteur complet, statuts)
+- [x] 📊 ORDRE DES TUILES (décision tranchée à la demande de l'utilisateur) :
+      ⭐ Watchlist → 📦 Contenus en listes (les volumes ensemble) → 🗂️ Listes
+      personnelles (le contenant, qui introduit le détail) → détail par liste.
+- [x] 🎨 ONGLETS STATS « CLEAR GLASS v2 » (retour : « j'ai l'impression de
+      voir des onglets Excel ») : pilules translucides (radius 999px, flou
+      16px, fond blanc 5,5 %, reflet interne), GOUTTE qui monte du bas au
+      survol, BALAYAGE lumineux (shine) qui traverse, zoom 1.045 ; actif =
+      pilule de verre vert dense à liseré menthe.
+- [x] 🐛 RECHERCHE PAR ACTEUR → HISTORIQUE ET NOTES (retour : « je ne vois
+      aucun film dans l'historique ou les contenus notés ») : le filtre
+      filmo ne s'appliquait qu'au DataFrame (KPI/graphiques) — les tableaux
+      refaisaient leur propre recherche par titre (vide). Désormais les
+      DEUX tableaux suivent la personne (la recherche texte est écartée
+      quand une personne est détectée).
+- [x] 🏷️ PASTILLES D'ÉTAT « ▶️ En cours » / « 🚫 Abandonnée » (retour : The
+      Office proposée « hors listes » alors qu'elle est en cours) : sur les
+      TUILES (à la place de 🌐 quand ça s'applique, en plus de 📂 sinon) et
+      dans la FICHE (priorité : abandonnée > en cours > vu > liste).
+      Sources : Up Next + reprises en pause (en cours), section dropped
+      (abandonnées).
+- [x] 🐛 FICHE DYNASTY (séries abandonnées) : les séries droppées ne vivent
+      pas dans le dataset croisé — la fiche partait d'un item minimal
+      (sans année ni note). Nouveau `_dropped_fiche_row` (item direct) +
+      repli du nombre de saisons sur le PAYLOAD TMDB (la fiche l'a déjà
+      chargé). Reproduit et vérifié au banc : bannière + saisons rendues,
+      pastille « 🚫 Abandonnée », aucun crash. À confirmer en réel — si ça
+      plante encore, me donner le texte exact de l'erreur rouge.
+- [x] Banc : 19/19 (ordre, glass v2 mesuré, acteur → historique 5 + notes 1,
+      The Office ▶️, Dynasty complète, non-régressions) + 23/23 tests +
+      smoke test.
+
+### PROCHAINES ÉTAPES (validées par l'utilisateur)
+- [ ] V162 — 💡 LES 4 IDÉES IA (« tu peux attaquer ça aussi maintenant ») :
       • « Pourquoi ce score ? » narratif par l'IA dans la fiche (les signaux expliqués en une phrase vivante) ;
       • « Résolveur de dilemme » : 2-3 contenus hésitants → l'IA tranche ;
       • « Après ce film » : depuis la fiche, l'IA propose les 3 suites logiques DANS tes listes ;

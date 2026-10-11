@@ -905,16 +905,19 @@ st.markdown(
         from { opacity: 0; transform: translateY(6px); }
         to { opacity: 1; transform: none; }
     }
-    /* Boutons INACTIFS : verre sobre, texte doux
-       V160 — LIQUID GLASS (demande utilisateur, inspiration capture) :
-       transitions plus amples et « ressort » doux, halo radial qui se
-       diffuse comme une goutte d'eau au survol, zoom léger. */
+    /* Boutons INACTIFS — V161 « CLEAR GLASS / GOUTTE D'EAU » (retour
+       utilisateur : « j'ai l'impression de voir des onglets Excel ») :
+       pilules translucides à fort flou, liseré lumineux fin, reflet
+       interne en haut (effet verre), balayage lumineux au survol et
+       goutte qui monte — le langage des apps modernes. */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] {
-        background: rgba(4, 34, 30, .35) !important;
-        border: 1px solid rgba(0, 163, 146, .22) !important;
-        border-radius: 12px !important;
-        color: #9DC5BF !important;
+        background: rgba(255, 255, 255, .055) !important;
+        backdrop-filter: blur(16px) saturate(150%) !important;
+        -webkit-backdrop-filter: blur(16px) saturate(150%) !important;
+        border: 1px solid rgba(255, 255, 255, .17) !important;
+        border-radius: 999px !important;
+        color: #BFE0DA !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .8rem !important;
         font-weight: 700 !important;
@@ -922,56 +925,76 @@ st.markdown(
         min-height: 40px !important;
         position: relative !important;
         overflow: hidden;
-        transition: transform .32s cubic-bezier(.34, 1.35, .42, 1), box-shadow .32s ease,
-                    border-color .32s ease, color .32s ease, background .32s ease !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 4px 14px rgba(0, 0, 0, .20) !important;
+        transition: transform .34s cubic-bezier(.34, 1.3, .42, 1), box-shadow .34s ease,
+                    border-color .34s ease, color .34s ease, background .34s ease !important;
     }
-    /* GOUTTE D'EAU : halo radial discret, centré, qui s'étend au survol */
+    /* GOUTTE D'EAU : halo mou qui monte du bas au survol */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button::before,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]::before {
         content: "";
         position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        background: radial-gradient(circle at 50% 55%, rgba(0, 163, 146, .34), rgba(0, 163, 146, .10) 55%, transparent 72%);
-        transform: scale(.35);
+        inset: -30% -20%;
+        border-radius: 50%;
+        background: radial-gradient(circle at 50% 120%, rgba(0, 163, 146, .38), rgba(0, 163, 146, .12) 55%, transparent 75%);
+        transform: translateY(55%) scale(.7);
         opacity: 0;
         transition: transform .5s cubic-bezier(.25, .8, .3, 1), opacity .5s ease;
         pointer-events: none;
         z-index: 0;
     }
+    /* BALAYAGE LUMINEUX (shine) : un reflet fin qui traverse la pilule */
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button::after,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]::after {
+        content: "";
+        position: absolute;
+        top: 0; bottom: 0;
+        width: 38%;
+        left: -45%;
+        background: linear-gradient(105deg, transparent, rgba(255, 255, 255, .16), transparent);
+        transform: skewX(-18deg);
+        transition: left .55s cubic-bezier(.3, .7, .3, 1);
+        pointer-events: none;
+        z-index: 1;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover {
+        transform: translateY(-2px) scale(1.045);
+        color: #fff !important;
+        border-color: rgba(255, 255, 255, .38) !important;
+        background: rgba(255, 255, 255, .10) !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 10px 26px rgba(0, 163, 146, .22),
+                    0 0 22px rgba(0, 163, 146, .16) !important;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover::before,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover::before {
+        transform: translateY(8%) scale(1);
+        opacity: 1;
+    }
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover::after,
+    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover::after {
+        left: 112%;
+    }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button p,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"] p {
         position: relative;
-        z-index: 1;
-        color: #9DC5BF !important;
+        z-index: 2;
+        color: #BFE0DA !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .8rem !important;
         font-weight: 700 !important;
         line-height: 1 !important;
         margin: 0 !important;
     }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover,
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover {
-        transform: translateY(-2px) scale(1.04);
-        color: #fff !important;
-        border-color: rgba(0, 163, 146, .60) !important;
-        background: rgba(0, 163, 146, .16) !important;
-        box-shadow: 0 12px 26px rgba(0, 163, 146, .22), inset 0 0 14px rgba(0, 163, 146, .10) !important;
-    }
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover::before,
-    div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover::before {
-        transform: scale(1.18);
-        opacity: 1;
-    }
-    /* Bouton ACTIF : vert lumineux + zoom léger + texte blanc
-       V160 — même ressort doux qu'au survol (transition unifiée). */
+    /* Bouton ACTIF — V161 : pilule de verre VERT plus dense (gel lumineux),
+       liseré menthe, glow externe — le « drop » sélectionné. */
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] {
-        background: linear-gradient(150deg, rgba(0, 163, 146, .42), rgba(0, 82, 75, .6)) !important;
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
-        border: 1px solid rgba(0, 163, 146, .65) !important;
-        border-radius: 12px !important;
+        background: linear-gradient(160deg, rgba(0, 163, 146, .50), rgba(0, 82, 75, .42)) !important;
+        backdrop-filter: blur(14px) saturate(160%) !important;
+        -webkit-backdrop-filter: blur(14px) saturate(160%) !important;
+        border: 1px solid rgba(140, 255, 234, .55) !important;
+        border-radius: 999px !important;
         color: #fff !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .8rem !important;
@@ -979,8 +1002,9 @@ st.markdown(
         letter-spacing: .04em !important;
         min-height: 40px !important;
         transform: scale(1.05);
-        box-shadow: 0 12px 26px rgba(0, 163, 146, .30), inset 0 0 16px rgba(255, 255, 255, .05) !important;
-        transition: transform .32s cubic-bezier(.34, 1.35, .42, 1), box-shadow .32s ease !important;
+        box-shadow: 0 10px 26px rgba(0, 163, 146, .35), inset 0 1px 0 rgba(255, 255, 255, .22),
+                    0 0 26px rgba(0, 163, 146, .22) !important;
+        transition: transform .34s cubic-bezier(.34, 1.3, .42, 1), box-shadow .34s ease !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) button p,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-on) [data-testid="stBaseButton-secondary"] p {
@@ -4640,6 +4664,16 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
                     watched_date = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
                 except (TypeError, ValueError):
                     watched_date = None
+    # V161 — ÉTAT DE VISIONNAGE : « ▶️ En cours » / « 🚫 Abandonnée »
+    # (demande utilisateur) — priorité sur « Vu » : une série abandonnée
+    # partiellement vue reste surtout « abandonnée », et une série en
+    # cours reste « en cours ».
+    _prog_keys, _drop_keys = _watch_status_keys()
+    _typed_pill = f"{want_kind}:{tmdb_id}"
+    if _typed_pill in _drop_keys:
+        return '<span class="banner-status hors">🚫 Abandonnée</span>'
+    if _typed_pill in _prog_keys:
+        return '<span class="banner-status liste">▶️ En cours de visionnage</span>'
     if is_watched:
         if watched_date is not None:
             return (
@@ -4666,6 +4700,32 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
                     and _bucket_kind(bucket, entry) == want_kind):
                 return '<span class="banner-status liste">📌 Watchlist</span>'
     return '<span class="banner-status hors">🌐 Hors de tes listes</span>'
+
+
+def _dropped_fiche_row(item: dict) -> dict:
+    """Ligne « fiche cinéma » pour une série ABANDONNÉE (V161 — bug
+    Dynasty) : les séries droppées ne vivent pas dans _all_media
+    (historique/watchlist/listes), donc _history_fiche_row ne les
+    retrouvait PAS et la fiche partait d'un item minimal (sans année ni
+    note). On part ici de l'item DIRECTEMENT — ses identifiants TMDB
+    pilotent la fiche (bannière, saisons via le payload TMDB)."""
+    media = _unwrap_media(item) or (item if isinstance(item, dict) else {})
+    note = None
+    try:
+        score_avg = float(media.get("score_average") or 0)
+        if score_avg:
+            note = round(score_avg / 10, 1)
+    except (TypeError, ValueError):
+        note = None
+    return {
+        "item": dict(media),
+        "key": f"dr_{_media_tmdb_id(media) or _media_title(media)[:40]}",
+        "type": "Série",
+        "genres": media.get("genres") or [],
+        "note": note,
+        "runtime": media.get("runtime"),
+        "source": "Abandonnée",
+    }
 
 
 def _history_fiche_row(history_row: dict) -> dict | None:
@@ -4723,6 +4783,54 @@ def _history_fiche_row(history_row: dict) -> dict | None:
     if history_row.get("progress_pct") is not None:
         fiche_row["progress_pct"] = history_row.get("progress_pct")
     return fiche_row
+
+
+def _typed_from_ids(ids: dict, kind: str) -> str | None:
+    """Clé typée « movie:{id} » / « tv:{id} » depuis un dict d'ids."""
+    try:
+        value = int((ids or {}).get("tmdb") or 0)
+    except (TypeError, ValueError):
+        return None
+    return f"{kind}:{value}" if value else None
+
+
+def _watch_status_keys() -> tuple[set, set]:
+    """(clés des contenus EN COURS, clés des ABANDONNÉS) — V161 : pastilles
+    d'état « ▶️ En cours » / « 🚫 Abandonnée » sur les tuiles et les fiches
+    (retour utilisateur : The Office proposée « hors de tes listes » alors
+    qu'elle est en cours de visionnage). En cours = Up Next + reprises en
+    pause ; abandonnées = section « dropped » de MDBList."""
+    dataset = _dataset()
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+    in_progress: set = set()
+    dropped: set = set()
+
+    def _ids_of(row) -> dict:
+        if not isinstance(row, dict):
+            return {}
+        ids = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+        if ids:
+            return ids
+        media = _unwrap_media(row)
+        return media.get("ids") if isinstance(media, dict) and isinstance(media.get("ids"), dict) else {}
+
+    for row in (dataset.get("progress") or []):  # Up Next (séries en cours)
+        key = _typed_from_ids(_ids_of(row), "tv")
+        if key:
+            in_progress.add(key)
+    for row in (sections.get("playback") or []):  # reprises en pause
+        key = _typed_from_ids(_ids_of(row), "tv")
+        if key:
+            in_progress.add(key)
+    dropped_sec = sections.get("dropped") or {}
+    for bucket, prefix in (("shows", "tv"), ("movies", "movie")):
+        for item in (dropped_sec.get(bucket) or []):
+            media = _unwrap_media(item) or (item if isinstance(item, dict) else {})
+            ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+            key = _typed_from_ids(ids, prefix)
+            if key:
+                dropped.add(key)
+    return in_progress, dropped
 
 
 def _seen_watchlist_listname_ids() -> tuple[set, set, dict]:
@@ -5355,7 +5463,13 @@ def _render_cinema_detail_body(row: dict) -> None:
     # mémorisé 30 jours.
     seasons_html = ""
     if row.get("type") == "Série" and api_key and tmdb_id:
-        season_count = _media_seasons(item) or 0
+        # V161 — repli sur le PAYLOAD TMDB (bug Dynasty) : les séries
+        # abandonnées (hors dataset enrichi) n'ont pas number_of_seasons
+        # en mémoire — la fiche TMDB déjà chargée le fournit.
+        try:
+            season_count = _media_seasons(item) or int(fr_payload.get("number_of_seasons") or 0)
+        except (TypeError, ValueError):
+            season_count = 0
         if 0 < season_count <= 12:
             seasons_payloads = []
             for season_number in range(1, season_count + 1):
@@ -5892,11 +6006,24 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
             f"🧩 {row['near_reason']}",
             "Pourquoi « presque » : ce contenu ne respecte pas CE critère — tous les autres critères choisis sont respectés.",
         ))
+    # V161 — PASTILLES D'ÉTAT « ▶️ En cours » / « 🚫 Abandonnée » (retour
+    # utilisateur : une proposition « hors listes » était en fait une série
+    # en plein visionnage). Priorité : abandonnée > en cours > 🌐/📂.
+    _prog_keys, _drop_keys = _watch_status_keys()
+    _badge_ids = item.get("ids") if isinstance(item.get("ids"), dict) else {}
+    _typed_status = _typed_from_ids(_badge_ids, "tv" if row.get("type") == "Série" else "movie")
+    _status_chip = ""
+    if _typed_status and _typed_status in _drop_keys:
+        _status_chip = _raw_chip("🚫 Abandonnée", "Série marquée abandonnée dans MDBList")
+    elif _typed_status and _typed_status in _prog_keys:
+        _status_chip = _raw_chip("▶️ En cours", "Série en cours de visionnage")
     if row.get("_outside"):
-        metadata.append('<span class="mc-outside" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>')
+        metadata.append(_status_chip or '<span class="mc-outside" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>')
     else:
         source_name = str(row.get("source") or "MDBList")
         metadata.append(_raw_chip(f"📂 {source_name}", "Provenance : la liste ou la source où se trouve ce contenu"))
+        if _status_chip:
+            metadata.append(_status_chip)
 
     signals = row.get("signals") or []
     if signals:
@@ -9774,7 +9901,7 @@ def render_progress_page() -> None:
             except (TypeError, ValueError):
                 pass
             if st.button("🎬 Voir la fiche", key=f"cin_dr_{_dr_tmdb or _media_title(item)[:40]}", use_container_width=True, type="secondary"):
-                _open_cinema_detail(_history_fiche_row({"ids": item.get("ids") if isinstance(item.get("ids"), dict) else {}, "title": _media_title(item), "type": "Série"}) or {"item": item, "type": "Série", "key": f"dr_{_dr_tmdb}"})
+                _open_cinema_detail(_dropped_fiche_row(item))
 
 
 NOW_PLAYING_CACHE_KEY = "_mdblist_now_playing_live"
@@ -11432,14 +11559,14 @@ def _stats_activity_section(filtered: "pd.DataFrame", period_label: str,
             unsafe_allow_html=True,
         )
         _list_cards = [
-            # V160 — ORDRE (retour utilisateur : « passer d'une somme à un
-            # nombre puis de nouveau des sommes ») : le NOMBRE de listes
-            # d'abord (le contenant), puis les VOLUMES (le contenu) — la
-            # lecture devient : « 2 listes · 305 contenus à voir · 306 en
-            # tout », avant le détail liste par liste.
-            {"emoji": "🗂️", "k": "Listes personnelles", "v": len(_lists_all), "d": "listes statiques"},
+            # V161 — ORDRE DÉFINITIF (l'utilisateur laisse le choix final) :
+            # ⭐ Watchlist d'abord (LA liste principale), puis les deux
+            # VOLUMES ensemble (à voir + en listes), puis le NOMBRE de
+            # listes qui introduit le détail. Lecture : « 305 à voir ·
+            # 306 en listes · répartis dans 2 listes : … ».
             {"emoji": "⭐", "k": "Watchlist", "v": len(_watchlist_all.get("movies") or []) + len(_watchlist_all.get("shows") or []), "d": "contenus à voir"},
             {"emoji": "📦", "k": "Contenus en listes", "v": sum(len(l.get("movies") or []) + len(l.get("shows") or []) for l in _lists_all), "d": "au total des listes"},
+            {"emoji": "🗂️", "k": "Listes personnelles", "v": len(_lists_all), "d": "listes statiques"},
         ] + [
             {"emoji": "🗂️", "k": str(l.get("name") or "Liste")[:28],
              "v": len(l.get("movies") or []) + len(l.get("shows") or []),
@@ -11685,8 +11812,20 @@ def _stats_rated_section(ctx: dict) -> None:
     if genre_choice != "Tous":
         rated_rows = [r for r in rated_rows if genre_choice in (r.get("genres") or [])]
     _q = ctx.get("search") or ""
-    if _q:
+    _person_keys_r = ctx.get("person_keys")
+    if _q and not _person_keys_r:
         rated_rows = [r for r in rated_rows if _q in f"{r.get('title', '')} {r.get('serie', '') or ''}".casefold()]
+    # V161 — RECHERCHE PAR ACTEUR : filtrer les contenus notés par la
+    # filmographie de la personne détectée (la recherche texte est ignorée
+    # puisqu'elle ne matche aucun titre — retour utilisateur).
+    if _person_keys_r:
+        def _rated_typed_key(r):
+            try:
+                _t = int((r.get("ids") or {}).get("tmdb") or 0)
+            except (TypeError, ValueError):
+                return ""
+            return f"{'tv' if r.get('type') == 'Série' else 'movie'}:{_t}" if _t else ""
+        rated_rows = [r for r in rated_rows if _rated_typed_key(r) in _person_keys_r]
     # Période : sur la DATE DE NOTATION (bornes traduites — cf. le bug des
     # libellés — et datetimes, comme l'exige le moteur d'historique).
     from history_engine import filter_history as _fh_rated
@@ -12175,6 +12314,32 @@ def _stats_history_section(ctx: dict) -> None:
             end_date=_hist_hi,
             now=datetime.now(PARIS_TZ),
         )
+        # V161 — RECHERCHE PAR ACTEUR : la recherche texte ne matche AUCUN
+        # titre (c'est une personne) → on refiltre SANS la recherche texte
+        # et on applique la FILMOGRAPHIE de la personne (retour : « je ne
+        # vois aucun film dans l'historique »). Le compte ci-dessous suit.
+        _person_keys_h = ctx.get("person_keys")
+        if _person_keys_h:
+            visible = _fh(
+                rows,
+                period="Période personnalisée",
+                media_filter="Tous",
+                genre_filter="Tous les genres",
+                search="",
+                sort_mode="Plus récents d’abord",
+                start_date=_hist_lo,
+                end_date=_hist_hi,
+                now=datetime.now(PARIS_TZ),
+            )
+
+            def _row_typed_key(r):
+                try:
+                    _t = int((r.get("ids") or {}).get("tmdb") or 0)
+                except (TypeError, ValueError):
+                    return ""
+                return f"{'tv' if r.get('type') == 'Épisode' else 'movie'}:{_t}" if _t else ""
+
+            visible = [r for r in visible if _row_typed_key(r) in _person_keys_h]
 
         # V157 — le compte est celui de la sélection FILTRÉE (période, type,
         # genre, recherche) : avant, le total all-time s'affichait même avec
@@ -12495,6 +12660,7 @@ def render_basic_stats_page() -> None:
                         "name": str(_person.get("name") or _q_person),
                         "count": int(len(_hit)),
                         "facets": _facet_hits,
+                        "keys": _flomo_keys,
                     }
                     if not _hit.empty:
                         filtered = _hit
@@ -12509,6 +12675,11 @@ def render_basic_stats_page() -> None:
         "custom_start": custom_start, "custom_end": custom_end,
         "period_label": period_label, "rating_txt": rating_txt,
         "search": str(stats_search or "").strip().casefold(),
+        # V161 — clés filmo de la personne détectée (recherche par acteur) :
+        # les tableaux Historique et Notes les utilisent pour filtrer,
+        # comme le DataFrame (retour : « je ne vois aucun film dans
+        # l'historique ou les contenus notés »).
+        "person_keys": (_person_filter or {}).get("keys") or None,
     }
 
     # ── NAVIGATION « glass » (4 onglets — style boutons modernes) ──────────
