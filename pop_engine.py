@@ -333,7 +333,22 @@ def pop_candidate_pool(dataset: dict, kind: str = "Peu importe", limit: int = 40
     return pool[:limit]
 
 
-def _gemini_prompt(mood: str, candidates: list[dict]) -> str:
+def _avoid_block(avoid_titles: list | None) -> str:
+    """V159 — bloc de prompt : titres DÉJÀ dans la Watchlist/listes de
+    l'utilisateur. L'IA ne voit que les ~40 candidats du pool : elle pouvait
+    proposer comme « hors listes » une œuvre que l'utilisateur possède déjà
+    (retour V158). On lui donne la liste complète à éviter."""
+    titles = [str(t).strip() for t in (avoid_titles or []) if str(t).strip()]
+    if not titles:
+        return ""
+    return (
+        "\n⚠️ RÈGLE : la proposition 2 (hors listes) ne doit PAS faire partie "
+        "des titres ci-dessous (déjà dans les listes ou la Watchlist de "
+        "l'utilisateur) :\n" + json.dumps(titles, ensure_ascii=False) + "\n"
+    )
+
+
+def _gemini_prompt(mood: str, candidates: list[dict], avoid_titles: list | None = None) -> str:
     mood_cfg = POP_MOODS.get(mood) or POP_MOODS["🎲 Surprise-moi"]
     payload = [
         {"i": c["id"], "t": c["title"], "k": c["kind"], "y": c["year"],
@@ -346,7 +361,8 @@ def _gemini_prompt(mood: str, candidates: list[dict]) -> str:
         f"L'humeur du moment de l'utilisateur : « {mood} » — {mood_cfg['hint']}.\n"
         "Voici les contenus disponibles dans SES listes (JSON) :\n"
         f"{json.dumps(payload, ensure_ascii=False)}\n\n"
-        "Choisis DEUX propositions :\n"
+        + _avoid_block(avoid_titles)
+        + "Choisis DEUX propositions :\n"
         "1. LE meilleur contenu DE SA LISTE qui correspond à l'humeur (champ i) ;\n"
         "2. UNE AUTRE œuvre, RÉELLE et reconnue, qui n'est PAS dans cette liste "
         "et qui colle encore mieux à l'humeur — titre exact, année, Film ou Série. "
@@ -647,7 +663,8 @@ def ia_complete(gemini_key: str, groq_key: str, prompt: str,
     raise RuntimeError(" · ".join(errors) or "Aucune clé IA configurée")
 
 
-def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict]) -> dict:
+def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict],
+               avoid_titles: list | None = None) -> dict:
     """Appelle Gemini (endpoint NATIF, compatible clés AQ. et AIza).
 
     Renvoie {"pick_id": int, "reason": str, "model": str} ou lève
@@ -661,7 +678,7 @@ def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict]
     """
     if not gemini_key and not groq_key:
         raise RuntimeError("Aucune clé IA configurée")
-    text = ia_complete(gemini_key, groq_key, _gemini_prompt(mood, candidates), 0.9, 1200, "pop")
+    text = ia_complete(gemini_key, groq_key, _gemini_prompt(mood, candidates, avoid_titles), 0.9, 1200, "pop")
     if not text.strip():
         raise RuntimeError("Réponse IA vide — relance")
     try:
@@ -778,7 +795,7 @@ def coulisses_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "
 
 
 def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[dict],
-                    kind: str = "Peu importe") -> dict:
+                    kind: str = "Peu importe", avoid_titles: list | None = None) -> dict:
     """✍️ POP LIBRE (V152) : l'utilisateur décrit son envie en une phrase
     (« un film d'amour sur un bateau »). Un SEUL appel Gemini :
 
@@ -817,7 +834,8 @@ def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[
         + kind_rule
         + "Voici les contenus disponibles dans SES listes (JSON) :\n"
         f"{json.dumps(payload, ensure_ascii=False)}\n\n"
-        "Choisis :\n"
+        + _avoid_block(avoid_titles)
+        + "Choisis :\n"
         "1. LE meilleur contenu DE SA LISTE qui correspond à l'envie (champ i) ;\n"
         "2. UNE AUTRE œuvre, RÉELLE et reconnue, qui n'est PAS dans cette liste "
         "et qui colle encore mieux à l'envie — titre exact, année, Film ou Série. "

@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 10 octobre 2026 · Dernière version déployée : V158.
+> Dernière mise à jour : 10 octobre 2026 (soir) · Dernière version déployée : V159.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -968,21 +968,49 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       TODO (possible via TMDB, coût d'appels à évaluer).
 - [x] Banc : verify158 + mini-banc session dédié + 23/23 tests + smoke test.
 
-### PROCHAINES ÉTAPES (validées par l'utilisateur 10/10)
-- [ ] 💡 IDÉES IA — V159 (l'utilisateur pensait qu'elles étaient déjà
-      livrées : elles étaient VALIDÉES, pas encore codées — clarifié) :
+### Fait en V159 (retours du 10/10 soir — finitions + style Spotify)
+- [x] 🎲 PASTILLE « HORS DE TES LISTES » : VÉRITÉ DU STATUT (retour : l'IA a
+      proposé un film « hors listes » qui était EN FAIT dans les listes).
+      Double correctif : (1) le PROMPT reçoit la liste des titres déjà en
+      Watchlist/listes à ÉVITER (l'IA ne voyait que 40 candidats sur ~300) ;
+      (2) filet de sécurité au rendu — si l'œuvre proposée est en réalité
+      dans les listes, la tuile affiche 📂 + le VRAI nom de liste.
+- [x] 🎲 TITRES DE SECTION (« DANS TES LISTES » / « HORS DE TES LISTES ») :
+      la marge négative V158 + la remontée des tuiles les faisaient
+      CHEVAUCHER (retour avec capture) — nouveau réglage : titre
+      AU-DESSUS de sa tuile, écart propre ~12 px mesuré, z-index de
+      protection.
+- [x] 📊 STATS : ARRIVÉE EN HAUT DE PAGE (retour : « j'arrive en plein
+      milieu, jamais en haut ») — micro-composant scroll-to-top rendu
+      uniquement à l'arrivée sur la page et au changement d'onglet (la
+      position de défilement des autres interactions est préservée).
+      Découverte au banc : en Streamlit 1.60 la page défile sur
+      section[data-testid="stMain"], PAS sur window.
+- [x] 🎨 BARRES DE PROGRESSION STYLE SPOTIFY (retour avec capture du
+      dashboard Spotify) : partie « déjà » VERTE · ESPACE VIDE · CURSEUR
+      (tiret blanc lumineux, 4×18 px) · partie « à voir » JAUNE décalée —
+      sur TOUTES les barres (tuiles Que regarder/Pépite/En cours/Fantôme
+      + fiche). Sur la FICHE : la VAGUE (déjà vu) et le trait PLAT (à
+      voir) sont maintenant COUPÉS par un espace vide, avec un CURSEUR
+      vertical arrondi au milieu (l'ancien point blanc est remplacé).
+- [x] Banc : 27/27 (re-badge Titanic 📂, prompt anti-doublon, écart titre
+      12 px, barres mesurées curseur 4×18 px + écart 3 px, vague + rect
+      rx, non-régressions) + preuve scroll dédiée (remonte OUI / stable
+      sans changement) + 23/23 tests + smoke test app réelle.
+
+### PROCHAINES ÉTAPES (validées par l'utilisateur 10/10 soir)
+- [ ] V160 — 🔎 RECHERCHE PAR ACTEUR dans la recherche globale des stats
+      (« on peut maintenant attaquer ça » — demande utilisateur) : taper
+      un nom d'acteur/réalisateur filtre l'historique ; mécanique filmo
+      TMDB déjà en place (cache 7 j), à chiffrer.
+- [ ] V161+ — 💡 LES 4 IDÉES IA (« tu peux attaquer ça aussi maintenant ») :
       • « Pourquoi ce score ? » narratif par l'IA dans la fiche (les signaux expliqués en une phrase vivante) ;
       • « Résolveur de dilemme » : 2-3 contenus hésitants → l'IA tranche ;
       • « Après ce film » : depuis la fiche, l'IA propose les 3 suites logiques DANS tes listes ;
       • « Ton soir parfait » : heure + humeur + temps dispo → mini-programme de soirée.
-      (Retirées à la demande de l'utilisateur — risque de spoil : anecdotes
-      d'épisodes, résumé saison par saison.)
-- [ ] 🔎 RECHERCHE PAR ACTEUR dans la recherche globale des stats
-      (demande utilisateur 10/10 : « serait-ce intéressant ? » — oui :
-      possible via la mécanique filmo TMDB déjà en place, à chiffrer).
-- [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur (V150
-      livrée) — si « Local » s'affiche encore dans POP, ouvrir le
-      « 🔧 Diagnostic de la clé Gemini » et me donner le message.
+- [ ] Anecdotes IA : à tester en vrai avec la clé de l'utilisateur — si
+      « Local » s'affiche encore dans POP, ouvrir le « 🔧 Diagnostic de la
+      clé Gemini » et me donner le message.
 - [ ] README.md : refonte par l'utilisateur À LA FIN (il gère).
 - [ ] Ajouter un contenu à une liste / à la Watchlist DEPUIS LA FICHE CINÉMA
       (demande utilisateur 07/10 — très faisable : les méthodes d'écriture

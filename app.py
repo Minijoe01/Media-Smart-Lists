@@ -1339,19 +1339,47 @@ st.markdown(
     .media-list-content {
         min-width: 0;
     }
+    /* V159 — BARRES DE PROGRESSION STYLE SPOTIFY (retour utilisateur avec
+       capture de son dashboard Spotify) : la partie « déjà » (verte) et la
+       partie « à voir » (jaune) sont SÉPARÉES par un espace vide, avec un
+       CURSEUR (tiret blanc lumineux) au point de progression. La position
+       se pilote par la variable --pct posée sur le conteneur. */
     .progress-bar-container {
-        background: linear-gradient(90deg, #FFE100, #FFC400);
+        position: relative;
+        background: transparent;
         border-radius: 8px;
         height: 12px;
         margin: .58rem 0;
-        overflow: hidden;
         width: 100%;
     }
-    .progress-bar-fill {
+    .progress-bar-container::before {
+        content: "";
+        position: absolute;
+        left: 0; top: 0; bottom: 0;
+        width: calc(var(--pct, 0%) - 3px);
+        max-width: calc(100% - 3px);
         background: var(--am-green);
-        border-radius: 8px;
-        height: 100%;
-        transition: width .6s cubic-bezier(.4,0,.2,1);
+        border-radius: 8px 0 0 8px;
+    }
+    .progress-bar-container::after {
+        content: "";
+        position: absolute;
+        left: var(--pct, 0%);
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 4px;
+        height: 18px;
+        border-radius: 2px;
+        background: #FFFFFF;
+        box-shadow: 0 1px 6px rgba(0, 0, 0, .55), 0 0 6px rgba(255, 255, 255, .30);
+        z-index: 2;
+    }
+    .progress-rest {
+        position: absolute;
+        top: 0; bottom: 0; right: 0;
+        left: calc(var(--pct, 0%) + 3px);
+        background: linear-gradient(90deg, #FFE100, #FFC400);
+        border-radius: 0 8px 8px 0;
     }
     .media-list-card strong {
         color: var(--am-text);
@@ -1817,11 +1845,20 @@ st.markdown(
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) {
         margin-top: -0.75rem !important;
     }
-    /* V158 — PÉPITE : titres de section (« 📂 DANS TES LISTES » / « 🌐 HORS
-       DE TES LISTES ») collés à leur tuile (retour utilisateur avec capture :
-       « trop d'espace » entre le titre et la tuile correspondante). */
+    /* V159 — TITRES DE SECTION PéPITE (« 📂 DANS TES LISTES » / « 🌐 HORS
+       DE TES LISTES ») : la marge négative V158 (-0.62rem) + la remontée
+       globale des tuiles (-0.75rem) faisaient CHEVAUCHER la tuile et son
+       titre (retour utilisateur avec capture : « les titres sont en
+       dessous des tuiles »). Nouveau réglage : le titre reste AU-DESSUS,
+       avec un petit espace propre (~8-10 px mesurés), et un z-index le
+       protège de tout recouvrement. */
+    .pepite-section-title { position: relative; z-index: 3; }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .pepite-section-title) {
-        margin-bottom: -0.62rem !important;
+        margin-bottom: 0 !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .pepite-section-title)
+        + div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) {
+        margin-top: -0.35rem !important;  /* remonte la tuile vers son titre, SANS le chevaucher */
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
@@ -4371,9 +4408,10 @@ def _wave_bar_html(
     key: str = "",
 ) -> str:
     """Barre « LIGNE EN VAGUE » — Option B : la partie jouée est une vague
-    épaisse (animée en continu si animated), le reste un trait PLAT, un
-    point blanc marque la position. Code couleur : vert = déjà vu,
-    jaune = reste à voir (ou couleur d'accent dans la fiche)."""
+    épaisse (animée en continu si animated), le reste un trait PLAT. V159 :
+    un ESPACE VIDE sépare les deux parties (inspiration Spotify) et un
+    CURSEUR vertical arrondi marque la position. Code couleur : vert =
+    déjà vu, jaune = reste à voir (ou couleur d'accent dans la fiche)."""
     import math as _math
 
     pct = max(0.0, min(100.0, float(pct or 0)))
@@ -4384,6 +4422,9 @@ def _wave_bar_html(
     amp = max(2.0, height * 0.18)
     px = width * pct / 100.0
     stroke_w = 4.6
+    # V159 — ESPACE VIDE « Spotify » entre la vague (déjà vu) et le trait
+    # plat (à voir) : les deux parties s'arrêtent avant/après le curseur.
+    gap = max(5.0, height * 0.22)
     uid = f"{key}_{int(pct)}_{height}_{width}".replace("-", "m")
 
     def _pts(x0: float, x1: float, steps: int = 110) -> str:
@@ -4397,30 +4438,38 @@ def _wave_bar_html(
 
     if animated and px > 4:
         played = (
-            f'<clipPath id="wvc{uid}"><rect x="0" y="0" width="{px:.1f}" height="{height}"/></clipPath>'
+            f'<clipPath id="wvc{uid}"><rect x="0" y="0" width="{max(px - gap, 0):.1f}" height="{height}"/></clipPath>'
             f'<g clip-path="url(#wvc{uid})">'
             f'<path class="msl-wave-drift" d="{_pts(0, px * 3)}" fill="none" stroke="{played_color}"'
             f' stroke-width="{stroke_w:.1f}" stroke-linecap="round"/></g>'
         )
     elif px > 1:
         played = (
-            f'<path d="{_pts(0, px)}" fill="none" stroke="{played_color}"'
+            f'<path d="{_pts(0, max(px - gap, 0.5))}" fill="none" stroke="{played_color}"'
             f' stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>'
         )
     else:
         played = ""
     rest = (
-        f'<path d="M{px:.1f},{y} L{width},{y}" fill="none" stroke="{rest_color}"'
+        f'<path d="M{min(px + gap, width):.1f},{y} L{width},{y}" fill="none" stroke="{rest_color}"'
         f' stroke-width="2.6" stroke-linecap="round" opacity=".75"/>'
+        if px + gap < width else ""
     )
-    dot = (
-        f'<circle cx="{px:.1f}" cy="{y}" r="{max(3.4, height * 0.15):.1f}" fill="#fff"'
-        f' stroke="#001412" stroke-width="1.3"/>'
+    # V159 — CURSEUR « qualitatif » (inspiration dashboard Spotify, retour
+    # utilisateur) : un tiret vertical arrondi, blanc, légèrement plus haut
+    # que la vague, qui marque la position au milieu de l'espace vide.
+    knob_w = max(4.2, height * 0.14)
+    knob_h = max(11.0, height * 0.60)
+    knob_x = min(px, width - knob_w / 2 - 1)
+    knob = (
+        f'<rect x="{knob_x - knob_w / 2:.1f}" y="{y - knob_h / 2:.1f}" '
+        f'width="{knob_w:.1f}" height="{knob_h:.1f}" rx="{knob_w / 2:.1f}" fill="#fff" '
+        f'stroke="#001412" stroke-width="1.2"/>'
         if px > 2 else ""
     )
     return (
         f'<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none"'
-        f' style="width:100%;height:{height}px;display:block;">{played}{rest}{dot}</svg>'
+        f' style="width:100%;height:{height}px;display:block;">{played}{rest}{knob}</svg>'
     )
 
 
@@ -4892,9 +4941,9 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"background:rgba({ar},{ag},{ab},.14)!important;"
         f"border:1px solid rgba({ar},{ag},{ab},.38)!important;"
         f"color:rgb({a2r},{a2g},{a2b})!important;}}"
-        f".cinema-info .progress-bar-container{{background:rgba(255,255,255,.10)!important;}}"
-        f".cinema-info .progress-bar-fill{{"
+        f".cinema-info .progress-bar-container::before{{"
         f"background:linear-gradient(90deg,rgb({ar},{ag},{ab}),rgb({a2r},{a2g},{a2b}))!important;}}"
+        f".cinema-info .progress-rest{{background:rgba(255,255,255,.14)!important;}}"
         f".cinema-info .link-pill{{border:1px solid rgba({ar},{ag},{ab},.40)!important;}}"
         f".cinema-info .link-pill:hover{{"
         f"background:rgba({ar},{ag},{ab},.20)!important;"
@@ -5098,8 +5147,8 @@ def _render_cinema_detail_body(row: dict) -> None:
         )
     else:
         score_html = (
-            f'<div class="progress-bar-container" style="margin:.4rem 0 .2rem;">'
-            f'<div class="progress-bar-fill" style="width:{max(0, min(score_val, 100))}%;"></div></div>'
+            f'<div class="progress-bar-container" style="margin:.4rem 0 .2rem;--pct:{max(0, min(score_val, 100))}%;">'
+            f'<div class="progress-rest"></div></div>'
             f'<div style="font-size:.78rem;color:#9fc4c0;margin-bottom:.3rem;">'
             f'<strong style="color:#fff;font-size:.9rem;">{score_val}/100</strong>'
             f' · friction {friction_val}/100</div>'
@@ -5857,8 +5906,8 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
         f'<span class="score-badge" data-tooltip="{escape(friction_tip, quote=True)}">Friction {friction_val}/100</span>{score_inline}'
         f'</div>'
         + (
-            f'<div class="progress-bar-container"><div class="progress-bar-fill" '
-            f'style="width:{max(0,min(float(row.get("score",0)),100))}%;"></div></div>'
+            f'<div class="progress-bar-container" style="--pct:{max(0,min(float(row.get("score",0)),100))}%;">'
+            f'<div class="progress-rest"></div></div>'
         )  # V141 — les tuiles reviennent à la barre DROITE (retour utilisateur) ; la vague ne vit que dans la fiche
         + (f'<details class="pills-details"><summary>ℹ️ Pourquoi ce score ?</summary>{pills}</details>' if pills else "")
         + f'</div>{score_col}</div>'
@@ -8916,6 +8965,32 @@ def _groq_api_key() -> str:
         return ""
 
 
+def _pop_avoid_titles(dataset: dict) -> list:
+    """V159 — titres DÉJÀ présents dans la Watchlist et les listes de
+    l'utilisateur : l'IA ne doit pas les proposer comme œuvres « hors
+    listes » (retour V158 : une proposition « hors listes » était en fait
+    déjà dans ses listes). Limité à 400 titres pour le prompt."""
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+    titles: list = []
+
+    def _push(media) -> None:
+        t = str((media or {}).get("title") or "").strip()
+        if t and t not in titles:
+            titles.append(t)
+
+    watchlist = sections.get("watchlist") or {}
+    for bucket in ("movies", "shows"):
+        for media in watchlist.get(bucket) or []:
+            _push(media)
+    for lst in sections.get("user_lists") or []:
+        if not isinstance(lst, dict):
+            continue
+        for bucket in ("movies", "shows"):
+            for media in lst.get(bucket) or []:
+                _push(media)
+    return titles[:400]
+
+
 def _pepite_scored_row(pick: dict, profile: dict | None = None) -> dict:
     """V158 — construit pour une pépite la MÊME ligne que « Que regarder ? » :
     score personnel + friction + signaux via score_item (retour utilisateur :
@@ -8926,6 +9001,9 @@ def _pepite_scored_row(pick: dict, profile: dict | None = None) -> dict:
     • Proposition HORS listes : fiche TMDB complète (1 appel, caché 30 j) →
       genres, durée, note, backdrop… et score/friction calculés pareil.
     • Repli minimal si TMDB indisponible : tuile quand même (score de base).
+    • V159 — VÉRITÉ DU STATUT : l'IA ne voit que ~40 candidats ; si elle
+      propose comme « hors listes » une œuvre qui est EN RÉALITÉ dans la
+      Watchlist/une liste, la pastille affiche le VRAI statut (📂).
     """
     dataset = _dataset()
     kind = str(pick.get("kind") or "Film")
@@ -8936,6 +9014,16 @@ def _pepite_scored_row(pick: dict, profile: dict | None = None) -> dict:
         pid = 0
     source = str(pick.get("source") or "").strip()
     outside = not source
+    if outside and pid:
+        try:
+            _watched_ids, _listed_ids, _list_names = _seen_watchlist_listname_ids()
+            _typed = _typed_media_key(kind, pid)
+            _where = _list_names.get(_typed)
+            if _where or _typed in _listed_ids:
+                source = _where or "Watchlist"
+                outside = False
+        except Exception:
+            pass
     if profile is None:
         profile = build_profile(dataset)
     item = None
@@ -9093,7 +9181,11 @@ def _render_pop_free_section(api_key: str, groq_key: str, dataset: dict, kind: s
                 candidates = pop_engine.pop_candidate_pool(dataset, kind or "Peu importe")
                 try:
                     with st.spinner("✨ L'IA cherche dans tes listes ET au-delà…"):
-                        res = pop_engine.freeform_ask_ai(api_key, groq_key, wish_txt, candidates, kind or "Peu importe")
+                        # V159 — titres à éviter pour la proposition « hors
+                        # listes » (fini les œuvres déjà possédées).
+                        res = pop_engine.freeform_ask_ai(api_key, groq_key, wish_txt, candidates,
+                                                          kind or "Peu importe",
+                                                          _pop_avoid_titles(dataset))
                     in_pick = next((c for c in candidates if c["id"] == res["in_list_id"]), None)
                     outside = _tmdb_search_media(
                         res["outside"].get("kind") or "Film",
@@ -9235,7 +9327,10 @@ def render_pop_page() -> None:
         if (api_key or groq_key) and fresh:
             try:
                 with st.spinner("💎 L'IA fouille tes listes ET au-delà…"):
-                    res = pop_engine.pop_ask_ai(api_key, groq_key, mood, fresh)
+                    # V159 — titres à éviter pour la proposition « hors
+                    # listes » (fini les œuvres déjà possédées).
+                    res = pop_engine.pop_ask_ai(api_key, groq_key, mood, fresh,
+                                                _pop_avoid_titles(dataset))
                 pick = next((c for c in fresh if c["id"] == res["in_list_id"]), None)
                 if pick:
                     # V157 — le tirage par humeur propose AUSSI une œuvre
@@ -9507,8 +9602,8 @@ def render_progress_page() -> None:
                 )
                 time_line = f"⏱️ {watched_time} de visionnage · reste {remaining_time}"
                 bar_html = (
-                    f'<div class="progress-bar-container"><div class="progress-bar-fill" '
-                    f'style="width:{max(0,min(percent,100))}%;"></div></div>'
+                    f'<div class="progress-bar-container" style="--pct:{max(0,min(percent,100))}%;">'
+                    f'<div class="progress-rest"></div></div>'
                 )
             else:
                 progress_line = f"📊 {watched} épisode(s) vu(s) (progression totale inconnue sans MDBList)"
@@ -9720,8 +9815,8 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float, note: str
             f'<div class="media-list-content" style="width:100%;">'
             f'{head}'
             f'{info_html}'
-            f'<div class="progress-bar-container"><div class="progress-bar-fill" '
-            f'style="width:{max(0,min(progress,100))}%;"></div></div>'
+            f'<div class="progress-bar-container" style="--pct:{max(0,min(progress,100))}%;">'
+            f'<div class="progress-rest"></div></div>'
             f'</div>{pct_col}</div>',
             unsafe_allow_html=True,
         )
@@ -9909,8 +10004,8 @@ def render_ghost_page() -> None:
             f'<div class="media-list-content" style="width:100%;">'
             f'{head}'
             f'{info_html}'
-            f'<div class="progress-bar-container"><div class="progress-bar-fill" '
-            f'style="width:{max(0,min(progress,100))}%;"></div></div>'
+            f'<div class="progress-bar-container" style="--pct:{max(0,min(progress,100))}%;">'
+            f'<div class="progress-rest"></div></div>'
             f'{links_html}'
             f'</div>{pct_col}</div>',
             unsafe_allow_html=True,
@@ -12095,6 +12190,34 @@ def _stats_history_section(ctx: dict) -> None:
         except Exception as exc:
             st.caption(f"Export Excel indisponible : {exc}")
 
+def _scroll_to_top(marker: str) -> None:
+    """V159 — remonte la fenêtre en haut de page (retour utilisateur :
+    « quand j'initialise la page de statistique, j'arrive en plein milieu
+    de la page, jamais en haut, c'est bizarre »).
+
+    Streamlit PRÉSERVE la position de défilement d'une page à l'autre :
+    arrivant du bas d'une autre page, on atterrissait au milieu des
+    stats. Ce micro-composant exécute son script UNIQUEMENT quand sa clé
+    change (changement d'onglet / arrivée sur la page) puis remonte la
+    fenêtre — les interactions suivantes (filtres, toggles) ne bougent
+    pas la page."""
+    try:
+        import streamlit.components.v1 as _components
+        # NB (découvert au banc) : en Streamlit 1.60, la page ne défile PAS
+        # sur window mais sur section[data-testid="stMain"] — on fait les
+        # deux, avec replis, pour être robuste aux futures versions.
+        _components.html(
+            "<script>(function(){var w=window.parent.window;"
+            "var c=w.document.querySelector('section[data-testid=\"stMain\"]')||"
+            "w.document.querySelector('section.main')||w.document.scrollingElement;"
+            "if(c){c.scrollTop=0;}w.scrollTo(0,0);})();</script>",
+            height=0,
+            key=f"scrolltop_{marker}",
+        )
+    except Exception:
+        pass
+
+
 def render_basic_stats_page() -> None:
     """📊 Statistiques (V154 — REFONTE).
 
@@ -12243,6 +12366,14 @@ def render_basic_stats_page() -> None:
         # visuelle (retour utilisateur : « ça ne devient pas actif »).
         st.rerun()
     active_tab = st.session_state["stats_tab"]
+
+    # V159 — ARRIVÉE SUR LA PAGE ou CHANGEMENT D'ONGLET → retour en HAUT de
+    # page (Streamlit garde sinon la position de défilement de la page
+    # précédente — retour utilisateur : « j'arrive en plein milieu »).
+    _stats_arrived = st.session_state.get("_last_page_rendered") != "📊 Statistiques"
+    if _stats_arrived or st.session_state.get("_stats_last_tab") != active_tab:
+        _scroll_to_top(f"{'arr' if _stats_arrived else 'tab'}_{active_tab}")
+        st.session_state["_stats_last_tab"] = active_tab
 
     st.markdown(
         f'<p class="actor-meta" style="margin:.35rem 0 .2rem;">🎯 Filtres appliqués : '
@@ -13840,6 +13971,9 @@ else:
     placeholder(page)
 
 _save_session_snapshot()  # V136 — mémorise page + filtres pour la prochaine session (GSM)
+# V159 — dernière page rendue : sert aux Statistiques à détecter une
+# ARRIVÉE depuis une autre page (→ retour en haut, cf. _scroll_to_top).
+st.session_state["_last_page_rendered"] = page
 # V158 — pose DIFFÉRÉE du marqueur d'URL « session active » : ici le rendu
 # est terminé, l'iframe des cookies a eu tout le temps d'écrire — le rerun
 # déclenché par l'écriture ne peut plus casser la sauvegarde des cookies.
