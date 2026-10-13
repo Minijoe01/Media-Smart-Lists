@@ -348,8 +348,7 @@ def _avoid_block(avoid_titles: list | None) -> str:
     )
 
 
-def _gemini_prompt(mood: str, candidates: list[dict], avoid_titles: list | None = None,
-                  time_hint: str = "Peu importe") -> str:
+def _gemini_prompt(mood: str, candidates: list[dict], avoid_titles: list | None = None) -> str:
     mood_cfg = POP_MOODS.get(mood) or POP_MOODS["🎲 Surprise-moi"]
     payload = [
         {"i": c["id"], "t": c["title"], "k": c["kind"], "y": c["year"],
@@ -363,12 +362,6 @@ def _gemini_prompt(mood: str, candidates: list[dict], avoid_titles: list | None 
         "Voici les contenus disponibles dans SES listes (JSON) :\n"
         f"{json.dumps(payload, ensure_ascii=False)}\n\n"
         + _avoid_block(avoid_titles)
-        + (
-            f"\n⏱️ CONTRAINTE DE DURÉE : l'utilisateur a environ « {time_hint} » devant lui — "
-            "les DEUX propositions doivent pouvoir se regarder dans ce temps "
-            "(film assez court, ou quelques épisodes d'une série ; champ d = durée en minutes).\n"
-            if time_hint and time_hint != "Peu importe" else ""
-        )
         + "Choisis DEUX propositions :\n"
         "1. LE meilleur contenu DE SA LISTE qui correspond à l'humeur (champ i) ;\n"
         "2. UNE AUTRE œuvre, RÉELLE et reconnue, qui n'est PAS dans cette liste "
@@ -671,7 +664,7 @@ def ia_complete(gemini_key: str, groq_key: str, prompt: str,
 
 
 def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict],
-               avoid_titles: list | None = None, time_hint: str = "Peu importe") -> dict:
+               avoid_titles: list | None = None) -> dict:
     """Appelle Gemini (endpoint NATIF, compatible clés AQ. et AIza).
 
     Renvoie {"pick_id": int, "reason": str, "model": str} ou lève
@@ -685,7 +678,7 @@ def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict]
     """
     if not gemini_key and not groq_key:
         raise RuntimeError("Aucune clé IA configurée")
-    text = ia_complete(gemini_key, groq_key, _gemini_prompt(mood, candidates, avoid_titles, time_hint), 0.9, 1200, "pop")
+    text = ia_complete(gemini_key, groq_key, _gemini_prompt(mood, candidates, avoid_titles), 0.9, 1200, "pop")
     if not text.strip():
         raise RuntimeError("Réponse IA vide — relance")
     try:
