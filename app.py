@@ -556,6 +556,14 @@ st.markdown(
     }
     @media (max-width: 640px) {
         .cinema-banner { min-height: 180px; border-radius: 0; }
+        /* V164 — GROS LOGO sur GSM (retour avec photo) : le logo débordait
+           et les pastilles (« Vu le… ») sortaient de la fiche. On plafonne
+           le logo et on garde la zone des pastilles DANS la bannière. */
+        .cinema-banner img.cinema-logo { max-height: 58px !important; max-width: 62% !important; }
+        .cinema-banner .cinema-bottom { left: 10px; right: 10px; bottom: 8px;
+                                        align-items: flex-end; flex-wrap: wrap; }
+        .cinema-banner .cinema-tag { max-width: 100%; flex-wrap: wrap; }
+        .cinema-banner .cinema-tag .banner-status { font-size: .62rem; padding: .18rem .5rem; }
     }
     /* V131 — Couche BLUR : l'image est ÉTIRÉE (100% 100%) et floutée
        largement — c'est ce qui donne les couleurs dominantes (FlickTrove) */
@@ -931,7 +939,7 @@ st.markdown(
         min-height: 40px !important;
         position: relative !important;
         overflow: hidden;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 4px 14px rgba(0, 0, 0, .20) !important;
+        box-shadow: none !important;
         transition: transform .34s cubic-bezier(.34, 1.3, .42, 1), box-shadow .34s ease,
                     border-color .34s ease, color .34s ease, background .34s ease !important;
     }
@@ -967,8 +975,9 @@ st.markdown(
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover {
         transform: translateY(-1px) scale(1.045);
         color: #fff !important;
-        background: rgba(255, 255, 255, .11) !important;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 8px 20px rgba(0, 0, 0, .18) !important;
+        background: rgba(255, 255, 255, .10) !important;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14),
+                    0 8px 20px rgba(0, 163, 146, .18) !important;
     }
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) button:hover::before,
     div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] > div[data-testid="stMarkdown"] .stab-off) [data-testid="stBaseButton-secondary"]:hover::before {
@@ -1086,13 +1095,14 @@ st.markdown(
        bordure : le verre vit sur le conteneur. */
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
         + div[data-testid="stLayoutWrapper"] {
-        background: rgba(255, 255, 255, .05) !important;
-        backdrop-filter: blur(16px) saturate(150%) !important;
-        -webkit-backdrop-filter: blur(16px) saturate(150%) !important;
-        border: 1px solid rgba(255, 255, 255, .16) !important;
-        border-radius: 999px !important;
-        padding: .28rem .5rem .34rem !important;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), 0 4px 16px rgba(0, 0, 0, .18) !important;
+        /* V164 — CONTENEUR NU (retour GSM : la pilule englobante était
+           « horrible » sur smartphone). Option choisie par l'utilisateur :
+           boutons sans bordure ni bloc de fond, surbrillance au passage
+           et au clic. La barre verte reste le seul marquage. */
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stats-nav-start)
         + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"] {
@@ -1100,6 +1110,19 @@ st.markdown(
         border: none !important;
         box-shadow: none !important;
         padding: 0 !important;
+        align-items: center !important;
+    }
+    /* V163 — BOUTONS CENTRÉS dans la pilule (retour : « ils sont trop
+       bas ») : les marqueurs st.markdown (.stab-on/.stab-off) occupent
+       une ligne AU-DESSUS de chaque bouton → on les masque complètement
+       (ils ne servent qu'aux sélecteurs :has, qui continuent de
+       fonctionner). Chaque colonne ne contient plus que son bouton. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stab-off),
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .stab-on) {
+        display: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        min-height: 0 !important;
     }
     /* Barre 1 : verte lumineuse, pleine largeur, juste sous les boutons.
        V158 — UNE SEULE barre (retour utilisateur : « enlève l'une des barres,
@@ -1109,7 +1132,7 @@ st.markdown(
         + div[data-testid="stLayoutWrapper"] div[data-testid="stHorizontalBlock"]::after {
         content: "";
         position: absolute;
-        left: .9rem; right: .9rem; bottom: -.34rem;
+        left: .4rem; right: .4rem; bottom: -.18rem;
         height: 3px;
         border-radius: 3px;
         background: linear-gradient(90deg, transparent 0%, rgba(0, 163, 146, .85) 8%, rgba(0, 163, 146, .85) 92%, transparent 100%);
@@ -4668,7 +4691,7 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
         return ""
     # dernier visionnage (VU même sans date — un contenu vu reste vu)
     is_watched = False
-    watched_date = None
+    watched_dates: list = []  # V164 : TOUTES les dates (1er/dernier épisode)
     for bucket in ("movies", "shows", "episodes"):
         for entry in ((sections.get("watched") or {}).get(bucket) or []):
             media = _unwrap_media(entry)
@@ -4682,11 +4705,13 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
                 raw = entry.get("last_watched_at") or entry.get("watched_at")
             if raw is None and isinstance(media, dict):
                 raw = media.get("last_watched_at") or media.get("watched_at")
-            if raw is not None and watched_date is None:
+            if raw is not None:
                 try:
-                    watched_date = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
+                    watched_dates.append(
+                        raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw)))
                 except (TypeError, ValueError):
-                    watched_date = None
+                    pass
+    watched_date = watched_dates[0] if watched_dates else None
     # V161 — ÉTAT DE VISIONNAGE : « ▶️ En cours » / « 🚫 Abandonnée »
     # (demande utilisateur) — priorité sur « Vu » : une série abandonnée
     # partiellement vue reste surtout « abandonnée », et une série en
@@ -4698,9 +4723,17 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
     if _typed_pill in _prog_keys:
         return '<span class="banner-status encours">▶️ En cours de visionnage</span>'
     if is_watched:
-        if watched_date is not None:
+        _dates = sorted(d for d in watched_dates if d)
+        # V164 — SÉRIES (demande utilisateur) : « 1er épisode vu le … et
+        # dernier épisode vu le … » quand plusieurs dates existent.
+        if _dates and want_kind == "tv" and len(_dates) >= 2:
             return (
-                f'<span class="banner-status vu">✅ Vu le {watched_date.strftime("%d/%m/%Y")}</span>'
+                f'<span class="banner-status vu">✅ 1er ép. le {_dates[0].strftime("%d/%m/%Y")}'
+                f' · dernier le {_dates[-1].strftime("%d/%m/%Y")}</span>'
+            )
+        if _dates:
+            return (
+                f'<span class="banner-status vu">✅ Vu le {_dates[0].strftime("%d/%m/%Y")}</span>'
             )
         return '<span class="banner-status vu">✅ Vu</span>'
     # dans une de mes listes ?
@@ -5144,6 +5177,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"background:linear-gradient(90deg,rgb({ar},{ag},{ab}),rgb({a2r},{a2g},{a2b}))!important;}}"
         f".cinema-info .progress-rest{{background:rgba(255,255,255,.14)!important;}}"
         f".cinema-info .link-pill{{border:1px solid rgba({ar},{ag},{ab},.40)!important;}}"
+        f"[data-testid=\"stDialog\"] .media-list-card{{border-left:4px solid rgb({ar},{ag},{ab})!important;}}"
         f".cinema-info .link-pill:hover{{"
         f"background:rgba({ar},{ag},{ab},.20)!important;"
         f"border-color:rgba({ar},{ag},{ab},.65)!important;}}"
@@ -5388,11 +5422,13 @@ def _render_cinema_detail_body(row: dict) -> None:
                 )
                 _story_data, _story_err = _ia_fetch_or_wait(
                     _story_key, _gemini_key, _groq_key,
-                    f"« {display_title} » — score {score_val}/100", _signal_labels, wait=6.0,
+                    f"« {display_title} » — score {score_val}/100", _signal_labels,
+                    wait=3.5, channel="score",
                 )
                 if _story_data and _story_data.get("story"):
                     pills_html += (
-                        f'<p style="margin:.35rem 0 .1rem;font-size:.86rem;color:rgb({a2_rgb[0]},{a2_rgb[1]},{a2_rgb[2]});">'
+                        f'<p style="margin:.35rem 0 .1rem;font-size:.86rem;'
+                        f'color:rgb({ar},{ag},{ab})!important;">'
                         f'💬 {escape(str(_story_data["story"]))}</p>'
                     )
             except Exception:
@@ -5775,19 +5811,37 @@ def _render_cinema_detail_body(row: dict) -> None:
             accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
         )
 
-    # ── V162 — « APRÈS CE FILM ? » (idée IA validée) : les 3 suites
-    # logiques DANS tes listes, proposées par l'IA depuis la fiche.
-    # Paresseux (au clic) : 1 appel Groq très rapide ; résultat mémorisé
-    # en session pour survivre aux reruns du dialog.
+    # ── V162→V164 — « APRÈS CE FILM ? » : les 3 suites logiques DANS tes
+    # listes. V164 (retours) : VRAIES TUILES identiques à « Que regarder ? »
+    # (poster réel, pastilles, score, friction), liseré et barre à
+    # l'ACCENT de la fiche, poster CLIQUABLE (lien TMDB fiable — les
+    # hallucinations d'id de l'IA sont filtrées par id OU titre), bouton
+    # au même thème que « Une autre anecdote ».
     _after_gemini = _gemini_api_key()
     _after_groq = _groq_api_key()
     if (_after_gemini or _after_groq) and tmdb_id:
         _after_key = f"after_movie_{'tv' if row.get('type') == 'Série' else 'movie'}_{tmdb_id}"
+        # V164 — le bouton a le MÊME THÈME que « 🎲 Une autre » (fond verre
+        # + liseré accent + texte accent), mais NON soudé : coins complets.
         st.markdown(
+            '<style>'
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor.standalone){'
+            'margin:0!important;min-height:0!important;}'
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor.standalone)'
+            ' + div[data-testid="stElementContainer"] button[kind="secondary"],'
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor.standalone)'
+            ' + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]{'
+            'border-radius:13px!important;}'
+            '/* V164 — tuiles sans bouton soudé : coins complets + marge */'
+            '.media-list-card.after-tile{border-radius:13px!important;margin:.1rem 0 .4rem!important;}'
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .after-tile){'
+            'margin-top:0!important;}'
+            '</style>'
             '<p class="cinema-section-title" style="margin-top:.9rem;">🎬 APRÈS CE FILM ?</p>',
             unsafe_allow_html=True,
         )
         _after_res = st.session_state.get(_after_key)
+        st.markdown('<div class="ia-again-anchor standalone"></div>', unsafe_allow_html=True)
         if st.button("✨ Que regarder ensuite ? (3 enchaînements dans tes listes)",
                      key=f"{_after_key}_go", use_container_width=True):
             try:
@@ -5801,23 +5855,40 @@ def _render_cinema_detail_body(row: dict) -> None:
             except RuntimeError as exc:
                 st.caption(f"Enchaînements indisponibles : {exc}")
         if isinstance(_after_res, dict) and _after_res.get("suggestions"):
-            _pool_by_id = {c["id"]: c for c in pop_engine.pop_candidate_pool(_dataset(), "Peu importe")}
-            for _s_i, _sug in enumerate(_after_res["suggestions"][:3]):
-                _cand = _pool_by_id.get(int(_sug.get("id") or 0)) or {}
-                _s_kind = _cand.get("kind") or "Film"
-                _s_link = (f"https://www.themoviedb.org/{'tv' if _s_kind == 'Série' else 'movie'}/"
-                           f"{int(_sug.get('id') or 0)}")
-                st.markdown(
-                    f'<div style="border-left:3px solid {_ia_accent if _ia_accent else "#00A392"};'
-                    f'padding:.25rem .6rem;margin:.3rem 0;background:rgba(3,22,19,.42);'
-                    f'border-radius:0 10px 10px 0;">'
-                    f'<strong style="color:#fff;">{_s_i + 1}. {escape(str(_sug.get("title") or "?"))}</strong>'
-                    + (f' <a href="{escape(_s_link, quote=True)}" target="_blank" rel="noopener noreferrer" '
-                       f'style="color:{_ia_accent if _ia_accent else "#00A392"};font-size:.72rem;">TMDB ↗</a>' if _sug.get("id") else "")
-                    + f'<br><span style="color:rgb({a3_rgb[0]},{a3_rgb[1]},{a3_rgb[2]});font-size:.84rem;">'
-                    f'{escape(str(_sug.get("why") or ""))}</span></div>',
-                    unsafe_allow_html=True,
-                )
+            _pool_a = pop_engine.pop_candidate_pool(_dataset(), "Peu importe")
+            _by_id_a = {c["id"]: c for c in _pool_a}
+            _by_title_a: dict = {}
+            for _c_a in _pool_a:
+                _by_title_a.setdefault(str(_c_a.get("title") or "").strip().casefold(), _c_a)
+            # profil scoré (même cache que la page Pépite)
+            _prof_sig_a = (id(_dataset()), str(_dataset().get("loaded_at") or ""))
+            _prof_cache_a = st.session_state.get("_pop_profile_cache")
+            if _prof_cache_a and _prof_cache_a[0] == _prof_sig_a:
+                _after_profile = _prof_cache_a[1]
+            else:
+                _after_profile = build_profile(_dataset())
+                st.session_state["_pop_profile_cache"] = (_prof_sig_a, _after_profile)
+            for _sug_a in _after_res["suggestions"][:3]:
+                try:
+                    _sid_a = int(_sug_a.get("id") or 0)
+                except (TypeError, ValueError):
+                    _sid_a = 0
+                _cand_a = _by_id_a.get(_sid_a) or _by_title_a.get(
+                    str(_sug_a.get("title") or "").strip().casefold())
+                if not _cand_a:
+                    continue  # hallucination IA : aucun lien mort affiché
+                if _sug_a.get("why"):
+                    st.markdown(
+                        f'<p style="font-size:.85rem;color:rgb({a3_rgb[0]},{a3_rgb[1]},{a3_rgb[2]});'
+                        f'margin:.4rem 0 .1rem;">💬 {escape(str(_sug_a["why"]))}</p>',
+                        unsafe_allow_html=True,
+                    )
+                _row_a2 = _pepite_scored_row(_cand_a, _after_profile)
+                _kind_a = "tv" if _row_a2.get("type") == "Série" else "movie"
+                _href_a = f"https://www.themoviedb.org/{_kind_a}/{int(_cand_a.get('id') or 0)}"
+                _render_recommendation_card(_row_a2, key_prefix=f"after_{tmdb_id}_",
+                                            poster_href=_href_a, hide_fiche_button=True,
+                                            card_class="after-tile")
 
 
 @st.dialog(" ", width="large")
@@ -6070,7 +6141,9 @@ def _open_cinema_detail(row: dict) -> None:
     _cinema_detail_dialog()
 
 
-def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix: str = "cin_") -> None:
+def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix: str = "cin_",
+                               poster_href: str = "", hide_fiche_button: bool = False,
+                               card_class: str = "") -> None:
     # V158 — key_prefix : La Pépite réutilise CETTE tuile à l'identique ;
     # le préfixe évite les collisions de clés Streamlit quand la même œuvre
     # est proposée à plusieurs endroits (humeur + libre + Que regarder).
@@ -6080,6 +6153,17 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
     year = escape(_media_year(item))
     poster = escape(_poster_url(item), quote=True)
     image_html = _poster_html(poster, row.get("type") or "")
+    if poster_href:
+        # V164 — poster CLIQUABLE (lien TMDB) : même rendu, enveloppé dans
+        # un lien (« Après ce film » dans la fiche, où le bouton fiche
+        # imbriqué est impossible — dialog dans dialog interdit).
+        safe_href = escape(poster_href, quote=True)
+        if image_html.startswith("<img"):
+            image_html = (
+                f'<a href="{safe_href}" target="_blank" rel="noopener noreferrer" '
+                f'title="Voir sur TMDB" style="text-decoration:none;flex:0 0 auto;'
+                f'display:block;">{image_html}</a>'
+            )
     metadata = []
     if row.get("genres"):
         metadata.append(_meta_chip("🎭", row["genres"], "Genres", "Genres"))
@@ -6192,7 +6276,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
     # étiré, qualité décevante — retour utilisateur). Le « waouh » vit
     # dans la fiche cinéma (dialog), pas sur les cartes.
     card_html = (
-        f'<div class="media-list-card poster-card">{image_html}<div class="media-list-content" style="width:100%;">'
+        f'<div class="media-list-card poster-card{(" " + card_class) if card_class else ""}">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
         f'<small>{" · ".join(metadata)}</small>{links_html}'
         f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">'
@@ -6211,6 +6295,8 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
     # exact des tuiles (CSS :has() ci-dessus — même fond, même liseré,
     # même surbrillance au survol).
     st.markdown(card_html, unsafe_allow_html=True)
+    if hide_fiche_button:
+        return
     detail_key = f"{key_prefix}{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
     if st.button(
         "🎬 Voir la fiche",
@@ -9005,9 +9091,10 @@ def render_watchlist_page() -> None:
     elif len(display_rows) > rendered:
         st.caption(f"{len(display_rows) - rendered} résultat(s) supplémentaire(s) masqué(s).")
 
-    # ── ⚖️ RÉSOLVEUR DE DILEMME (V162, idée IA validée) ────────────────────
-    # L'utilisateur hésite entre 2-3 contenus de SA sélection → l'IA tranche
-    # (1 appel Groq très rapide, Gemini en secours).
+    # ── ⚖️ RÉSOLVEUR DE DILEMME (V162 → V163, retour utilisateur) ──────────
+    # La liste déroulante était trop longue sur de gros résultats : une
+    # BARRE DE RECHERCHE filtre désormais les titres avant le multiselect,
+    # et le VERDICT s'affiche en VRAIES TUILES (pastilles, score, fiche).
     _dil_gemini = _gemini_api_key()
     _dil_groq = _groq_api_key()
     if (_dil_gemini or _dil_groq) and len(filtered) >= 2:
@@ -9015,19 +9102,36 @@ def render_watchlist_page() -> None:
             def _dilemma_label(r: dict) -> str:
                 return f"{_media_title(r.get('item') or {})} ({r.get('year') or '?'}) · {r.get('type') or '?'}"
 
-            _dil_options = filtered[:200]
-            _picked = st.multiselect(
-                "Tes hésitations (2 ou 3)",
-                options=range(len(_dil_options)),
-                format_func=lambda i: _dilemma_label(_dil_options[i]),
+            # V164 — pattern « Nettoyage des listes » (retour : « pas
+            # assez intuitif ») : barre de recherche + PILS CLIQUABLES dans
+            # le même bloc — on tape, la liste se réduit, on CLIQUE pour
+            # sélectionner (jusqu'à 3).
+            _dil_search = st.text_input(
+                "🔎 Rechercher un titre",
+                key="dilemma_search", placeholder="Aucune sélection = affiche tout — tape pour filtrer, clique pour choisir",
+            )
+            _dil_all = filtered[:300]
+            _dil_scope = [
+                r for r in _dil_all
+                if not _dil_search
+                or str(_dil_search).strip().casefold() in _media_title(r.get("item") or {}).casefold()
+            ][:24]
+            if _dil_search and not _dil_scope:
+                st.caption("Aucun titre ne correspond à cette recherche dans ta sélection.")
+            _picked = st.pills(
+                "Tes hésitations (clique pour sélectionner — 2 ou 3)",
+                options=range(len(_dil_scope)),
+                format_func=lambda i: _dilemma_label(_dil_scope[i]),
                 max_selections=3,
                 key="dilemma_pick",
             )
             if st.button("⚖️ Tranche pour moi !", type="primary", use_container_width=True,
                          disabled=not (2 <= len(_picked) <= 3), key="dilemma_go"):
                 _choices = []
+                _choice_rows = []
                 for i in _picked:
-                    r = _dil_options[i]
+                    r = _dil_scope[i]
+                    _choice_rows.append(r)
                     _ids = r.get("item", {}).get("ids") if isinstance(r.get("item"), dict) else {}
                     _choices.append({
                         "id": _ids.get("tmdb") or 0,
@@ -9043,27 +9147,31 @@ def render_watchlist_page() -> None:
                     with st.spinner("⚖️ L'IA pèse le pour et le contre…"):
                         _verdict = pop_engine.dilemma_ask_ai(_dil_gemini, _dil_groq, _choices)
                     st.session_state["dilemma_result"] = _verdict
+                    st.session_state["dilemma_rows"] = _choice_rows
                 except RuntimeError as exc:
                     st.session_state["dilemma_result"] = None
                     st.warning(f"Dilemme indisponible : {exc}")
             _verdict = st.session_state.get("dilemma_result")
-            if _verdict:
-                _by_id = {c["id"]: c for c in (st.session_state.get("dilemma_choices") or [])}
-                _winner = _verdict.get("pick_id")
-                _win_row = next((r for r in _dil_options
-                                 if (r.get("item", {}).get("ids") or {}).get("tmdb") == _winner), None) if _winner else None
-                _win_title = next((c["title"] for c in _by_id.values() if c["id"] == _winner), None) \
-                    or (_win_row and _media_title(_win_row.get("item") or {})) or "?"
+            _choice_rows = st.session_state.get("dilemma_rows") or []
+            if _verdict and _choice_rows:
+                _by_tmdb = {}
+                for r in _choice_rows:
+                    _ids_r = r.get("item", {}).get("ids") if isinstance(r.get("item"), dict) else {}
+                    _by_tmdb[_ids_r.get("tmdb")] = r
+                # ordre conseillé par l'IA : gagnant d'abord, puis le reste
+                _order = [_verdict.get("pick_id")] + [
+                    v for v in (_verdict.get("order") or []) if v != _verdict.get("pick_id")
+                ]
+                _ordered_rows = [_by_tmdb[v] for v in _order if v in _by_tmdb]
+                _ordered_rows += [r for r in _choice_rows if r not in _ordered_rows]
                 st.markdown(
-                    f'<div class="accent-callout"><strong>🎬 L\'IA TRANCHE : '
-                    f'{escape(str(_win_title))}</strong><br>'
-                    f"{escape(str(_verdict.get('reason') or ''))}</div>",
+                    '<div class="accent-callout"><strong>🎬 L\'IA TRANCHE — voici son ordre conseillé '
+                    "(la tuile du gagnant d'abord)</strong></div>",
                     unsafe_allow_html=True,
                 )
-                if _win_row is not None:
-                    if st.button("🎬 Voir la fiche du gagnant", key="dilemma_fiche",
-                                 use_container_width=True):
-                        _open_cinema_detail(_win_row)
+                st.markdown(f"*{escape(str(_verdict.get('reason') or ''))}*", unsafe_allow_html=False)
+                for _drow in _ordered_rows:
+                    _render_recommendation_card(_drow)
 
 
 def _gemini_api_key() -> str:
@@ -9124,9 +9232,13 @@ def _ia_prefetch_launch(store_key: str, gemini_key: str, groq_key: str, subject:
 
 
 def _ia_fetch_or_wait(store_key: str, gemini_key: str, groq_key: str, subject: str, hint: str,
-                      wait: float = 26.0) -> tuple[dict | None, str]:
+                      wait: float = 26.0, channel: str = "coulisses") -> tuple[dict | None, str]:
     """Attend le précalcul (s'il est en cours) puis, à défaut, appelle
-    Gemini directement (retry 503/timeout inclus dans pop_engine)."""
+    l'IA directement (retry 503/timeout inclus dans pop_engine).
+    V164 — FIX RÉGRESSION V163 : le secours appelait TOUJOURS
+    coulisses_ask_ai, y compris pour la phrase du score -> la phrase
+    disparaissait et la fiche chargeait sans fin (retour utilisateur).
+    Le canal choisit la bonne fonction ; « score » ne bloque jamais."""
     if store_key and store_key in _IA_PREFETCH:
         deadline = time.time() + wait
         while time.time() < deadline:
@@ -9136,8 +9248,14 @@ def _ia_fetch_or_wait(store_key: str, gemini_key: str, groq_key: str, subject: s
             if entry.get("status") == "error":
                 break  # le précalcul a échoué → nouvel essai direct
             time.sleep(0.35)
+    if channel == "score":
+        return None, ""  # V164 : jamais d'appel bloquant pour la phrase du score
     try:
-        return pop_engine.coulisses_ask_ai(gemini_key, groq_key, subject, hint), ""
+        _fn = {
+            "coulisses": pop_engine.coulisses_ask_ai,
+            "score": pop_engine.score_story_ask_ai,
+        }.get(channel, pop_engine.coulisses_ask_ai)
+        return _fn(gemini_key, groq_key, subject, hint), ""
     except RuntimeError as exc:
         return None, str(exc)
 
@@ -9688,99 +9806,37 @@ def render_pop_page() -> None:
                              st.session_state.get("pop_kind") or "Peu importe",
                              _pop_profile)
 
-    # ── V162 — 🌙 TON SOIR PARFAIT (idée IA validée) : heure + humeur +
-    # temps dispo → l'IA compose un mini-programme avec les contenus DES
-    # LISTES (durées réelles respectées). 1 appel Groq au clic.
-    if api_key or groq_key:
-        with st.expander("🌙 Ton soir parfait — l'IA compose ta soirée", expanded=False):
-            _now_h = datetime.now(PARIS_TZ)
-            _night_cols = st.columns(3)
-            with _night_cols[0]:
-                _night_hour = st.text_input(
-                    "Heure de départ", value=_now_h.strftime("%Hh%M"),
-                    key="night_hour", help="L'heure à laquelle ta soirée commence.")
-            with _night_cols[1]:
-                _night_time = st.selectbox(
-                    "Temps disponible",
-                    ["~1 h", "~2 h", "~3 h", "Soirée entière (~4-5 h)"],
-                    key="night_time")
-            with _night_cols[2]:
-                _night_kind = st.pills("Type", ["Peu importe", "Film", "Série"],
-                                       default="Peu importe", key="night_kind")
-            _night_mood = st.pills("Ton humeur", list(pop_engine.POP_MOODS),
-                                   key="night_mood")
-            _minutes_map = {"~1 h": 60, "~2 h": 120, "~3 h": 180,
-                            "Soirée entière (~4-5 h)": 280}
-            if st.button("✨ Compose mon soir !", type="primary",
-                         use_container_width=True, key="night_go",
-                         disabled=not _night_mood):
-                try:
-                    with st.spinner("🌙 L'IA construit ta soirée…"):
-                        _night_pool = pop_engine.pop_candidate_pool(
-                            dataset, _night_kind or "Peu importe", limit=60)
-                        _night = pop_engine.perfect_night_ask_ai(
-                            api_key, groq_key,
-                            str(_night_hour or _now_h.strftime("%Hh%M")),
-                            _night_mood, _minutes_map.get(_night_time, 120),
-                            _night_kind or "Peu importe", _night_pool,
-                        )
-                        st.session_state["night_result"] = _night
-                except RuntimeError as exc:
-                    st.session_state["night_result"] = None
-                    st.warning(f"Soirée indisponible : {exc}")
-            _night = st.session_state.get("night_result")
-            if isinstance(_night, dict) and _night.get("program"):
-                _pool_n = {c["id"]: c for c in pop_engine.pop_candidate_pool(dataset, "Peu importe", limit=60)}
-                if _night.get("vibe"):
-                    st.markdown(
-                        f'<div class="accent-callout"><strong>🌙 TON SOIR PARFAIT</strong> — '
-                        f"{escape(str(_night['vibe']))}</div>",
-                        unsafe_allow_html=True,
-                    )
-                for _n_i, _step in enumerate(_night["program"][:3]):
-                    _cand_n = _pool_n.get(int(_step.get("id") or 0)) or {}
-                    st.markdown(
-                        f'<div style="display:flex;gap:.7rem;align-items:flex-start;'
-                        f'border-left:4px solid #00A392;padding:.4rem .7rem;margin:.35rem 0;'
-                        f'background:rgba(3,22,19,.50);border-radius:0 12px 12px 0;">'
-                        f'<div style="font-weight:900;color:#7DE8DA;font-size:1.05rem;'
-                        f'min-width:3.4rem;">{escape(str(_step.get("slot") or ""))}</div>'
-                        f'<div><strong style="color:#fff;">{escape(str(_step.get("title") or "?"))}</strong>'
-                        + (f' <span style="color:#9DC5BF;font-size:.76rem;">'
-                           f'· {_format_minutes(int(_step.get("minutes") or 0))}</span>' if _step.get("minutes") else "")
-                        + f'<br><span style="color:#CDE8E3;font-size:.84rem;">'
-                        f'{escape(str(_step.get("why") or ""))}</span></div></div>',
-                        unsafe_allow_html=True,
-                    )
-                    # bouton fiche de l'étape (sûr : hors dialog)
-                    if _cand_n:
-                        if st.button(f"🎬 Voir la fiche — {_cand_n.get('title') or '?'}",
-                                     key=f"night_fiche_{_n_i}", use_container_width=True):
-                            _open_cinema_detail(_history_fiche_row({
-                                "ids": {"tmdb": _cand_n.get("id")},
-                                "title": _cand_n.get("title") or "?",
-                                "type": _cand_n.get("kind") or "Film",
-                            }) or {"item": {"ids": {"tmdb": _cand_n.get("id")},
-                                            "title": _cand_n.get("title")},
-                                   "type": _cand_n.get("kind") or "Film",
-                                   "key": f"night_{_cand_n.get('id')}"})
     st.markdown('<div class="pop-panel-start"></div>', unsafe_allow_html=True)
     with st.container(border=True):
-        mood = st.pills("🎯 Ton humeur du moment", list(pop_engine.POP_MOODS), key="pop_mood")
-        kind = st.pills(
-            "🎞️ Type", ["Peu importe", "Film", "Série"], key="pop_kind",
-            default="Peu importe",
-        )
+        # V163 — FUSION « Ton soir parfait » (retour utilisateur : « je ne
+        # vois pas la différence avec l'humeur du moment… on garde
+        # Tire-moi la pépite en ajoutant le critère de durée ») : le
+        # tirage intègre désormais le TEMPS DISPONIBLE (facultatif) et
+        # l'humeur devient facultative aussi.
+        mood = st.pills("🎯 Ton humeur du moment (facultatif)", list(pop_engine.POP_MOODS), key="pop_mood")
+        _pills_row = st.columns([1, 1])
+        with _pills_row[0]:
+            kind = st.pills(
+                "🎞️ Type", ["Peu importe", "Film", "Série"], key="pop_kind",
+                default="Peu importe",
+            )
+        with _pills_row[1]:
+            time_hint = st.selectbox(
+                "⏱️ Temps dispo (facultatif)",
+                ["Peu importe", "~1 h", "~2 h", "~3 h", "Soirée entière"],
+                key="pop_time",
+            )
         if not mood:
-            st.caption("Cocooning, grand frisson, rire… choisis ton humeur et l'IA "
-                       "(ou le moteur local) ira chercher LE contenu de tes listes qui colle. "
+            st.caption("Cocooning, grand frisson, rire… choisis ton humeur (ou pas !) "
+                       "et l'IA (ou le moteur local) ira chercher LE contenu de tes listes "
+                       "qui colle — dans ton temps dispo si tu l'indiques. "
                        "Ou décris ton envie librement juste en dessous ↓")
         draw_label = "🎲 Une autre pépite !" if st.session_state.get("pop_result") else "🍿 Tire-moi LA pépite !"
         _pop_draw_clicked = st.button(draw_label, type="primary", use_container_width=True, key="pop_draw")
-    if not mood:
-        return
 
     if _pop_draw_clicked:
+        # V163 — humeur FACULTATIVE : sans choix, l'IA reçoit « surprends-moi »
+        _draw_mood = mood or "🎲 Surprise-moi"
         candidates = pop_engine.pop_candidate_pool(dataset, kind or "Peu importe")
         drawn = list(st.session_state.get("pop_drawn") or [])
         exclude = {row["id"] for row in drawn}
@@ -9792,8 +9848,11 @@ def render_pop_page() -> None:
                 with st.spinner("💎 L'IA fouille tes listes ET au-delà…"):
                     # V159 — titres à éviter pour la proposition « hors
                     # listes » (fini les œuvres déjà possédées).
-                    res = pop_engine.pop_ask_ai(api_key, groq_key, mood, fresh,
-                                                _pop_avoid_titles(dataset))
+                    # V163 — + contrainte de TEMPS DISPO (fusion « soir
+                    # parfait ») transmise au prompt.
+                    res = pop_engine.pop_ask_ai(api_key, groq_key, _draw_mood, fresh,
+                                                _pop_avoid_titles(dataset),
+                                                time_hint=str(time_hint or "Peu importe"))
                 pick = next((c for c in fresh if c["id"] == res["in_list_id"]), None)
                 if pick:
                     # V157 — le tirage par humeur propose AUSSI une œuvre
@@ -9812,7 +9871,7 @@ def render_pop_page() -> None:
             except RuntimeError as exc:
                 note = str(exc)
         if result is None and fresh:
-            res = pop_engine.pop_pick_local(mood, fresh)
+            res = pop_engine.pop_pick_local(_draw_mood, fresh)
             if res:
                 pick = next((c for c in fresh if c["id"] == res["pick_id"]), None)
                 if pick:
@@ -9822,6 +9881,13 @@ def render_pop_page() -> None:
             _in_pick = result.get("in") or {}
             drawn.append({"id": _in_pick.get("id"), "title": _in_pick.get("title") or "?",
                           "kind": _in_pick.get("kind") or "Film"})
+            # V164 — la proposition HORS LISTES est mémorisée aussi (retour :
+            # « n'oublie pas de sauvegarder les 2 propositions »).
+            _out_pick = result.get("outside") or {}
+            if isinstance(_out_pick, dict) and _out_pick.get("id"):
+                drawn.append({"id": _out_pick.get("id"),
+                              "title": _out_pick.get("title") or "?",
+                              "kind": _out_pick.get("kind") or "Film"})
             st.session_state["pop_drawn"] = drawn
             # V150 : l'erreur Gemini reste AFFICHÉE (caption discrète sous le
             # résultat) même quand le mode local prend le relais — avant, elle
@@ -9849,7 +9915,7 @@ def render_pop_page() -> None:
         # V150 — chaque pépite tirée devient un LIEN vers sa fiche TMDB
         # (demande utilisateur : « ou au moins un lien vers TMDB ? »).
         chips = []
-        for row in drawn[-8:]:
+        for row in drawn[-12:]:
             tmdb_kind = "tv" if row.get("kind") == "Série" else "movie"
             chips.append(
                 f'<a class="mc-chip" style="text-decoration:none;" '

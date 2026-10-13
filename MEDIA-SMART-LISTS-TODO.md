@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 11 octobre 2026 (soir) · Dernière version déployée : V162.
+> Dernière mise à jour : 13 octobre 2026 · Dernière version déployée : V164.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1106,7 +1106,83 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       Severance en orange, pilule unique + boutons nus + actif givré
       mesurés, non-régressions) + 23/23 tests + smoke test.
 
-### PROCHAINES ÉTAPES (validées par l'utilisateur)
+### Fait en V163 (retours du 11/10 nuit — 4 idées IA affinées)
+- [x] 💬 SCORE STORY : la phrase narrative passe à la couleur d'ACCENT
+      PRINCIPALE de la fiche (plus saturée que l'accent clair — retour :
+      « elle est blanche ») + !important. Économie confirmée : 1 appel
+      PAR FICHE OUVERTE (jamais pour les fiches non consultées), cache
+      15 min, ~300 tokens par appel.
+- [x] ⚖️ DILEMME : BARRE DE RECHERCHE qui filtre les titres avant le
+      multiselect (fini la liste de 1000 éléments — retour utilisateur),
+      et le VERDICT s'affiche en VRAIES TUILES (pastilles, score,
+      friction, bouton fiche) dans l'ordre conseillé par l'IA.
+- [x] 🎬 APRÈS CE FILM : les 3 enchaînements sont des MINI-TUILES au
+      thème de l'outil — poster CLIQUABLE (lien TMDB), chips
+      durée/note/année, pastille d'état colorée (📂/▶️/🚫/🌐), liseré.
+- [x] 🌙→🍿 FUSION « TON SOIR PARFAIT » (retour : « je ne vois pas la
+      différence avec l'humeur… on garde Tire-moi la pépite en ajoutant
+      le critère de durée ») : le panneau séparé est SUPPRIMÉ ; le
+      tirage par humeur intègre un « ⏱️ Temps dispo » FACULTATIF
+      (contrainte transmise au prompt IA), et l'humeur devient
+      facultative aussi (sans choix → « Surprise-moi »).
+- [x] 🎨 GLASS v4 (retour : « boutons trop bas, fond pas transparent ») :
+      marqueurs masqués → boutons CENTRÉS verticalement dans la pilule
+      (écart mesuré 0,1 px) ; bouton inactif SANS AUCUNE OMBRE, fond
+      100 % transparent — on ne le distingue qu'au survol ou à la
+      sélection (givré).
+- [x] Banc : 18/18 (couleur accent, mini-tuiles après-film, fusion +
+      tirage sans humeur + contrainte durée dans le prompt, centrage
+      0,1 px, dilemme, non-régressions) + 23/23 tests + smoke test.
+
+### Fait en V164 (retours du 12/10 — régression réparée + affinages)
+- [x] 🐛 RÉGRESSION « PHRASE DU SCORE » (retour : « l'IA ne me dit plus
+      pourquoi ce score est conseillé… ça charge indéfiniment ») : le
+      mécanisme d'attente appelait le MAUVAIS CANAL IA en secours (celui
+      des anecdotes) et bloquait 6 s. Corrigé : canal correct, attente
+      3,5 s max, et JAMAIS d'appel bloquant — la phrase arrive en
+      arrière-plan (cache 15 min). C'était ça, la « longueur avec
+      Groq » : des appels en cascade inutiles.
+- [x] ⚖️ DILEMME : pattern « Nettoyage des listes » (retour : « pas
+      assez intuitif ») — barre de recherche + PILS CLIQUABLES dans le
+      même bloc (on tape, la liste se réduit, on CLIQUE pour choisir,
+      2-3 max). Verdict en tuiles conservé.
+- [x] 🎬 APRÈS CE FILM : VRAIES TUILES identiques à « Que regarder ? »
+      (poster réel, pastilles, score, friction — retour : « récupérer
+      les mêmes tuiles »), poster CLIQUABLE (TMDB), liseré à l'ACCENT de
+      la fiche courante (plus de vert/jaune standard), pourquoi 💬 par
+      enchaînement, bouton au MÊME THÈME que « Une autre anecdote ».
+      Liens fiables : les id hallucinés par l'IA sont filtrés (repli par
+      titre, sinon la suggestion est ignorée).
+- [x] 🍿 PÉPITE : les DEUX propositions (dans + hors listes) sont
+      mémorisées dans « Pépites déjà tirées » (retour) ; la contrainte
+      de durée est INTELLIGENTE : pour une SÉRIE, c'est la durée d'UN
+      épisode qui doit rentrer dans le temps dispo (Game of Thrones
+      OK pour 3 h — on regarde 1 épisode, retour utilisateur).
+- [x] 🎨 ONGLETS : la pilule englobante est RETIRÉE (retour GSM :
+      « horrible » sur smartphone) — option choisie par l'utilisateur :
+      boutons nus, surbrillance au survol, actif givré, barre verte.
+- [x] 📱 FICHE GSM : gros logo plafonné (58 px) + pastille d'état
+      contenue dans la bannière (retour avec photo : « les pastilles
+      sortent de la fiche »).
+- [x] ✅ SÉRIES : la pastille « Vu le… » devient « ✅ 1er ép. le
+      dd/mm/aaaa · dernier le dd/mm/aaaa » quand plusieurs dates
+      existent (demande utilisateur).
+- [x] Incident de développement (interne, résolu) : une édition a
+      tronqué app.py en cours de version — restauré depuis la
+      sauvegarde V163 et toutes les modifications refaites avec des
+      ancres vérifiées + contrôles d'intégrité (14649 lignes, toutes
+      les fonctions présentes).
+- [x] Banc : 17/17 (phrase réparée + couleur, 3 vraies tuiles + poster
+      cliquable + liseré accent, 2 pépites mémorisées, conteneur nu,
+      GSM nav + logo 58 px + pastille contenue, non-régressions) +
+      23/23 tests + smoke test.
+
+### PROCHAINES ÉTAPES (V165 — demandées par l'utilisateur)
+- [ ] 📜 HISTORIQUE PAR SÉRIE + bloc « TON HISTORIQUE » dans la fiche
+      (modélisation proposée : une ligne par série au lieu d'une ligne
+      par épisode — titre · N épisodes · temps total · dernière vision ·
+      ta note — clic → fiche avec les dates détaillées ; et dans chaque
+      fiche d'un contenu VU : dates de visionnage, rewatchs, ta note).
       • « Pourquoi ce score ? » narratif par l'IA dans la fiche (les signaux expliqués en une phrase vivante) ;
       • « Résolveur de dilemme » : 2-3 contenus hésitants → l'IA tranche ;
       • « Après ce film » : depuis la fiche, l'IA propose les 3 suites logiques DANS tes listes ;
