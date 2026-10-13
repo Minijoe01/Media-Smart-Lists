@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 11 octobre 2026 (soir) · Dernière version déployée : V162.
+> Dernière mise à jour : 12 octobre 2026 · Dernière version déployée : V163.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1106,7 +1106,40 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       Severance en orange, pilule unique + boutons nus + actif givré
       mesurés, non-régressions) + 23/23 tests + smoke test.
 
-### PROCHAINES ÉTAPES (validées par l'utilisateur)
+### Fait en V163 (retours du 11/10 nuit — 4 idées IA affinées)
+- [x] 💬 SCORE STORY : la phrase narrative passe à la couleur d'ACCENT
+      PRINCIPALE de la fiche (plus saturée que l'accent clair — retour :
+      « elle est blanche ») + !important. Économie confirmée : 1 appel
+      PAR FICHE OUVERTE (jamais pour les fiches non consultées), cache
+      15 min, ~300 tokens par appel.
+- [x] ⚖️ DILEMME : BARRE DE RECHERCHE qui filtre les titres avant le
+      multiselect (fini la liste de 1000 éléments — retour utilisateur),
+      et le VERDICT s'affiche en VRAIES TUILES (pastilles, score,
+      friction, bouton fiche) dans l'ordre conseillé par l'IA.
+- [x] 🎬 APRÈS CE FILM : les 3 enchaînements sont des MINI-TUILES au
+      thème de l'outil — poster CLIQUABLE (lien TMDB), chips
+      durée/note/année, pastille d'état colorée (📂/▶️/🚫/🌐), liseré.
+- [x] 🌙→🍿 FUSION « TON SOIR PARFAIT » (retour : « je ne vois pas la
+      différence avec l'humeur… on garde Tire-moi la pépite en ajoutant
+      le critère de durée ») : le panneau séparé est SUPPRIMÉ ; le
+      tirage par humeur intègre un « ⏱️ Temps dispo » FACULTATIF
+      (contrainte transmise au prompt IA), et l'humeur devient
+      facultative aussi (sans choix → « Surprise-moi »).
+- [x] 🎨 GLASS v4 (retour : « boutons trop bas, fond pas transparent ») :
+      marqueurs masqués → boutons CENTRÉS verticalement dans la pilule
+      (écart mesuré 0,1 px) ; bouton inactif SANS AUCUNE OMBRE, fond
+      100 % transparent — on ne le distingue qu'au survol ou à la
+      sélection (givré).
+- [x] Banc : 18/18 (couleur accent, mini-tuiles après-film, fusion +
+      tirage sans humeur + contrainte durée dans le prompt, centrage
+      0,1 px, dilemme, non-régressions) + 23/23 tests + smoke test.
+
+### PROCHAINES ÉTAPES (proposition soumise à l'utilisateur — V164)
+- [ ] 📜 HISTORIQUE PAR SÉRIE + bloc « TON HISTORIQUE » dans la fiche
+      (modélisation proposée : une ligne par série au lieu d'une ligne
+      par épisode — titre · N épisodes · temps total · dernière vision ·
+      ta note — clic → fiche avec les dates détaillées ; et dans chaque
+      fiche d'un contenu VU : dates de visionnage, rewatchs, ta note).
       • « Pourquoi ce score ? » narratif par l'IA dans la fiche (les signaux expliqués en une phrase vivante) ;
       • « Résolveur de dilemme » : 2-3 contenus hésitants → l'IA tranche ;
       • « Après ce film » : depuis la fiche, l'IA propose les 3 suites logiques DANS tes listes ;
