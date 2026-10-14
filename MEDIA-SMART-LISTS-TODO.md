@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 13 octobre 2026 · Dernière version déployée : V164.
+> Dernière mise à jour : 13 octobre 2026 (soir) · Dernière version déployée : V165.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1177,8 +1177,50 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       GSM nav + logo 58 px + pastille contenue, non-régressions) +
       23/23 tests + smoke test.
 
-### PROCHAINES ÉTAPES (V165 — demandées par l'utilisateur)
-- [ ] 📜 HISTORIQUE PAR SÉRIE + bloc « TON HISTORIQUE » dans la fiche
+### Fait en V165 (retours du 13/10 soir — fiche instantanée)
+- [x] 💬 PHRASE DU SCORE RETIRÉE (retour : « pas certain de la plus
+      value… prêt à m'en passer pour une fiche instantanée ») : la fiche
+      s'ouvre sans AUCUN appel IA au chargement — les PASTILLES de
+      signaux restent (explication locale, instantanée, 0 token).
+      Économie : ~300 tokens par fiche ouverte.
+- [x] 🎬 « APRÈS CE FILM » RETIRÉ (retour : « manque de pertinence…
+      hyper long à charger… tu peux enlever »). Économie : 1 appel IA +
+      1 build_profile par utilisation. L'INFO DES COULISSES reste
+      (jugée « pertinente et vraiment géniale » — intacte).
+- [x] 🐛 DILEMME : TypeError corrigé (retour avec traceback Python 3.14
+      de Streamlit Cloud) — st.pills exige une LISTE, pas un range().
+      + garde anti-liste-vide.
+- [x] 📱 FICHE GSM : clear logo RESTAURÉ à sa taille/position d'avant
+      (retour : « je préférerais que le clear logo reprenne sa position
+      précédente ») ; les pastilles d'état passent SOUS la bannière,
+      alignées à droite. PC inchangé.
+- [x] ✅ PASTILLES SÉRIES : retour au simple « ✅ Vu le … » (retour :
+      « déjà satisfait de ces pastilles génériques ») — le
+      « 1er ép./dernier » est retiré.
+- [x] ⚡ QUE REGARDER : CACHE du profil de goûts (retour : « met du
+      temps à charger après la fermeture d'une fiche ») — recalculé
+      seulement au rechargement du dataset.
+- [x] Diagnostic réseau (demande) : app Streamlit Cloud SAINTE (statut
+      RUNNING, pas de CPU throttle, 0,3 s), Groq et TMDB répondent en
+      < 0,1 s → les lenteurs venaient du réseau de l'utilisateur
+      (confirmé par lui : « en 5G ça va mieux ») + reconstruction des
+      caches après déploiement (transitoire).
+- [x] Inquiétude taille app.py : V164 = 703 949 octets (687 Ko, 14 655
+      lignes) — PLUS GROS que V162 (700 545). Un affichage GitHub à
+      184 Ko indiquerait un upload partiel → re-téléverser le fichier
+      de la livraison.
+- [x] Banc : 15/15 (fiche sans 💬 ni bouton après-film, ouverture
+      1,7 s, coulisses intactes, GSM logo 90px + pastilles sous
+      bannière, dilemme, non-régressions) + 23/23 tests + smoke test.
+
+### PROCHAINES ÉTAPES (V166 — modélisation REPRISE avec l'utilisateur)
+- [ ] 📜 HISTOIRE PAR SÉRIE (modélisation corrigée — l'utilisateur veut
+      GARDER le total de visionnages ET le détail) : le tableau par
+      épisode RESTE ; on AJOUTE une fiche série « histoire » — détail
+      des vues groupées PAR SAISON (cliquer le poster de saison), stats
+      « saison vue en X jours », « série entière en X mois », rewatchs,
+      note — dans l'esprit d'une fiche film. + le bloc « Ton
+      historique » dans la fiche d'un contenu vu.
       (modélisation proposée : une ligne par série au lieu d'une ligne
       par épisode — titre · N épisodes · temps total · dernière vision ·
       ta note — clic → fiche avec les dates détaillées ; et dans chaque

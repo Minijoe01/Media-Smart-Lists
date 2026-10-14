@@ -556,13 +556,13 @@ st.markdown(
     }
     @media (max-width: 640px) {
         .cinema-banner { min-height: 180px; border-radius: 0; }
-        /* V164 — GROS LOGO sur GSM (retour avec photo) : le logo débordait
-           et les pastilles (« Vu le… ») sortaient de la fiche. On plafonne
-           le logo et on garde la zone des pastilles DANS la bannière. */
-        .cinema-banner img.cinema-logo { max-height: 58px !important; max-width: 62% !important; }
-        .cinema-banner .cinema-bottom { left: 10px; right: 10px; bottom: 8px;
-                                        align-items: flex-end; flex-wrap: wrap; }
-        .cinema-banner .cinema-tag { max-width: 100%; flex-wrap: wrap; }
+        /* V165 — GSM (retour : « le clear logo reprend sa position
+           précédente ») : logo restauré à 90px ; les PASTILLES d'état
+           passent SOUS la bannière, alignées à droite — plus de
+           débordement, le logo garde sa place. */
+        .cinema-banner .cinema-tag { position: absolute; top: 100%; right: 10px;
+                                     margin-top: 5px; justify-content: flex-end;
+                                     max-width: calc(100% - 20px); flex-wrap: wrap; }
         .cinema-banner .cinema-tag .banner-status { font-size: .62rem; padding: .18rem .5rem; }
     }
     /* V131 — Couche BLUR : l'image est ÉTIRÉE (100% 100%) et floutée
@@ -4691,7 +4691,7 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
         return ""
     # dernier visionnage (VU même sans date — un contenu vu reste vu)
     is_watched = False
-    watched_dates: list = []  # V164 : TOUTES les dates (1er/dernier épisode)
+    watched_date = None
     for bucket in ("movies", "shows", "episodes"):
         for entry in ((sections.get("watched") or {}).get(bucket) or []):
             media = _unwrap_media(entry)
@@ -4705,13 +4705,11 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
                 raw = entry.get("last_watched_at") or entry.get("watched_at")
             if raw is None and isinstance(media, dict):
                 raw = media.get("last_watched_at") or media.get("watched_at")
-            if raw is not None:
+            if raw is not None and watched_date is None:
                 try:
-                    watched_dates.append(
-                        raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw)))
+                    watched_date = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
                 except (TypeError, ValueError):
-                    pass
-    watched_date = watched_dates[0] if watched_dates else None
+                    watched_date = None
     # V161 — ÉTAT DE VISIONNAGE : « ▶️ En cours » / « 🚫 Abandonnée »
     # (demande utilisateur) — priorité sur « Vu » : une série abandonnée
     # partiellement vue reste surtout « abandonnée », et une série en
@@ -4723,17 +4721,11 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
     if _typed_pill in _prog_keys:
         return '<span class="banner-status encours">▶️ En cours de visionnage</span>'
     if is_watched:
-        _dates = sorted(d for d in watched_dates if d)
-        # V164 — SÉRIES (demande utilisateur) : « 1er épisode vu le … et
-        # dernier épisode vu le … » quand plusieurs dates existent.
-        if _dates and want_kind == "tv" and len(_dates) >= 2:
+        # V165 — retour à la pastille simple « ✅ Vu le … » (retour
+        # utilisateur : « déjà satisfait de ces pastilles génériques »).
+        if watched_date is not None:
             return (
-                f'<span class="banner-status vu">✅ 1er ép. le {_dates[0].strftime("%d/%m/%Y")}'
-                f' · dernier le {_dates[-1].strftime("%d/%m/%Y")}</span>'
-            )
-        if _dates:
-            return (
-                f'<span class="banner-status vu">✅ Vu le {_dates[0].strftime("%d/%m/%Y")}</span>'
+                f'<span class="banner-status vu">✅ Vu le {watched_date.strftime("%d/%m/%Y")}</span>'
             )
         return '<span class="banner-status vu">✅ Vu</span>'
     # dans une de mes listes ?
@@ -5404,35 +5396,10 @@ def _render_cinema_detail_body(row: dict) -> None:
             f'<p class="cinema-section-title">Pourquoi ce score ?</p>'
             f'<div style="display:flex;flex-wrap:wrap;gap:.3rem;margin:.25rem 0;">{pills}</div>'
         )
-        # V162 — « POURQUOI CE SCORE ? » NARRATIF (idée IA validée) : les
-        # signaux résumés en UNE phrase vivante par l'IA. Précalcul lancé
-        # immédiatement (Groq prioritaire, très rapide) ; on attend quelques
-        # secondes au maximum — si l'IA n'est pas prête, les pastilles seules
-        # s'affichent (aucun blocage).
-        _gemini_key = _gemini_api_key()
-        _groq_key = _groq_api_key()
-        if _gemini_key or _groq_key:
-            _story_key = f"scorestory_{tmdb_id or id(item)}_{int(score_val)}"
-            _signal_labels = " · ".join(str(s.get("label") or "") for s in signals[:6])
-            try:
-                _ia_prefetch_launch(
-                    _story_key, _gemini_key, _groq_key,
-                    f"« {display_title} » ({row.get('type') or 'Film'}) — score {score_val}/100",
-                    _signal_labels, channel="score",
-                )
-                _story_data, _story_err = _ia_fetch_or_wait(
-                    _story_key, _gemini_key, _groq_key,
-                    f"« {display_title} » — score {score_val}/100", _signal_labels,
-                    wait=3.5, channel="score",
-                )
-                if _story_data and _story_data.get("story"):
-                    pills_html += (
-                        f'<p style="margin:.35rem 0 .1rem;font-size:.86rem;'
-                        f'color:rgb({ar},{ag},{ab})!important;">'
-                        f'💬 {escape(str(_story_data["story"]))}</p>'
-                    )
-            except Exception:
-                pass  # jamais bloquant : les pastilles suffisent
+        # V165 — la phrase narrative IA (V162→V164) est RETIRÉE (retour
+        # utilisateur : « pas certain de la plus value… je suis prêt à
+        # m'en passer pour une fiche instantanée »). Les PASTILLES restent
+        # (explication locale, instantanée, 0 token).
 
     # Casting — V135 : DISTRIBUTION EN CERCLES avec les visages TMDB
     # (acteurs + rôle dans CE contenu, réalisateur en tête si dispo).
@@ -5810,86 +5777,6 @@ def _render_cinema_detail_body(row: dict) -> None:
             f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
             accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
         )
-
-    # ── V162→V164 — « APRÈS CE FILM ? » : les 3 suites logiques DANS tes
-    # listes. V164 (retours) : VRAIES TUILES identiques à « Que regarder ? »
-    # (poster réel, pastilles, score, friction), liseré et barre à
-    # l'ACCENT de la fiche, poster CLIQUABLE (lien TMDB fiable — les
-    # hallucinations d'id de l'IA sont filtrées par id OU titre), bouton
-    # au même thème que « Une autre anecdote ».
-    _after_gemini = _gemini_api_key()
-    _after_groq = _groq_api_key()
-    if (_after_gemini or _after_groq) and tmdb_id:
-        _after_key = f"after_movie_{'tv' if row.get('type') == 'Série' else 'movie'}_{tmdb_id}"
-        # V164 — le bouton a le MÊME THÈME que « 🎲 Une autre » (fond verre
-        # + liseré accent + texte accent), mais NON soudé : coins complets.
-        st.markdown(
-            '<style>'
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor.standalone){'
-            'margin:0!important;min-height:0!important;}'
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor.standalone)'
-            ' + div[data-testid="stElementContainer"] button[kind="secondary"],'
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor.standalone)'
-            ' + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]{'
-            'border-radius:13px!important;}'
-            '/* V164 — tuiles sans bouton soudé : coins complets + marge */'
-            '.media-list-card.after-tile{border-radius:13px!important;margin:.1rem 0 .4rem!important;}'
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .after-tile){'
-            'margin-top:0!important;}'
-            '</style>'
-            '<p class="cinema-section-title" style="margin-top:.9rem;">🎬 APRÈS CE FILM ?</p>',
-            unsafe_allow_html=True,
-        )
-        _after_res = st.session_state.get(_after_key)
-        st.markdown('<div class="ia-again-anchor standalone"></div>', unsafe_allow_html=True)
-        if st.button("✨ Que regarder ensuite ? (3 enchaînements dans tes listes)",
-                     key=f"{_after_key}_go", use_container_width=True):
-            try:
-                with st.spinner("🎬 L'IA compose tes enchaînements…"):
-                    _after_pool = pop_engine.pop_candidate_pool(_dataset(), "Peu importe")
-                    st.session_state[_after_key] = pop_engine.after_movie_ask_ai(
-                        _after_gemini, _after_groq, raw_title, _media_year(item) or "",
-                        row.get("type") or "Film", _after_pool,
-                    )
-                _after_res = st.session_state.get(_after_key)
-            except RuntimeError as exc:
-                st.caption(f"Enchaînements indisponibles : {exc}")
-        if isinstance(_after_res, dict) and _after_res.get("suggestions"):
-            _pool_a = pop_engine.pop_candidate_pool(_dataset(), "Peu importe")
-            _by_id_a = {c["id"]: c for c in _pool_a}
-            _by_title_a: dict = {}
-            for _c_a in _pool_a:
-                _by_title_a.setdefault(str(_c_a.get("title") or "").strip().casefold(), _c_a)
-            # profil scoré (même cache que la page Pépite)
-            _prof_sig_a = (id(_dataset()), str(_dataset().get("loaded_at") or ""))
-            _prof_cache_a = st.session_state.get("_pop_profile_cache")
-            if _prof_cache_a and _prof_cache_a[0] == _prof_sig_a:
-                _after_profile = _prof_cache_a[1]
-            else:
-                _after_profile = build_profile(_dataset())
-                st.session_state["_pop_profile_cache"] = (_prof_sig_a, _after_profile)
-            for _sug_a in _after_res["suggestions"][:3]:
-                try:
-                    _sid_a = int(_sug_a.get("id") or 0)
-                except (TypeError, ValueError):
-                    _sid_a = 0
-                _cand_a = _by_id_a.get(_sid_a) or _by_title_a.get(
-                    str(_sug_a.get("title") or "").strip().casefold())
-                if not _cand_a:
-                    continue  # hallucination IA : aucun lien mort affiché
-                if _sug_a.get("why"):
-                    st.markdown(
-                        f'<p style="font-size:.85rem;color:rgb({a3_rgb[0]},{a3_rgb[1]},{a3_rgb[2]});'
-                        f'margin:.4rem 0 .1rem;">💬 {escape(str(_sug_a["why"]))}</p>',
-                        unsafe_allow_html=True,
-                    )
-                _row_a2 = _pepite_scored_row(_cand_a, _after_profile)
-                _kind_a = "tv" if _row_a2.get("type") == "Série" else "movie"
-                _href_a = f"https://www.themoviedb.org/{_kind_a}/{int(_cand_a.get('id') or 0)}"
-                _render_recommendation_card(_row_a2, key_prefix=f"after_{tmdb_id}_",
-                                            poster_href=_href_a, hide_fiche_button=True,
-                                            card_class="after-tile")
-
 
 @st.dialog(" ", width="large")
 def _cinema_detail_dialog() -> None:
@@ -8333,7 +8220,17 @@ def render_watchlist_page() -> None:
         )
         return
 
-    profile = build_profile(_dataset())
+    # V165 — CACHE du profil (retour : « Que regarder met du temps à
+    # charger après la fermeture d'une fiche ») : le profil ne dépend que
+    # des vues + notes — mémorisé en session tant que le dataset n'est
+    # pas rechargé (même mécanique que la page Pépite).
+    _qr_prof_sig = (id(_dataset()), str(_dataset().get("loaded_at") or ""))
+    _qr_prof_cache = st.session_state.get("_pop_profile_cache")
+    if _qr_prof_cache and _qr_prof_cache[0] == _qr_prof_sig:
+        profile = _qr_prof_cache[1]
+    else:
+        profile = build_profile(_dataset())
+        st.session_state["_pop_profile_cache"] = (_qr_prof_sig, profile)
     # Guide d'accueil (audit UX : un nouvel utilisateur doit comprendre la
     # page en 30 secondes — 3 blocs, replié par défaut, zéro place perdue).
     with st.expander("❓ Comment utiliser cette page ?", expanded=False):
@@ -9118,13 +9015,16 @@ def render_watchlist_page() -> None:
             ][:24]
             if _dil_search and not _dil_scope:
                 st.caption("Aucun titre ne correspond à cette recherche dans ta sélection.")
+            # V165 — FIX TypeError (retour utilisateur avec traceback) :
+            # st.pills exige une LISTE — range() plantait sur Streamlit
+            # Cloud (Python 3.14). Et pilule vide si aucun résultat.
             _picked = st.pills(
                 "Tes hésitations (clique pour sélectionner — 2 ou 3)",
-                options=range(len(_dil_scope)),
+                options=list(range(len(_dil_scope))),
                 format_func=lambda i: _dilemma_label(_dil_scope[i]),
                 max_selections=3,
                 key="dilemma_pick",
-            )
+            ) if _dil_scope else []
             if st.button("⚖️ Tranche pour moi !", type="primary", use_container_width=True,
                          disabled=not (2 <= len(_picked) <= 3), key="dilemma_go"):
                 _choices = []
