@@ -556,15 +556,16 @@ st.markdown(
     }
     @media (max-width: 640px) {
         .cinema-banner { min-height: 180px; border-radius: 0; }
-        /* V166 — GSM (retour : « sous la bannière on ne voit pas la
-           pastille ») : les pastilles d'état passent EN HAUT de la
-           bannière, au-dessus du clear logo, alignées à droite. Pour que
-           l'ancrage soit la BANNIÈRE (et non .cinema-bottom, son parent
-           positionné), .cinema-bottom devient statique et la bannière
-           pousse son contenu (le logo) vers le bas en flex. */
+        /* V167 — GSM (retour : « en bas à droite de la bannière,
+           exactement comme avant, mais SUR LA COUCHE DEVANT le clear
+           logo ») : les pastilles s'ancrent à la BANNIÈRE (bas droite),
+           indépendantes de la taille du logo — .cinema-bottom reste
+           statique (l'ancrage), la bannière pousse le logo vers le bas,
+           et les pastilles vivent au-dessus (z-index 4). */
         .cinema-banner { display: flex; flex-direction: column; justify-content: flex-end; }
         .cinema-banner .cinema-bottom { position: static !important; }
-        .cinema-banner .cinema-tag { position: absolute; top: 8px; right: 10px;
+        .cinema-banner .cinema-tag { position: absolute !important; top: auto !important;
+                                     bottom: 10px; right: 10px; left: auto !important;
                                      margin: 0; justify-content: flex-end;
                                      max-width: calc(100% - 20px); flex-wrap: wrap;
                                      z-index: 4; }
@@ -4684,6 +4685,28 @@ def _dataset_media_by_title_year(title: str, year=None) -> tuple[dict, str] | tu
     return best, best_kind
 
 
+def _history_rows_for_fiche() -> list:
+    """Lignes d'historique NORMALISÉES (moteur de la page Historique),
+    mémorisées en session tant que le dataset ne change pas — sert aux
+    pastilles de dates et à la section « 📜 TON HISTOIRE » (V167).
+    C'est CE moteur qui affiche les bonnes dates dans les stats : les
+    entrées brutes d'épisodes portent l'id de l'ÉPISODE, lui retrouve
+    toujours la SÉRIE (fiable en production, contrairement au scan brut
+    des sections — retour utilisateur : « je vois juste des Vu le »)."""
+    dataset = _dataset()
+    if not dataset:
+        return []
+    sig = (id(dataset), str(dataset.get("loaded_at") or ""),
+           len((dataset.get("sections") or {}).get("watched") or {}))
+    cache = st.session_state.get("_fiche_history_cache")
+    if cache and cache[0] == sig:
+        return cache[1]
+    from history_engine import normalize_history as _nh
+    rows = _nh(dataset, timezone_name="Europe/Paris")
+    st.session_state["_fiche_history_cache"] = (sig, rows)
+    return rows
+
+
 def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
     """Pastille d'état du contenu dans SA propre fiche (V141) :
     ✅ Vu le dd/mm/aaaa · 📂 nom de ta liste · 📌 Watchlist · 🌐 Hors de tes
@@ -4749,17 +4772,26 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
     # cours reste « en cours ».
     _prog_keys, _drop_keys = _watch_status_keys()
     _typed_pill = f"{want_kind}:{tmdb_id}"
-    # V166 — pastilles de DATES (séries) : « 1er ép. le … · dernier le … »
-    # (retour utilisateur : une pastille d'état + les dates en pastilles
-    # séparées — pareil pour les séries en cours).
+    # V167 — pastilles de DATES (séries) via le MOTEUR NORMALISÉ (retour :
+    # « je ne vois que des Vu le comme avant » — le scan brut ne matchait
+    # pas les épisodes réels). Une pastille d'état + les dates séparées.
     _date_pills = []
     if want_kind == "tv":
-        _ds = sorted(d for d in tv_dates if d)
-        if len(_ds) >= 2:
-            _date_pills = [
-                f'<span class="banner-status vu">1er ép. le {_ds[0].strftime("%d/%m/%Y")}</span>',
-                f'<span class="banner-status vu">dernier le {_ds[-1].strftime("%d/%m/%Y")}</span>',
-            ]
+        try:
+            _ep_dates = sorted(
+                row.get("watched_at")
+                for row in _history_rows_for_fiche()
+                if row.get("type") == "Épisode"
+                and row.get("watched_at") is not None
+                and (row.get("ids") or {}).get("tmdb") == tmdb_id
+            )
+            if len(_ep_dates) >= 2:
+                _date_pills = [
+                    f'<span class="banner-status vu">1er ép. le {_ep_dates[0].strftime("%d/%m/%Y")}</span>',
+                    f'<span class="banner-status vu">dernier le {_ep_dates[-1].strftime("%d/%m/%Y")}</span>',
+                ]
+        except Exception:
+            pass
     if _typed_pill in _drop_keys:
         return '<span class="banner-status abandonnee">🚫 Abandonnée</span>'
     if _typed_pill in _prog_keys:
@@ -5809,6 +5841,12 @@ def _render_cinema_detail_body(row: dict) -> None:
     # s'affiche pendant que l'info se prépare, le bloc apparaît en bas.
     # COULEURS : accent de la fiche (bordure) + accent clair (texte, comme
     # le synopsis) + fond glass discret — fini le violet (retour capture).
+    # V167 — 📜 TON HISTOIRE juste avant (statistiques de visionnage,
+    # lecture pure du moteur normalisé — 0 appel réseau).
+    try:
+        _render_ton_histoire(row, item, tmdb_id, a3_rgb)
+    except Exception:
+        pass
     if (api_key or _groq_api_key()) and tmdb_id:
         media_word = "la série" if row.get("type") == "Série" else "le film"
         try:
@@ -5822,6 +5860,138 @@ def _render_cinema_detail_body(row: dict) -> None:
             f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
             accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
         )
+
+def _msl_history_span(days: int) -> str:
+    """« en 12 jours » / « en 8 mois » / « en 2 ans » — durée lisible."""
+    if days <= 0:
+        return "en un jour"
+    if days < 70:
+        return f"en {days} jour" + ("s" if days > 1 else "")
+    if days < 800:
+        months = round(days / 30)
+        return f"en {months} mois"
+    years = round(days / 365)
+    return f"en {years} an" + ("s" if years > 1 else "")
+
+
+def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
+                         text_rgb: tuple) -> None:
+    """📜 TON HISTOIRE (V167 — demande utilisateur de longue date) :
+    dans la fiche d'un contenu VU, ses statistiques de visionnage.
+
+    • SÉRIE : 1er épisode le … · dernier le … · « série entière vue en X
+      jours/mois » · N épisodes · temps total · rewatchs · ta note — puis
+      UNE SECTION PAR SAISON (expander) : chaque épisode avec sa date,
+      « saison vue en X jours », poster de saison si disponible.
+    • FILM : dernière vision le … · N visionnage(s) · temps total · ta note.
+
+    Source : le MÊME moteur normalisé que la page Historique (fiable).
+    Rien n'est modifié dans tes données — lecture pure."""
+    if not tmdb_id:
+        return
+    is_show = row.get("type") == "Série"
+    rows = [
+        r for r in _history_rows_for_fiche()
+        if (r.get("ids") or {}).get("tmdb") == tmdb_id
+        and (r.get("type") == ("Épisode" if is_show else "Film"))
+    ]
+    if not rows:
+        return
+    import re as _re
+    _txt = f"rgb({text_rgb[0]},{text_rgb[1]},{text_rgb[2]})"
+    st.markdown(
+        '<p class="cinema-section-title" style="margin-top:.9rem;">📜 TON HISTOIRE</p>',
+        unsafe_allow_html=True,
+    )
+
+    def _row_note() -> str:
+        notes = [r.get("personal_rating") for r in rows if r.get("personal_rating")]
+        return f" · ta note : <strong>{max(notes):.0f}/10</strong>" if notes else ""
+
+    dates = sorted(r.get("watched_at") for r in rows if r.get("watched_at") is not None)
+    plays = sum(int(r.get("plays") or 1) for r in rows)
+    minutes = sum(int(r.get("total_minutes") or 0) for r in rows)
+    if not dates:
+        return
+    if is_show:
+        span_days = max((dates[-1] - dates[0]).days, 0)
+        head = (
+            f"<strong>1er épisode</strong> le {dates[0].strftime('%d/%m/%Y')} · "
+            f"<strong>dernier</strong> le {dates[-1].strftime('%d/%m/%Y')} · "
+            f"série entière <strong>{_msl_history_span(span_days)}</strong><br>"
+            f"<strong>{len(rows)}</strong> épisode(s) visionné(s) · "
+            f"<strong>{_format_minutes(minutes)}</strong> devant ton écran · "
+            f"<strong>{plays - len(rows)}</strong> rewatch(s)"
+            + _row_note()
+        )
+    else:
+        head = (
+            f"<strong>Dernière vision</strong> le {dates[-1].strftime('%d/%m/%Y')} · "
+            f"<strong>{plays}</strong> visionnage(s) · "
+            f"<strong>{_format_minutes(minutes)}</strong> devant ton écran"
+            + _row_note()
+        )
+    st.markdown(
+        f'<div style="border-left:4px solid {_txt};padding:.45rem .7rem;'
+        f'background:rgba(3,22,19,.45);border-radius:0 12px 12px 0;'
+        f'font-size:.86rem;color:{_txt};line-height:1.65;">{head}</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not is_show:
+        return
+    # ── Par saison : un expander avec le détail des épisodes ──
+    seasons: dict[int, list] = {}
+    for r in rows:
+        m = _re.match(r"S(\d+)E(\d+)", str(r.get("episode_label") or ""))
+        if not m:
+            continue
+        seasons.setdefault(int(m.group(1)), []).append(r)
+    if not seasons:
+        return
+    api_key = _tmdb_api_key()
+    for season_no in sorted(seasons):
+        eps = sorted(seasons[season_no], key=lambda r: str(r.get("episode_label") or ""))
+        s_dates = sorted(r.get("watched_at") for r in eps if r.get("watched_at") is not None)
+        s_plays = sum(int(r.get("plays") or 1) for r in eps)
+        s_minutes = sum(int(r.get("total_minutes") or 0) for r in eps)
+        s_span = _msl_history_span(max((s_dates[-1] - s_dates[0]).days, 0)) if len(s_dates) >= 2 else "en un jour"
+        label = (
+            f"📅 Saison {season_no} — {len(eps)} épisode(s) · {s_span}"
+            + (f" (du {s_dates[0].strftime('%d/%m/%Y')} au {s_dates[-1].strftime('%d/%m/%Y')})"
+               if len(s_dates) >= 2 else f" (le {s_dates[0].strftime('%d/%m/%Y')}" + ")" if s_dates else "")
+            + f" · {_format_minutes(s_minutes)}"
+        )
+        with st.expander(label, expanded=False):
+            # poster de saison si déjà en cache TMDB (0 appel garanti)
+            try:
+                if api_key and tmdb_id:
+                    payload = _fetch_tv_season(tmdb_id, season_no, api_key)
+                    poster = str((payload or {}).get("poster_path") or "")
+                    if poster:
+                        st.markdown(
+                            f'<img src="https://image.tmdb.org/t/p/w185{escape(poster, quote=True)}" '
+                            f'alt="Saison {season_no}" style="border-radius:10px;'
+                            f'max-height:150px;box-shadow:0 8px 20px rgba(0,0,0,.45);'
+                            f'margin-bottom:.4rem;">',
+                            unsafe_allow_html=True,
+                        )
+            except Exception:
+                pass
+            for r in eps:
+                when = r.get("watched_at")
+                when_txt = f" — le {when.strftime('%d/%m/%Y')}" if when else ""
+                _plays_n = int(r.get("plays") or 1)
+                rew = (f' <strong style="color:{_txt};">×{_plays_n}</strong>'
+                       if _plays_n > 1 else "")
+                st.markdown(
+                    f'<div style="padding:.16rem 0;font-size:.84rem;'
+                    f'border-bottom:1px solid rgba(255,255,255,.06);">'
+                    f"<strong style=\"color:#fff;\">{escape(str(r.get('episode_label') or '?'))}</strong>"
+                    f'<span style="color:{_txt};">{escape(when_txt)}</span>{rew}</div>',
+                    unsafe_allow_html=True,
+                )
+
 
 @st.dialog(" ", width="large")
 def _cinema_detail_dialog() -> None:
@@ -9044,42 +9214,29 @@ def render_watchlist_page() -> None:
             def _dilemma_label(r: dict) -> str:
                 return f"{_media_title(r.get('item') or {})} ({r.get('year') or '?'}) · {r.get('type') or '?'}"
 
-            # V164 — pattern « Nettoyage des listes » (retour : « pas
-            # assez intuitif ») : barre de recherche + PILS CLIQUABLES dans
-            # le même bloc — on tape, la liste se réduit, on CLIQUE pour
-            # sélectionner (jusqu'à 3).
-            _dil_search = st.text_input(
-                "🔎 Rechercher un titre",
-                key="dilemma_search", placeholder="Aucune sélection = affiche tout — tape pour filtrer, clique pour choisir",
-            )
-            _dil_all = filtered[:300]
-            _dil_scope = [
-                r for r in _dil_all
-                if not _dil_search
-                or str(_dil_search).strip().casefold() in _media_title(r.get("item") or {}).casefold()
-            ][:24]
-            if _dil_search and not _dil_scope:
-                st.caption("Aucun titre ne correspond à cette recherche dans ta sélection.")
-            # V166 — VRAIE CAUSE du TypeError (retour avec traceback) :
-            # st.pills N'A PAS de paramètre max_selections (c'est un
-            # paramètre de multiselect) → mot-clé inattendu = crash sur
-            # Streamlit Cloud. On utilise selection_mode="multi" et la
-            # limite 2-3 est contrôlée par le bouton (+ rappel visuel).
-            _picked = st.pills(
-                "Tes hésitations (clique pour sélectionner — 2 ou 3)",
-                options=list(range(len(_dil_scope))),
-                selection_mode="multi",
-                format_func=lambda i: _dilemma_label(_dil_scope[i]),
+            # V167 — le MÊME SYSTÈME que « Signaux à rechercher »
+            # (page Nettoyage des listes — retour utilisateur avec capture :
+            # « c'est déjà dans mon app et ça marche nickel ») : UN SEUL
+            # multiselect avec recherche intégrée et placeholder clair,
+            # exactement comme l'audit. La limite 2-3 est native
+            # (max_selections) et le bouton reste bloqué hors 2-3.
+            _dil_scope = filtered[:300]
+            _picked = st.multiselect(
+                "Tes hésitations (2 ou 3)",
+                [_dilemma_label(r) for r in _dil_scope],
+                max_selections=3,
                 key="dilemma_pick",
-            ) if _dil_scope else []
-            if _picked and len(_picked) > 3:
-                st.caption("⚠️ Maximum 3 hésitations — le bouton reste bloqué au-delà.")
+                placeholder="Aucune sélection = afficher tout — tape un titre pour filtrer, clique pour choisir",
+            )
             if st.button("⚖️ Tranche pour moi !", type="primary", use_container_width=True,
                          disabled=not (2 <= len(_picked) <= 3), key="dilemma_go"):
                 _choices = []
                 _choice_rows = []
-                for i in _picked:
-                    r = _dil_scope[i]
+                _label_to_row = {_dilemma_label(r): r for r in _dil_scope}
+                for _sel_label in _picked:
+                    r = _label_to_row.get(_sel_label)
+                    if r is None:
+                        continue
                     _choice_rows.append(r)
                     _ids = r.get("item", {}).get("ids") if isinstance(r.get("item"), dict) else {}
                     _choices.append({

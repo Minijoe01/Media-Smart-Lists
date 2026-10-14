@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 14 octobre 2026 · Dernière version déployée : V166.
+> Dernière mise à jour : 14 octobre 2026 (soir) · Dernière version déployée : V167.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1248,14 +1248,38 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       historique 8, dilemme, non-régressions) + AppTest pills multi
       + 23/23 tests + smoke test (wordmark data-URI ✓).
 
-### PROCHAINES ÉTAPES (V167 — modélisation VALIDÉE par l'utilisateur)
-- [ ] 📜 HISTOIRE PAR SÉRIE (modélisation corrigée — l'utilisateur veut
-      GARDER le total de visionnages ET le détail) : le tableau par
-      épisode RESTE ; on AJOUTE une fiche série « histoire » — détail
-      des vues groupées PAR SAISON (cliquer le poster de saison), stats
-      « saison vue en X jours », « série entière en X mois », rewatchs,
-      note — dans l'esprit d'une fiche film. + le bloc « Ton
-      historique » dans la fiche d'un contenu vu.
+### Fait en V167 (retours du 14/10 — TON HISTOIRE livrée)
+- [x] 📜 « TON HISTOIRE » DANS CHAQUE FICHE (la grande demande, enfin) :
+      • SÉRIE VUE : carte « 1er épisode le … · dernier le … · série
+        entière vue en X jours/mois · N épisodes · temps total ·
+        rewatchs · ta note » + UNE SECTION PAR SAISON (expander) :
+        chaque épisode avec sa date, « saison vue en X jours »,
+        poster de saison (cache TMDB, 0 appel réseau garanti).
+      • FILM VU : « Dernière vision le … · N visionnage(s) · temps ·
+        ta note ».
+      Source : le MÊME moteur normalisé que la page Historique —
+      fiable en production. Lecture pure, rien n'est modifié. Le
+      total (6 700+) et le tableau détaillé RESTENT intacts.
+- [x] ✅ PASTILLES DE DATES FIABLES : « ✅ Vu + 1er ép. le … + dernier
+      le … » calculées via le moteur normalisé (le scan brut des
+      sections ne matchait pas les épisodes réels — retour : « je vois
+      juste des Vu le »).
+- [x] ⚖️ DILEMME : le MÊME SYSTÈME que « Signaux à rechercher » (retour
+      avec capture : « c'est déjà dans mon app et ça marche nickel ») —
+      UN SEUL multiselect avec recherche intégrée, placeholder clair,
+      limite 2-3 native (max_selections). Fini pills + barre séparée.
+- [x] 📱 FICHE GSM : pastilles EN BAS À DROITE de la bannière,
+      exactement comme avant, mais SUR LEUR PROPRE COUCHE devant le
+      clear logo (z-index 4) — leur position ne dépend plus de la
+      taille du logo (retour utilisateur).
+- [x] Banc : 19/19 (TON HISTOIRE série + film + saisons + épisodes
+      datés + note, pastilles bannière fiables, dilemme multiselect,
+      GSM bas-droite z-index 4, non-régressions) + 23/23 tests +
+      smoke test.
+
+### PROCHAINES ÉTAPES (au choix de l'utilisateur)
+- [ ] (facultatif) Score moyen sur la fiche acteur · duo favori stats
+- [ ] README : refonte par l'utilisateur À LA FIN (il gère).
       (modélisation proposée : une ligne par série au lieu d'une ligne
       par épisode — titre · N épisodes · temps total · dernière vision ·
       ta note — clic → fiche avec les dates détaillées ; et dans chaque
