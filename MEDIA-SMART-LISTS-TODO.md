@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 13 octobre 2026 (soir) · Dernière version déployée : V165.
+> Dernière mise à jour : 14 octobre 2026 · Dernière version déployée : V166.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1213,7 +1213,42 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       1,7 s, coulisses intactes, GSM logo 90px + pastilles sous
       bannière, dilemme, non-régressions) + 23/23 tests + smoke test.
 
-### PROCHAINES ÉTAPES (V166 — modélisation REPRISE avec l'utilisateur)
+### Fait en V166 (retours du 13/10 nuit — VRAIE cause dilemme + finitions)
+- [x] ⚖️ DILEMME — VRAIE CAUSE du TypeError (le fix V165 list() ne
+      suffisait pas) : st.pills N'A PAS de paramètre max_selections
+      (signature vérifiée : label/options/selection_mode/…) → mot-clé
+      inattendu = crash. Corrigé : selection_mode="multi" + limite 2-3
+      contrôlée par le bouton + rappel visuel au-delà de 3.
+- [x] 📱 FICHE GSM : pastilles d'état EN HAUT de la bannière,
+      au-dessus du clear logo (retour avec capture : « sous la
+      bannière on ne les voit pas »). L'ancrage passe à la BANNIÈRE
+      (.cinema-bottom en statique !important — découvert au banc que
+      la règle de base écrasait). Logo 90px inchangé, PC inchangé.
+- [x] ✅ SÉRIES — PASTILLES DE DATES (retour : « j'aime bien débuté
+      le / dernier épisode vu le ») : « ✅ Vu » + « 1er ép. le … » +
+      « dernier le … » en pastilles SÉPARÉES (sa proposition) ;
+      pareil pour les EN COURS (« ▶️ En cours » + dates). Films :
+      « ✅ Vu le … » inchangé. Les dates d'épisodes sont collectées
+      via la SÉRIE imbriquée des entrées épisodes (l'entrée porte
+      l'id de l'épisode, pas de la série — la cause du silence V164).
+- [x] 🧭 POSITION PAR ONGLET STATS (retour : « chaque onglet avait une
+      position propre — 1er chargement en haut, retour au point de
+      reprise » — régression V159) : nouveau gestionnaire — 1re visite
+      d'un onglet → haut ; retour → position restaurée (attribut DOM
+      par onglet, sauvegarde continue 400 ms, une seule session).
+      Logique validée au banc par injection directe ; le véhicule
+      (components.html) est celui du scroll-to-top, prouvé en
+      production chez l'utilisateur.
+- [x] 🖼️ WORDMARK : le logo de l'app ne s'affichait plus (retour avec
+      capture ; le favicon oui) — le service de fichiers statiques ne
+      sert plus /app/static/* → le wordmark est embarqué en DATA-URI
+      base64 (vérifié au banc : src=data:image/png;base64,…).
+- [x] Banc : 15/15 (pastilles The Fall « Vu + 1er ép. + dernier »,
+      fiche instantanée 2,1 s, GSM logo 90px + pastilles en haut,
+      historique 8, dilemme, non-régressions) + AppTest pills multi
+      + 23/23 tests + smoke test (wordmark data-URI ✓).
+
+### PROCHAINES ÉTAPES (V167 — modélisation VALIDÉE par l'utilisateur)
 - [ ] 📜 HISTOIRE PAR SÉRIE (modélisation corrigée — l'utilisateur veut
       GARDER le total de visionnages ET le détail) : le tableau par
       épisode RESTE ; on AJOUTE une fiche série « histoire » — détail

@@ -556,13 +556,18 @@ st.markdown(
     }
     @media (max-width: 640px) {
         .cinema-banner { min-height: 180px; border-radius: 0; }
-        /* V165 — GSM (retour : « le clear logo reprend sa position
-           précédente ») : logo restauré à 90px ; les PASTILLES d'état
-           passent SOUS la bannière, alignées à droite — plus de
-           débordement, le logo garde sa place. */
-        .cinema-banner .cinema-tag { position: absolute; top: 100%; right: 10px;
-                                     margin-top: 5px; justify-content: flex-end;
-                                     max-width: calc(100% - 20px); flex-wrap: wrap; }
+        /* V166 — GSM (retour : « sous la bannière on ne voit pas la
+           pastille ») : les pastilles d'état passent EN HAUT de la
+           bannière, au-dessus du clear logo, alignées à droite. Pour que
+           l'ancrage soit la BANNIÈRE (et non .cinema-bottom, son parent
+           positionné), .cinema-bottom devient statique et la bannière
+           pousse son contenu (le logo) vers le bas en flex. */
+        .cinema-banner { display: flex; flex-direction: column; justify-content: flex-end; }
+        .cinema-banner .cinema-bottom { position: static !important; }
+        .cinema-banner .cinema-tag { position: absolute; top: 8px; right: 10px;
+                                     margin: 0; justify-content: flex-end;
+                                     max-width: calc(100% - 20px); flex-wrap: wrap;
+                                     z-index: 4; }
         .cinema-banner .cinema-tag .banner-status { font-size: .62rem; padding: .18rem .5rem; }
     }
     /* V131 — Couche BLUR : l'image est ÉTIRÉE (100% 100%) et floutée
@@ -2283,15 +2288,29 @@ def navigation() -> str:
     return page
 
 
+@st.cache_resource(show_spinner=False)
+def _wordmark_data_uri() -> str:
+    """V166 — le wordmark en DATA-URI base64 : le service de fichiers
+    statiques de Streamlit Cloud ne sert plus /app/static/* (retour
+    utilisateur : logo cassé dans l'app alors que le favicon s'affiche).
+    Embarqué en base64, le logo s'affiche quoi qu'il arrive (mêmes
+    dimensions, même netteté — aucun redimensionnement)."""
+    try:
+        import base64
+        path = os.path.join("static", "wordmark.png")
+        with open(path, "rb") as fh:
+            return "data:image/png;base64," + base64.b64encode(fh.read()).decode("ascii")
+    except Exception:
+        return ""
+
+
 def header() -> None:
-    wordmark_path = os.path.join("static", "wordmark.png")
-    if os.path.exists(wordmark_path):
-        # Même solution que l'app legacy : fichier statique servi directement,
-        # sans redimensionnement raster de st.image (plus net sur PC et mobile).
+    data_uri = _wordmark_data_uri()
+    if data_uri:
         st.markdown(
-            "<div class='wordmark-wrap'>"
-            "<img src='app/static/wordmark.png' alt='Media Smart Lists'>"
-            "</div>",
+            f"<div class='wordmark-wrap'>"
+            f"<img src='{data_uri}' alt='Media Smart Lists'>"
+            f"</div>",
             unsafe_allow_html=True,
         )
     else:
@@ -4692,10 +4711,20 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
     # dernier visionnage (VU même sans date — un contenu vu reste vu)
     is_watched = False
     watched_date = None
+    tv_dates: list = []  # V166 : toutes les dates d'épisodes (séries)
     for bucket in ("movies", "shows", "episodes"):
         for entry in ((sections.get("watched") or {}).get(bucket) or []):
             media = _unwrap_media(entry)
-            if not media or _media_tmdb_id_strict(media) != tmdb_id:
+            matched = bool(media) and _media_tmdb_id_strict(media) == tmdb_id
+            if not matched and bucket == "episodes" and isinstance(entry, dict):
+                # V166 — une entrée ÉPISODE porte l'id de l'ÉPISODE, pas
+                # de la série : on teste AUSSI la série imbriquée (« show »)
+                # pour collecter toutes les dates de visionnage.
+                show_ref = entry.get("show")
+                if isinstance(show_ref, dict):
+                    show_media = _unwrap_media(show_ref) or show_ref
+                    matched = _media_tmdb_id_strict(show_media) == tmdb_id
+            if not matched:
                 continue
             if _bucket_kind(bucket, entry) != want_kind:
                 continue  # V150 : le même id existe chez l'autre TYPE
@@ -4705,24 +4734,40 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
                 raw = entry.get("last_watched_at") or entry.get("watched_at")
             if raw is None and isinstance(media, dict):
                 raw = media.get("last_watched_at") or media.get("watched_at")
-            if raw is not None and watched_date is None:
+            if raw is not None:
                 try:
-                    watched_date = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
+                    parsed = raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
                 except (TypeError, ValueError):
-                    watched_date = None
+                    parsed = None
+                if parsed is not None:
+                    tv_dates.append(parsed)
+                    if watched_date is None:
+                        watched_date = parsed
     # V161 — ÉTAT DE VISIONNAGE : « ▶️ En cours » / « 🚫 Abandonnée »
     # (demande utilisateur) — priorité sur « Vu » : une série abandonnée
     # partiellement vue reste surtout « abandonnée », et une série en
     # cours reste « en cours ».
     _prog_keys, _drop_keys = _watch_status_keys()
     _typed_pill = f"{want_kind}:{tmdb_id}"
+    # V166 — pastilles de DATES (séries) : « 1er ép. le … · dernier le … »
+    # (retour utilisateur : une pastille d'état + les dates en pastilles
+    # séparées — pareil pour les séries en cours).
+    _date_pills = []
+    if want_kind == "tv":
+        _ds = sorted(d for d in tv_dates if d)
+        if len(_ds) >= 2:
+            _date_pills = [
+                f'<span class="banner-status vu">1er ép. le {_ds[0].strftime("%d/%m/%Y")}</span>',
+                f'<span class="banner-status vu">dernier le {_ds[-1].strftime("%d/%m/%Y")}</span>',
+            ]
     if _typed_pill in _drop_keys:
         return '<span class="banner-status abandonnee">🚫 Abandonnée</span>'
     if _typed_pill in _prog_keys:
-        return '<span class="banner-status encours">▶️ En cours de visionnage</span>'
+        return ('<span class="banner-status encours">▶️ En cours de visionnage</span>'
+                + "".join(_date_pills))
     if is_watched:
-        # V165 — retour à la pastille simple « ✅ Vu le … » (retour
-        # utilisateur : « déjà satisfait de ces pastilles génériques »).
+        if _date_pills:
+            return '<span class="banner-status vu">✅ Vu</span>' + "".join(_date_pills)
         if watched_date is not None:
             return (
                 f'<span class="banner-status vu">✅ Vu le {watched_date.strftime("%d/%m/%Y")}</span>'
@@ -9015,16 +9060,20 @@ def render_watchlist_page() -> None:
             ][:24]
             if _dil_search and not _dil_scope:
                 st.caption("Aucun titre ne correspond à cette recherche dans ta sélection.")
-            # V165 — FIX TypeError (retour utilisateur avec traceback) :
-            # st.pills exige une LISTE — range() plantait sur Streamlit
-            # Cloud (Python 3.14). Et pilule vide si aucun résultat.
+            # V166 — VRAIE CAUSE du TypeError (retour avec traceback) :
+            # st.pills N'A PAS de paramètre max_selections (c'est un
+            # paramètre de multiselect) → mot-clé inattendu = crash sur
+            # Streamlit Cloud. On utilise selection_mode="multi" et la
+            # limite 2-3 est contrôlée par le bouton (+ rappel visuel).
             _picked = st.pills(
                 "Tes hésitations (clique pour sélectionner — 2 ou 3)",
                 options=list(range(len(_dil_scope))),
+                selection_mode="multi",
                 format_func=lambda i: _dilemma_label(_dil_scope[i]),
-                max_selections=3,
                 key="dilemma_pick",
             ) if _dil_scope else []
+            if _picked and len(_picked) > 3:
+                st.caption("⚠️ Maximum 3 hésitations — le bouton reste bloqué au-delà.")
             if st.button("⚖️ Tranche pour moi !", type="primary", use_container_width=True,
                          disabled=not (2 <= len(_picked) <= 3), key="dilemma_go"):
                 _choices = []
@@ -12682,6 +12731,41 @@ def _stats_history_section(ctx: dict) -> None:
         except Exception as exc:
             st.caption(f"Export Excel indisponible : {exc}")
 
+def _scroll_manager(tab: str) -> None:
+    """V166 — POSITION DE DÉFILEMENT PROPRE à chaque onglet des stats
+    (retour utilisateur : « chaque onglet avait une position propre —
+    1er chargement en haut, retour au point de reprise »).
+
+    Remplace le scroll-to-top V159 (qui remontait SYSTÉMATIQUEMENT au
+    changement d'onglet). Un micro-composant par onglet : au montage
+    (changement d'onglet / arrivée sur la page), il RESTAURE la position
+    sauvegardée pour CET onglet — première visite → haut de page — puis
+    l'enregistre en continu (toutes les 400 ms). sessionStorage = une
+    seule session de navigateur (demande utilisateur). Le minuteur vit
+    dans l'iframe : il s'arrête tout seul quand on quitte la page."""
+    try:
+        import streamlit.components.v1 as _components
+        _tab_js = json.dumps(str(tab))
+        _components.html(
+            "<script>(function(){"
+            "var w=window.parent.window;"
+            "var c=w.document.querySelector('section[data-testid=\"stMain\"]')"
+            "||w.document.querySelector('section.main')||w.document.scrollingElement;"
+            "if(!c){return;}"
+            "var k='msl_scr_'+" + _tab_js + ";"
+            "try{var s=w.sessionStorage.getItem(k);"
+            "c.scrollTop=(s!==null)?(parseInt(s,10)||0):0;}"
+            "catch(e){c.scrollTop=0;}"
+            "setInterval(function(){try{w.sessionStorage.setItem(k,c.scrollTop);}"
+            "catch(e){}},400);"
+            "})();</" + "script>",
+            height=0,
+            key=f"scrollmgr_{tab}",
+        )
+    except Exception:
+        pass
+
+
 def _scroll_to_top(marker: str) -> None:
     """V159 — remonte la fenêtre en haut de page (retour utilisateur :
     « quand j'initialise la page de statistique, j'arrive en plein milieu
@@ -12921,13 +13005,12 @@ def render_basic_stats_page() -> None:
         st.rerun()
     active_tab = st.session_state["stats_tab"]
 
-    # V159 — ARRIVÉE SUR LA PAGE ou CHANGEMENT D'ONGLET → retour en HAUT de
-    # page (Streamlit garde sinon la position de défilement de la page
-    # précédente — retour utilisateur : « j'arrive en plein milieu »).
-    _stats_arrived = st.session_state.get("_last_page_rendered") != "📊 Statistiques"
-    if _stats_arrived or st.session_state.get("_stats_last_tab") != active_tab:
-        _scroll_to_top(f"{'arr' if _stats_arrived else 'tab'}_{active_tab}")
-        st.session_state["_stats_last_tab"] = active_tab
+    # V166 — POSITION PAR ONGLET (retour utilisateur : régression — « au
+    # 1er chargement de l'onglet tu es en haut, quand tu y reviens tu
+    # retrouves ton point de reprise »). Le gestionnaire remplace le
+    # scroll-to-top V159 : restauration au changement d'onglet, haut de
+    # page à la première visite d'un onglet.
+    _scroll_manager(active_tab)
 
     st.markdown(
         f'<p class="actor-meta" style="margin:.35rem 0 .2rem;">🎯 Filtres appliqués : '
