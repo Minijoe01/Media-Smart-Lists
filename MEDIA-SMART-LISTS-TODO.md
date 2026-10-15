@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 14 octobre 2026 (soir) · Dernière version déployée : V167.
+> Dernière mise à jour : 14 octobre 2026 (nuit) · Dernière version déployée : V168.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1277,6 +1277,37 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       GSM bas-droite z-index 4, non-régressions) + 23/23 tests +
       smoke test.
 
+### Fait en V168 (retours du 14/10 soir — TON HISTOIRE v2 + dilemme + bandes-annonces)
+- [x] 📜 TON HISTOIRE v2 (refonte visuelle demandée) :
+      • SAISONS ENROULÉES PAR DÉFAUT (<details> natif, dépliable sans
+        rechargement — même mécanisme que « Pourquoi ce score ? ») : le
+        chemin vers l'info des coulisses redevient court ;
+      • POSTER DE SAISON sur la MÊME LIGNE que « Saison 1 · N épisode(s) »,
+        à gauche (44px, 36px sur GSM) — la saison se déroule AVEC son
+        poster, sans prendre trop de place ;
+      • poster CLIQUABLE → page TMDB de la saison
+        (themoviedb.org/tv/{id}/season/{n}, nouvel onglet) ;
+      • ÉPISODES EN GRILLE ALIGNÉE : SxxEyy | titre | date — les codes,
+        les titres ET les dates s'alignent chacun dans leur colonne,
+        quelle que soit la longueur des titres (×N rewatch en chip) ;
+      • AUCUN espace vide entre les saisons (empilement à 7 px) ;
+      • TOUT aux couleurs d'accent de la fiche (bordures, titres, texte).
+- [x] 🎬 BANDES-ANNONCES DISPARUES (Dragon Ball Z, Senna) — CAUSE
+      RÉELLE TROUVÉE : leurs trailers TMDB n'existent qu'en ANGLAIS et
+      l'appel principal de la fiche (language=fr-FR) ne renvoie QUE les
+      vidéos françaises → la section disparaissait alors que la vidéo
+      existe. Fix : second appel « toutes langues utiles »
+      (include_video_language=fr,en,null, cache 30 j, uniquement si le
+      1er appel ne trouve rien) +, en tout dernier recours, un BOUTON
+      « ▶️ Chercher la bande-annonce sur YouTube » au lieu de rien.
+- [x] ⚖️ DILEMME : ERREUR StreamlitDuplicateElementKey CORRIGÉE — les
+      tuiles du verdict partageaient les clés des tuiles de la grille
+      (mêmes contenus, préfixe identique). Les tuiles du verdict ont
+      maintenant leur préfixe dédié « dlm_ » (_render_dilemma_tiles).
+- [x] Banc : 24/24 (saisons enroulées, posters cliquables TMDB saison,
+      grille alignée, gap 7px, accent, repli bande-annonce EN + bouton
+      YouTube, collision dilemme ×2, GSM, non-régressions) + 23/23 tests.
+
 ### PROCHAINES ÉTAPES (au choix de l'utilisateur)
 - [ ] (facultatif) Score moyen sur la fiche acteur · duo favori stats
 - [ ] README : refonte par l'utilisateur À LA FIN (il gère).
@@ -1303,6 +1334,6 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       dans Statistiques (décision utilisateur : c'est le bon endroit).
 - [ ] Historique PAR SÉRIE (une ligne par série, clic → fiche série avec dates
       de visionnage) — remplace le tableau par épisode.
-- [ ] Fiche film d'un contenu VU → bloc « Ton historique » (dates, rewatchs, ta note).
+- [x] (fait en V167 → affiné V168) Fiche film/série d'un contenu VU → bloc « 📜 TON HISTOIRE ».
 - [ ] Fiche acteur → « score moyen de ses contenus que tu as notés ».
 - [ ] Stats → « duo favori » (acteur + réalisateur le plus croisé).

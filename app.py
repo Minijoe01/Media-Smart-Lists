@@ -5121,7 +5121,9 @@ def _render_cinema_detail_body(row: dict) -> None:
     else:
         poster = escape(_poster_url(item), quote=True)
     # V136 — BANDE-ANNONCE : trailer YouTube VF (repli VO) dans le même
-    # appel TMDB. Si aucune bande-annonce : pas de section (zéro place).
+    # appel TMDB. V168 : si cet appel FR ne trouve rien, un second appel
+    # « toutes langues » récupère les trailers EN (Dragon Ball Z, Senna…)
+    # et, en tout dernier recours, un bouton YouTube remplace la section.
     trailer_key = ""
     videos_block = fr_payload.get("videos") if isinstance(fr_payload.get("videos"), dict) else {}
     for wanted_lang in ("fr", "en", None):
@@ -5137,6 +5139,33 @@ def _render_cinema_detail_body(row: dict) -> None:
                 break
         if trailer_key:
             break
+    if not trailer_key and api_key and tmdb_id:
+        # V168 — Dragon Ball Z, Senna… : leurs bandes-annonces TMDB
+        # n'existent qu'en ANGLAIS, et l'appel principal (language=fr-FR)
+        # ne renvoie QUE les vidéos françaises → la section disparaissait
+        # alors que la vidéo existe bien sur TMDB. Second appel « toutes
+        # langues utiles » (fr, en, sans langue), UNIQUEMENT dans ce cas :
+        # zéro requête supplémentaire pour les contenus déjà servis en FR.
+        try:
+            _all_videos = _fetch_tmdb_videos_all(
+                "tv" if row.get("type") == "Série" else "movie", tmdb_id, api_key
+            )
+        except Exception:
+            _all_videos = {}
+        videos_block = _all_videos if isinstance(_all_videos, dict) else {}
+        for wanted_lang in ("fr", "en", None):
+            for video in (videos_block.get("results") or []):
+                if (
+                    isinstance(video, dict)
+                    and video.get("site") == "YouTube"
+                    and str(video.get("type") or "") == "Trailer"
+                    and video.get("key")
+                    and (video.get("iso_639_1") == wanted_lang if wanted_lang else True)
+                ):
+                    trailer_key = str(video["key"])
+                    break
+            if trailer_key:
+                break
 
     # ── Couleur dominante ──
     dominant_rgb = None
@@ -5758,6 +5787,22 @@ def _render_cinema_detail_body(row: dict) -> None:
             f'style="width:100%;aspect-ratio:16/9;border:0;border-radius:10px;background:rgba(0,0,0,.35);" '
             f'loading="lazy" allowfullscreen title="Bande-annonce"></iframe></div>'
         )
+    else:
+        # V168 — filet de sécurité : TMDB n'a AUCUNE vidéo pour ce titre
+        # (très rare) → au lieu de ne rien afficher, un bouton vers la
+        # recherche YouTube (retour utilisateur : « j'ai l'impression que
+        # certaines bandes annonces ont disparu » — elles n'ont jamais
+        # existé en français ; le repli ci-dessus ramène les anglaises,
+        # ce bouton garantit qu'il reste TOUJOURS un chemin).
+        _yt_query = quote(f"{raw_title} bande-annonce")
+        trailer_html = (
+            f'<p class="cinema-section-title">Bande-annonce</p>'
+            f'<div style="margin:.15rem 0 .35rem;">'
+            f'<a class="link-pill" href="https://www.youtube.com/results?search_query={_yt_query}" '
+            f'target="_blank" rel="noopener noreferrer" '
+            f'title="Ouvrir la recherche YouTube dans un nouvel onglet">'
+            f'▶️ Chercher la bande-annonce de « {escape(raw_title)} » sur YouTube</a></div>'
+        )
 
     # Liens (déjà HTML via _content_links_html) — V136 : recherche JustWatch
     # avec le TITRE FRANÇAIS (meilleurs résultats sur JustWatch France).
@@ -5844,7 +5889,7 @@ def _render_cinema_detail_body(row: dict) -> None:
     # V167 — 📜 TON HISTOIRE juste avant (statistiques de visionnage,
     # lecture pure du moteur normalisé — 0 appel réseau).
     try:
-        _render_ton_histoire(row, item, tmdb_id, a3_rgb)
+        _render_ton_histoire(row, item, tmdb_id, a_rgb, a2_rgb, a3_rgb)
     except Exception:
         pass
     if (api_key or _groq_api_key()) and tmdb_id:
@@ -5875,18 +5920,28 @@ def _msl_history_span(days: int) -> str:
 
 
 def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
-                         text_rgb: tuple) -> None:
-    """📜 TON HISTOIRE (V167 — demande utilisateur de longue date) :
-    dans la fiche d'un contenu VU, ses statistiques de visionnage.
+                         a_rgb: tuple, a2_rgb: tuple, a3_rgb: tuple) -> None:
+    """📜 TON HISTOIRE (V167 → V168, retours utilisateur) : statistiques de
+    visionnage dans la fiche d'un contenu VU. Lecture pure du moteur
+    normalisé (rien n'est modifié dans tes données).
 
-    • SÉRIE : 1er épisode le … · dernier le … · « série entière vue en X
-      jours/mois » · N épisodes · temps total · rewatchs · ta note — puis
-      UNE SECTION PAR SAISON (expander) : chaque épisode avec sa date,
-      « saison vue en X jours », poster de saison si disponible.
-    • FILM : dernière vision le … · N visionnage(s) · temps total · ta note.
+    V168 — refonte demandée :
+    • saisons ENROULÉES par défaut (le chemin vers l'info des coulisses
+      redevient court) : <details> natif, plié au chargement, dépliable
+      sans rechargement — même mécanisme que « Pourquoi ce score ? » ;
+    • POSTER de saison sur la MÊME LIGNE que « Saison 1 · N épisode(s) »,
+      à gauche — et CLIQUABLE : il ouvre la page TMDB de la saison ;
+    • épisodes en GRILLE ALIGNÉE : SxxEyy | titre | date — les codes, les
+      titres et les dates s'alignent chacun dans leur colonne, quelle que
+      soit la longueur des titres ;
+    • AUCUN espace vide entre les saisons (empilement à 7 px) ;
+    • tout aux COULEURS D'ACCENT de la fiche (bordures, titres, texte).
 
-    Source : le MÊME moteur normalisé que la page Historique (fiable).
-    Rien n'est modifié dans tes données — lecture pure."""
+    • SÉRIE : carte « 1er épisode le … · dernier le … · série entière en X
+      jours · N épisodes · temps · rewatchs · ta note » + une ligne par
+      saison, dépliable (épisodes datés, ×N rewatch, titre si connu).
+    • FILM : « Dernière vision le … · N visionnage(s) · temps · ta note ».
+    """
     if not tmdb_id:
         return
     is_show = row.get("type") == "Série"
@@ -5898,11 +5953,14 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
     if not rows:
         return
     import re as _re
-    _txt = f"rgb({text_rgb[0]},{text_rgb[1]},{text_rgb[2]})"
-    st.markdown(
-        '<p class="cinema-section-title" style="margin-top:.9rem;">📜 TON HISTOIRE</p>',
-        unsafe_allow_html=True,
-    )
+    try:
+        ar, ag, ab = (int(c) for c in a_rgb)
+        a2r, a2g, a2b = (int(c) for c in a2_rgb)
+        a3r, a3g, a3b = (int(c) for c in a3_rgb)
+    except (TypeError, ValueError):
+        ar, ag, ab = 0, 199, 179
+        a2r, a2g, a2b = 64, 255, 230
+        a3r, a3g, a3b = 90, 216, 201
 
     def _row_note() -> str:
         notes = [r.get("personal_rating") for r in rows if r.get("personal_rating")]
@@ -5931,66 +5989,159 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
             f"<strong>{_format_minutes(minutes)}</strong> devant ton écran"
             + _row_note()
         )
+
+    # ── Saisons (séries) : lignes enroulées <details> + poster cliquable ──
+    seasons_html = ""
+    if is_show:
+        seasons: dict[int, list] = {}
+        for r in rows:
+            m = _re.match(r"S(\d+)E(\d+)", str(r.get("episode_label") or ""))
+            if m:
+                seasons.setdefault(int(m.group(1)), []).append(r)
+        api_key = _tmdb_api_key()
+        season_blocks = []
+        for season_no in sorted(seasons):
+            eps = sorted(seasons[season_no], key=lambda r: str(r.get("episode_label") or ""))
+            s_dates = sorted(r.get("watched_at") for r in eps if r.get("watched_at") is not None)
+            s_plays = sum(int(r.get("plays") or 1) for r in eps)
+            s_minutes = sum(int(r.get("total_minutes") or 0) for r in eps)
+            s_span = _msl_history_span(max((s_dates[-1] - s_dates[0]).days, 0)) if len(s_dates) >= 2 else "en un jour"
+            when = (
+                f"du {s_dates[0].strftime('%d/%m/%Y')} au {s_dates[-1].strftime('%d/%m/%Y')}"
+                if len(s_dates) >= 2
+                else (f"le {s_dates[0].strftime('%d/%m/%Y')}" if s_dates else "")
+            )
+            meta = (
+                f"{len(eps)} épisode(s) vus · {s_span}"
+                + (f" ({when})" if when else "")
+                + f" · {_format_minutes(s_minutes)}"
+                + (f" · {s_plays - len(eps)} rewatch(s)" if s_plays - len(eps) > 0 else "")
+            )
+            season_name = "Épisodes spéciaux" if season_no == 0 else f"Saison {season_no}"
+            season_href = f"https://www.themoviedb.org/tv/{tmdb_id}/season/{season_no}"
+            # poster + noms d'épisodes : le MÊME cache TMDB 30 j que la
+            # section « Saisons » de la fiche (aucun appel en plus).
+            payload = {}
+            try:
+                if api_key:
+                    payload = _fetch_tv_season(tmdb_id, season_no, api_key) or {}
+            except Exception:
+                payload = {}
+            ep_names = {}
+            for e in (payload.get("episodes") or []):
+                try:
+                    ep_names[int(e.get("episode_number") or 0)] = str(e.get("name") or "")
+                except (TypeError, ValueError):
+                    continue
+            poster_path = str(payload.get("poster_path") or "")
+            if poster_path:
+                poster_html = (
+                    f'<a class="msl-hist-poster" href="{escape(season_href, quote=True)}" '
+                    f'target="_blank" rel="noopener noreferrer" '
+                    f'title="{escape(season_name)} sur TMDB (nouvel onglet)">'
+                    f'<img src="https://image.tmdb.org/t/p/w154{escape(poster_path, quote=True)}" '
+                    f'alt="{escape(season_name)}" loading="lazy"></a>'
+                )
+            else:
+                poster_html = (
+                    f'<a class="msl-hist-poster msl-hist-noimg" href="{escape(season_href, quote=True)}" '
+                    f'target="_blank" rel="noopener noreferrer" '
+                    f'title="{escape(season_name)} sur TMDB (nouvel onglet)">S{season_no}</a>'
+                )
+            ep_parts = []
+            for r in eps:
+                label = str(r.get("episode_label") or "?")
+                m = _re.match(r"S(\d+)E(\d+)(?:\s*·\s*(.*))?\s*$", label)
+                if m:
+                    ep_no = int(m.group(2))
+                    code = f"S{int(m.group(1)):02d}E{ep_no:02d}"
+                    ep_title = (m.group(3) or "").strip()
+                else:
+                    ep_no = 0
+                    code = label
+                    ep_title = ""
+                if not ep_title:
+                    ep_title = ep_names.get(ep_no, "") or (f"Épisode {ep_no}" if ep_no else "Épisode")
+                when_r = r.get("watched_at")
+                date_txt = when_r.strftime("%d/%m/%Y") if when_r else "—"
+                n_plays = int(r.get("plays") or 1)
+                rew = f'<span class="msl-hist-rw">×{n_plays}</span>' if n_plays > 1 else ""
+                ep_parts.append(
+                    f'<div class="msl-hist-ep">'
+                    f'<span class="msl-hist-code">{escape(code)}</span>'
+                    f'<span class="msl-hist-title" title="{escape(ep_title, quote=True)}">{escape(ep_title)}</span>'
+                    f'<span class="msl-hist-date">{escape(date_txt)}{rew}</span></div>'
+                )
+            season_blocks.append(
+                f'<div class="msl-hist-srow">{poster_html}'
+                f'<details class="msl-hist-season"><summary>'
+                f'<span class="msl-hist-sname">{escape(season_name)}</span>'
+                f'<span class="msl-hist-smeta">{escape(meta)}</span>'
+                f'<span class="msl-hist-chev">▶</span></summary>'
+                f'<div class="msl-hist-eps">{"".join(ep_parts)}</div>'
+                f'</details></div>'
+            )
+        if season_blocks:
+            seasons_html = f'<div class="msl-hist-seasons">{"".join(season_blocks)}</div>'
+
+    # ── CSS + rendu : UN SEUL bloc, couleurs d'accent de la fiche ─────────
+    css_hist = (
+        "<style>"
+        f".msl-hist-card{{border-left:4px solid rgb({ar},{ag},{ab});"
+        f"background:rgba({ar},{ag},{ab},.10);border-radius:0 12px 12px 0;"
+        f"padding:.45rem .7rem;font-size:.86rem;"
+        f"color:rgb({a3r},{a3g},{a3b});line-height:1.65;}}"
+        f".msl-hist-card strong{{color:rgb({a2r},{a2g},{a2b});}}"
+        f".msl-hist-seasons{{display:flex;flex-direction:column;gap:7px;margin-top:9px;}}"
+        f".msl-hist-srow{{display:flex;gap:10px;align-items:flex-start;"
+        f"border:1px solid rgba({ar},{ag},{ab},.30);background:rgba({ar},{ag},{ab},.07);"
+        f"border-radius:12px;padding:7px 10px;}}"
+        f".msl-hist-poster{{flex:0 0 44px;display:block;}}"
+        f".msl-hist-poster img{{width:44px;display:block;border-radius:7px;"
+        f"box-shadow:0 6px 16px rgba(0,0,0,.40);}}"
+        f"a.msl-hist-noimg{{height:64px;display:flex;align-items:center;"
+        f"justify-content:center;border:1px dashed rgba({ar},{ag},{ab},.45);"
+        f"border-radius:7px;color:rgb({a2r},{a2g},{a2b});font-weight:800;"
+        f"font-size:.78rem;text-decoration:none;}}"
+        f".msl-hist-season{{flex:1;min-width:0;}}"
+        f".msl-hist-season>summary{{cursor:pointer;list-style:none;"
+        f"display:flex;align-items:center;gap:8px;flex-wrap:wrap;"
+        f"padding:1px 0;}}"
+        f".msl-hist-season>summary::-webkit-details-marker{{display:none;}}"
+        f".msl-hist-sname{{color:rgb({a2r},{a2g},{a2b});font-weight:800;font-size:.92rem;}}"
+        f".msl-hist-smeta{{color:rgba({a3r},{a3g},{a3b},.80);font-size:.80rem;}}"
+        f".msl-hist-chev{{margin-left:auto;color:rgb({ar},{ag},{ab});font-size:.7rem;"
+        f"transition:transform .18s ease;flex-shrink:0;}}"
+        f".msl-hist-season[open]>summary .msl-hist-chev{{transform:rotate(90deg);}}"
+        f".msl-hist-eps{{margin-top:5px;display:flex;flex-direction:column;}}"
+        f".msl-hist-ep{{display:grid;grid-template-columns:62px minmax(0,1fr) auto;"
+        f"column-gap:10px;row-gap:1px;align-items:baseline;padding:3px 0;"
+        f"font-size:.82rem;border-top:1px dashed rgba({ar},{ag},{ab},.16);}}"
+        f".msl-hist-ep:first-child{{border-top:none;}}"
+        f".msl-hist-code{{color:rgb({a2r},{a2g},{a2b});font-weight:700;"
+        f"font-variant-numeric:tabular-nums;}}"
+        f".msl-hist-title{{color:rgba(255,255,255,.94);overflow:hidden;"
+        f"text-overflow:ellipsis;white-space:nowrap;}}"
+        f".msl-hist-date{{color:rgba({a3r},{a3g},{a3b},.85);white-space:nowrap;"
+        f"font-variant-numeric:tabular-nums;text-align:right;}}"
+        f".msl-hist-rw{{margin-left:5px;color:rgb({a2r},{a2g},{a2b});font-weight:800;}}"
+        f"@media(max-width:640px){{.msl-hist-poster{{flex-basis:36px;}}"
+        f".msl-hist-poster img{{width:36px;}}"
+        f".msl-hist-srow{{gap:8px;padding:6px 8px;}}"
+        f".msl-hist-ep{{grid-template-columns:52px minmax(0,1fr) auto;"
+        f"column-gap:7px;font-size:.76rem;}}"
+        f".msl-hist-smeta{{font-size:.72rem;}}}}"
+        "</style>"
+    )
     st.markdown(
-        f'<div style="border-left:4px solid {_txt};padding:.45rem .7rem;'
-        f'background:rgba(3,22,19,.45);border-radius:0 12px 12px 0;'
-        f'font-size:.86rem;color:{_txt};line-height:1.65;">{head}</div>',
+        css_hist
+        + f'<p class="cinema-section-title" style="color:rgb({a2r},{a2g},{a2b});'
+        f'margin-top:.9rem;">📜 TON HISTOIRE</p>'
+        + f'<div class="msl-hist-card">{head}</div>'
+        + seasons_html,
         unsafe_allow_html=True,
     )
 
-    if not is_show:
-        return
-    # ── Par saison : un expander avec le détail des épisodes ──
-    seasons: dict[int, list] = {}
-    for r in rows:
-        m = _re.match(r"S(\d+)E(\d+)", str(r.get("episode_label") or ""))
-        if not m:
-            continue
-        seasons.setdefault(int(m.group(1)), []).append(r)
-    if not seasons:
-        return
-    api_key = _tmdb_api_key()
-    for season_no in sorted(seasons):
-        eps = sorted(seasons[season_no], key=lambda r: str(r.get("episode_label") or ""))
-        s_dates = sorted(r.get("watched_at") for r in eps if r.get("watched_at") is not None)
-        s_plays = sum(int(r.get("plays") or 1) for r in eps)
-        s_minutes = sum(int(r.get("total_minutes") or 0) for r in eps)
-        s_span = _msl_history_span(max((s_dates[-1] - s_dates[0]).days, 0)) if len(s_dates) >= 2 else "en un jour"
-        label = (
-            f"📅 Saison {season_no} — {len(eps)} épisode(s) · {s_span}"
-            + (f" (du {s_dates[0].strftime('%d/%m/%Y')} au {s_dates[-1].strftime('%d/%m/%Y')})"
-               if len(s_dates) >= 2 else f" (le {s_dates[0].strftime('%d/%m/%Y')}" + ")" if s_dates else "")
-            + f" · {_format_minutes(s_minutes)}"
-        )
-        with st.expander(label, expanded=False):
-            # poster de saison si déjà en cache TMDB (0 appel garanti)
-            try:
-                if api_key and tmdb_id:
-                    payload = _fetch_tv_season(tmdb_id, season_no, api_key)
-                    poster = str((payload or {}).get("poster_path") or "")
-                    if poster:
-                        st.markdown(
-                            f'<img src="https://image.tmdb.org/t/p/w185{escape(poster, quote=True)}" '
-                            f'alt="Saison {season_no}" style="border-radius:10px;'
-                            f'max-height:150px;box-shadow:0 8px 20px rgba(0,0,0,.45);'
-                            f'margin-bottom:.4rem;">',
-                            unsafe_allow_html=True,
-                        )
-            except Exception:
-                pass
-            for r in eps:
-                when = r.get("watched_at")
-                when_txt = f" — le {when.strftime('%d/%m/%Y')}" if when else ""
-                _plays_n = int(r.get("plays") or 1)
-                rew = (f' <strong style="color:{_txt};">×{_plays_n}</strong>'
-                       if _plays_n > 1 else "")
-                st.markdown(
-                    f'<div style="padding:.16rem 0;font-size:.84rem;'
-                    f'border-bottom:1px solid rgba(255,255,255,.06);">'
-                    f"<strong style=\"color:#fff;\">{escape(str(r.get('episode_label') or '?'))}</strong>"
-                    f'<span style="color:{_txt};">{escape(when_txt)}</span>{rew}</div>',
-                    unsafe_allow_html=True,
-                )
 
 
 @st.dialog(" ", width="large")
@@ -6408,6 +6559,18 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
         type="secondary",
     ):
         _open_cinema_detail(row)
+
+
+def _render_dilemma_tiles(ordered_rows: list) -> None:
+    """Tuiles du VERDICT du dilemme (V168) — préfixe de clés DÉDIÉ « dlm_ ».
+
+    Les titres choisis dans « ⚖️ J'hésite… » viennent de la page Watchlist
+    elle-même : la tuile du verdict et la tuile de la grille décrivent le
+    MÊME contenu. Sans préfixe dédié, leurs boutons « Voir la fiche »
+    entraient en collision de clés Streamlit → StreamlitDuplicateElementKey
+    et toute la page plantait (retour utilisateur V167 — désolé !)."""
+    for _drow in ordered_rows or []:
+        _render_recommendation_card(_drow, key_prefix="dlm_")
 
 
 def _render_taste_profile(profile: dict) -> None:
@@ -6994,6 +7157,33 @@ def _fetch_tv_season(tmdb: int, season: int, key: str) -> dict:
         return response.json() or {}
     except ValueError:
         raise
+
+
+@st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours : vidéos toutes langues
+def _fetch_tmdb_videos_all(tmdb: int, kind: str, key: str) -> dict:
+    """Vidéos TMDB en fr + en + sans langue (V168 — Dragon Ball Z, Senna…).
+
+    L'appel principal de la fiche (language=fr-FR) ne renvoie QUE les
+    vidéos françaises : les contenus dont la bande-annonce n'existe qu'en
+    anglais perdaient leur section « Bande-annonce » alors que TMDB
+    possède la vidéo. « include_video_language » règle ça. Cet appel ne
+    part QUE si l'appel principal n'a rien trouvé (zéro requête
+    supplémentaire sinon) et sa réponse est mise en cache 30 jours."""
+    try:
+        response = requests.get(
+            f"https://api.themoviedb.org/3/{'tv' if kind == 'tv' else 'movie'}/{tmdb}/videos",
+            params={"api_key": key, "language": "fr-FR",
+                    "include_video_language": "fr,en,null"},
+            timeout=10,
+        )
+    except requests.RequestException:
+        return {}
+    if response.status_code != 200:
+        return {}
+    try:
+        return response.json() or {}
+    except ValueError:
+        return {}
 
 
 def _fetch_person_details(person_id: int, key: str) -> dict:
@@ -9276,8 +9466,7 @@ def render_watchlist_page() -> None:
                     unsafe_allow_html=True,
                 )
                 st.markdown(f"*{escape(str(_verdict.get('reason') or ''))}*", unsafe_allow_html=False)
-                for _drow in _ordered_rows:
-                    _render_recommendation_card(_drow)
+                _render_dilemma_tiles(_ordered_rows)
 
 
 def _gemini_api_key() -> str:
