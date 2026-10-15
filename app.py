@@ -5794,7 +5794,12 @@ def _render_cinema_detail_body(row: dict) -> None:
         # certaines bandes annonces ont disparu » — elles n'ont jamais
         # existé en français ; le repli ci-dessus ramène les anglaises,
         # ce bouton garantit qu'il reste TOUJOURS un chemin).
-        _yt_query = quote(f"{raw_title} bande-annonce")
+        # V169 — l'ANNÉE du contenu accompagne la recherche (retour
+        # utilisateur : « j'ai un film Senna de 2010, je cherche la bande
+        # annonce, je trouve celle de la série d'une année différente »).
+        _yt_year = str(_media_year(item) or "").strip()
+        _yt_q = f"{raw_title} {_yt_year} bande-annonce" if _yt_year else f"{raw_title} bande-annonce"
+        _yt_query = quote(_yt_q)
         trailer_html = (
             f'<p class="cinema-section-title">Bande-annonce</p>'
             f'<div style="margin:.15rem 0 .35rem;">'
@@ -6082,7 +6087,20 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
                 f'</details></div>'
             )
         if season_blocks:
-            seasons_html = f'<div class="msl-hist-seasons">{"".join(season_blocks)}</div>'
+            # V169 — RUBAN « Mon histoire détaillée » : un niveau
+            # d'enroulement de plus (retour utilisateur : sur les séries
+            # longues comme DBZ, l'info des coulisses était très loin en
+            # bas). Par défaut on ne voit que la carte de stats + ce ruban
+            # fermé ; on le déroule pour les saisons, puis une saison pour
+            # ses épisodes.
+            seasons_html = (
+                f'<details class="msl-hist-master"><summary>'
+                f'<span class="msl-hist-mtitle">📜 Mon histoire détaillée</span>'
+                f'<span class="msl-hist-mmeta">{len(season_blocks)} saison(s) · épisode par épisode</span>'
+                f'<span class="msl-hist-chev">▶</span></summary>'
+                f'<div class="msl-hist-seasons">{"".join(season_blocks)}</div>'
+                f'</details>'
+            )
 
     # ── CSS + rendu : UN SEUL bloc, couleurs d'accent de la fiche ─────────
     css_hist = (
@@ -6092,7 +6110,15 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f"padding:.45rem .7rem;font-size:.86rem;"
         f"color:rgb({a3r},{a3g},{a3b});line-height:1.65;}}"
         f".msl-hist-card strong{{color:rgb({a2r},{a2g},{a2b});}}"
-        f".msl-hist-seasons{{display:flex;flex-direction:column;gap:7px;margin-top:9px;}}"
+        f".msl-hist-master{{margin-top:9px;border:1px dashed rgba({ar},{ag},{ab},.40);"
+        f"border-radius:12px;padding:7px 10px;background:rgba({ar},{ag},{ab},.05);}}"
+        f".msl-hist-master>summary{{cursor:pointer;list-style:none;"
+        f"display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:1px 0;}}"
+        f".msl-hist-master>summary::-webkit-details-marker{{display:none;}}"
+        f".msl-hist-mtitle{{color:rgb({a2r},{a2g},{a2b});font-weight:800;font-size:.88rem;}}"
+        f".msl-hist-mmeta{{color:rgba({a3r},{a3g},{a3b},.70);font-size:.76rem;}}"
+        f".msl-hist-master[open]>summary .msl-hist-chev{{transform:rotate(90deg);}}"
+        f".msl-hist-seasons{{display:flex;flex-direction:column;gap:7px;margin-top:7px;}}"
         f".msl-hist-srow{{display:flex;gap:10px;align-items:flex-start;"
         f"border:1px solid rgba({ar},{ag},{ab},.30);background:rgba({ar},{ag},{ab},.07);"
         f"border-radius:12px;padding:7px 10px;}}"

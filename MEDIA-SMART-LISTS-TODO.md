@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 14 octobre 2026 (nuit) · Dernière version déployée : V168.
+> Dernière mise à jour : 15 octobre 2026 · Dernière version déployée : V169.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1307,6 +1307,23 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] Banc : 24/24 (saisons enroulées, posters cliquables TMDB saison,
       grille alignée, gap 7px, accent, repli bande-annonce EN + bouton
       YouTube, collision dilemme ×2, GSM, non-régressions) + 23/23 tests.
+
+### Fait en V169 (retours du 15/10 — TON HISTOIRE v3)
+- [x] 📜 RUBAN « Mon histoire détaillée » : un niveau d'enroulement de
+      PLUS — par défaut on ne voit que la carte de stats (1er épisode ·
+      dernier · série entière en X jours · N épisodes · temps · rewatchs ·
+      ta note) + un ruban fermé « 📜 Mon histoire détaillée · N saison(s) ».
+      Dérouler le ruban → les saisons (enroulées) ; dérouler une saison →
+      ses épisodes. (Retour : sur les séries longues comme DBZ, l'info des
+      coulisses était très loin en bas.)
+- [x] ▶️ Bouton YouTube (aucune vidéo TMDB) : l'ANNÉE du contenu est
+      ajoutée à la recherche (« Senna 2010 bande-annonce ») — sinon on
+      tombait sur un homonyme d'une autre année (ex. série Senna 2024).
+- [x] Décision utilisateur : la largeur pleine de TON HISTOIRE / coulisses
+      est GARDÉE telle quelle (pas de « feuille Word » — stabilité d'abord).
+- [x] Banc : 22/22 (ruban fermé 41px, déroulé → saisons enroulées gap 7px,
+      saison → grille alignée, accent, YouTube avec année, fiche film sans
+      ruban, GSM, non-régressions) + 23/23 tests.
 
 ### PROCHAINES ÉTAPES (au choix de l'utilisateur)
 - [ ] (facultatif) Score moyen sur la fiche acteur · duo favori stats
