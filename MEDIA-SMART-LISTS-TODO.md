@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 15 octobre 2026 · Dernière version déployée : V169.
+> Dernière mise à jour : 15 octobre 2026 (soir) · Dernière version déployée : V170.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1325,6 +1325,36 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       saison → grille alignée, accent, YouTube avec année, fiche film sans
       ruban, GSM, non-régressions) + 23/23 tests.
 
+### Fait en V170 (retours du 15/10 soir — la grosse fournée)
+- [x] 📜 TON HISTOIRE v4 :
+      • DURÉES EXPLICITES : « 1 an 11 mois 15 jours » au lieu de « 23 mois »
+        (partout : carte, saisons) ;
+      • CARTE REFORMULÉE : « 1er épisode vu le … · dernier épisode vu le … ·
+        série regardée durant … » · « N épisode(s) visionné(s) sur un total
+        de X » (total TMDB, même appel que la fiche) et, pour une série EN
+        COURS : « Il reste X épisode(s) à visionner, soit environ … » ;
+      • SxxEyy CLIQUABLE → la page TMDB de l'ÉPISODE ;
+      • RUBAN habillé en vrai bouton : bordure pleine, fond net,
+        « dérouler / refermer » explicite, survol réactif (fini les tirets) ;
+      • saisons sur fond TRANSPARENT (fini l'éclaircissement cumulé au
+        déroulé du ruban).
+- [x] ➕ AJOUTER À MES LISTES DEPUIS LA FICHE CINÉMA (demande du 07/10) :
+      un expander « ➕ Ajouter à mes listes » en bas de fiche (session
+      MDBList uniquement — invisible en mode ZIP Trakt). Choix Watchlist ou
+      liste STATIQUE ; la Watchlist n'est pas proposée si le contenu y est
+      déjà, chaque liste qui CONTIENT déjà le contenu est écartée, les
+      listes dynamiques/IA jamais proposées. Mêmes appels éprouvés que la
+      page « Que regarder ? ». Toast + libellé « ✓ Ajouté à mes listes » ;
+      l'écriture part immédiatement, « Actualiser » resynchronise.
+- [x] 👤 FICHE ACTEUR : score moyen de tes contenus NOTÉS avec cette
+      personne (« note moyenne : 8,4/10 (12 notés) ») — local, instantané.
+- [x] 🤝 STATS → onglet Personnes : « Tes duos favoris (acteur ×
+      réalisateur) » — les associations les plus croisées de ton
+      historique, liens TMDB (local, instantané, duos ≥ 2 contenus).
+- [x] Banc : 28/28 (carte reformulée + total + reste, ruban-bouton, fond
+      transparent, liens épisodes TMDB, score acteur, duos, ajout Watchlist
+      + liste statique avec exclusions, non-régressions) + 23/23 tests.
+
 ### PROCHAINES ÉTAPES (au choix de l'utilisateur)
 - [ ] (facultatif) Score moyen sur la fiche acteur · duo favori stats
 - [ ] README : refonte par l'utilisateur À LA FIN (il gère).
@@ -1340,17 +1370,27 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       « Local » s'affiche encore dans POP, ouvrir le « 🔧 Diagnostic de la
       clé Gemini » et me donner le message.
 - [ ] README.md : refonte par l'utilisateur À LA FIN (il gère).
-- [ ] Ajouter un contenu à une liste / à la Watchlist DEPUIS LA FICHE CINÉMA
-      (demande utilisateur 07/10 — très faisable : les méthodes d'écriture
-      existent déjà : `add_watchlist_items`, `add_list_items` ; s'inspirer du
-      popover « ➕ Ajouter une découverte » des sections hors-listes ;
-      uniquement listes statiques, jamais les listes dynamiques/IA).
+- [x] (fait en V170 — cf. ci-dessus) Ajouter un contenu à une liste / à la
+      Watchlist DEPUIS LA FICHE CINÉMA (expander en bas de fiche, exclusions
+      intelligentes, listes statiques uniquement).
 - [x] (fait en V154 — cf. ci-dessus) Ancienne entrée refonte : onglets : 👁️ Vue d'ensemble / 🎭 Goûts / 👥 Personnes /
       🗓️ Temps — animation de transition + UN seul bloc de filtres partagé
       (recherche + période + type). Les infos par acteur/réalisateur restent
       dans Statistiques (décision utilisateur : c'est le bon endroit).
-- [ ] Historique PAR SÉRIE (une ligne par série, clic → fiche série avec dates
-      de visionnage) — remplace le tableau par épisode.
+- [~] Historique PAR SÉRIE : ANNULÉ à la demande de l'utilisateur (15/10) —
+      « euhhhh celui la je ne le comprend pas car j'ai déjà ça dans les fiches
+      série ». (L'idée : regrouper le tableau Historique & notes — 6 700+
+      lignes, une par ÉPISODE — en une ligne par SÉRIE. Redondant avec
+      TON HISTOIRE : abandonné.)
 - [x] (fait en V167 → affiné V168) Fiche film/série d'un contenu VU → bloc « 📜 TON HISTOIRE ».
-- [ ] Fiche acteur → « score moyen de ses contenus que tu as notés ».
-- [ ] Stats → « duo favori » (acteur + réalisateur le plus croisé).
+- [x] (fait en V170) Fiche acteur → score moyen de ses contenus notés.
+- [x] (fait en V170) Stats → « duo favori » (acteur × réalisateur le plus croisé).
+- [ ] Idées IA SANS SPOILER (à valider avec l'utilisateur,contrainte : ZÉRO
+      lenteur — précalcul comme l'info des coulisses) : « L'esprit du film »
+      (3 mots-clés d'ambiance + humeur de visionnage), « Pourquoi maintenant »
+      (contexte de sortie), fiche acteur enrichie (anecdote de carrière /
+      le rôle qui a tout changé, sans raconter le film).
+- [ ] Fiche depuis une fiche (Similaires/Saga/Casting) : l'utilisateur est
+      tenté mais craint que les boutons « Voir la fiche » prennent trop de
+      place — à revoir avec lui (variante : poster cliquable ou petit bouton
+      discret au survol).

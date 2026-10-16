@@ -5893,8 +5893,21 @@ def _render_cinema_detail_body(row: dict) -> None:
     # le synopsis) + fond glass discret — fini le violet (retour capture).
     # V167 — 📜 TON HISTOIRE juste avant (statistiques de visionnage,
     # lecture pure du moteur normalisé — 0 appel réseau).
+    # V170 — total d'épisodes de la série (TMDB, DÉJÀ chargé par le même
+    # appel que la fiche) pour « sur un total de X » + « il reste X ».
     try:
-        _render_ton_histoire(row, item, tmdb_id, a_rgb, a2_rgb, a3_rgb)
+        _hist_total_eps = int((fr_payload or {}).get("number_of_episodes") or 0) or int(row.get("total_episodes") or 0)
+    except (TypeError, ValueError):
+        _hist_total_eps = 0
+    # V170 — ➕ AJOUTER À MES LISTES depuis la fiche (session MDBList
+    # uniquement — en mode ZIP Trakt, le bouton n'apparaît pas).
+    try:
+        _render_fiche_add_popover(row, item, tmdb_id)
+    except Exception:
+        pass
+    try:
+        _render_ton_histoire(row, item, tmdb_id, a_rgb, a2_rgb, a3_rgb,
+                             total_episodes=_hist_total_eps)
     except Exception:
         pass
     if (api_key or _groq_api_key()) and tmdb_id:
@@ -5912,40 +5925,45 @@ def _render_cinema_detail_body(row: dict) -> None:
         )
 
 def _msl_history_span(days: int) -> str:
-    """« en 12 jours » / « en 8 mois » / « en 2 ans » — durée lisible."""
+    """« 1 an 11 mois 15 jours » / « 16 mois » / « 9 jours » — durée LISIBLE
+    (V170 : retour utilisateur — « je préfèrerais 1 an 11 mois 15 jours
+    plutôt que 23 mois », tout détaillé partout)."""
     if days <= 0:
-        return "en un jour"
-    if days < 70:
-        return f"en {days} jour" + ("s" if days > 1 else "")
-    if days < 800:
-        months = round(days / 30)
-        return f"en {months} mois"
-    years = round(days / 365)
-    return f"en {years} an" + ("s" if years > 1 else "")
+        return "1 jour"
+    years, rem = divmod(days, 365)
+    months, rest = divmod(rem, 30)
+    parts: list = []
+    if years:
+        parts.append(f"{years} an" + ("s" if years > 1 else ""))
+    if months:
+        parts.append(f"{months} mois")
+    if rest or not parts:
+        parts.append(f"{rest} jour" + ("s" if rest > 1 else ""))
+    return " ".join(parts)
+
 
 
 def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
-                         a_rgb: tuple, a2_rgb: tuple, a3_rgb: tuple) -> None:
-    """📜 TON HISTOIRE (V167 → V168, retours utilisateur) : statistiques de
+                         a_rgb: tuple, a2_rgb: tuple, a3_rgb: tuple,
+                         total_episodes: int = 0) -> None:
+    """📜 TON HISTOIRE (V167 → V170, retours utilisateur) : statistiques de
     visionnage dans la fiche d'un contenu VU. Lecture pure du moteur
     normalisé (rien n'est modifié dans tes données).
 
-    V168 — refonte demandée :
-    • saisons ENROULÉES par défaut (le chemin vers l'info des coulisses
-      redevient court) : <details> natif, plié au chargement, dépliable
-      sans rechargement — même mécanisme que « Pourquoi ce score ? » ;
-    • POSTER de saison sur la MÊME LIGNE que « Saison 1 · N épisode(s) »,
-      à gauche — et CLIQUABLE : il ouvre la page TMDB de la saison ;
-    • épisodes en GRILLE ALIGNÉE : SxxEyy | titre | date — les codes, les
-      titres et les dates s'alignent chacun dans leur colonne, quelle que
-      soit la longueur des titres ;
-    • AUCUN espace vide entre les saisons (empilement à 7 px) ;
-    • tout aux COULEURS D'ACCENT de la fiche (bordures, titres, texte).
+    V170 :
+    • durées EXPLICITES : « 1 an 11 mois 15 jours » plutôt que « 23 mois » ;
+    • carte reformulée : « 1er épisode vu le … · dernier épisode vu le … ·
+      série regardée durant … », « N épisode(s) visionné(s) sur un total
+      de X » (total TMDB, déjà chargé par la fiche) et, pour une série EN
+      COURS : « il reste X épisode(s) à visionner, soit environ … » ;
+    • chaque code SxxEyy est CLIQUABLE → la page TMDB de l'épisode ;
+    • ruban « Mon histoire détaillée » habillé en vrai BOUTON (bordure
+      pleine, fond net, « dérouler / refermer » explicite, survol réactif)
+      et saisons sur fond TRANSPARENT (fini l'éclaircissement cumulé).
 
-    • SÉRIE : carte « 1er épisode le … · dernier le … · série entière en X
-      jours · N épisodes · temps · rewatchs · ta note » + une ligne par
-      saison, dépliable (épisodes datés, ×N rewatch, titre si connu).
-    • FILM : « Dernière vision le … · N visionnage(s) · temps · ta note ».
+    V169 : toutes les saisons enroulées derrière un ruban unique (séries
+    longues). V168 : grille alignée SxxEyy | titre | date, posters de
+    saison cliquables (page TMDB de la saison), gap 7 px, accent de fiche.
     """
     if not tmdb_id:
         return
@@ -5977,15 +5995,28 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
     if not dates:
         return
     if is_show:
+        try:
+            total_eps = int(total_episodes or 0)
+        except (TypeError, ValueError):
+            total_eps = 0
+        ep_runtime = _sane_episode_runtime(row.get("runtime"), total_eps)
+        restants = max(total_eps - len(rows), 0) if total_eps else 0
+        reste_txt = ""
+        if restants:
+            reste_txt = f"<br>Il reste <strong>{restants}</strong> épisode(s) à visionner"
+            if ep_runtime:
+                reste_txt += f", soit environ <strong>{_format_minutes(restants * ep_runtime)}</strong>"
         span_days = max((dates[-1] - dates[0]).days, 0)
         head = (
-            f"<strong>1er épisode</strong> le {dates[0].strftime('%d/%m/%Y')} · "
-            f"<strong>dernier</strong> le {dates[-1].strftime('%d/%m/%Y')} · "
-            f"série entière <strong>{_msl_history_span(span_days)}</strong><br>"
-            f"<strong>{len(rows)}</strong> épisode(s) visionné(s) · "
-            f"<strong>{_format_minutes(minutes)}</strong> devant ton écran · "
+            f"<strong>1er épisode vu</strong> le {dates[0].strftime('%d/%m/%Y')} · "
+            f"<strong>dernier épisode vu</strong> le {dates[-1].strftime('%d/%m/%Y')} · "
+            f"série regardée durant <strong>{_msl_history_span(span_days)}</strong><br>"
+            f"<strong>{len(rows)}</strong> épisode(s) visionné(s)"
+            + (f" sur un total de <strong>{total_eps}</strong>" if total_eps else "")
+            + f" · <strong>{_format_minutes(minutes)}</strong> devant ton écran · "
             f"<strong>{plays - len(rows)}</strong> rewatch(s)"
             + _row_note()
+            + reste_txt
         )
     else:
         head = (
@@ -6010,15 +6041,15 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
             s_dates = sorted(r.get("watched_at") for r in eps if r.get("watched_at") is not None)
             s_plays = sum(int(r.get("plays") or 1) for r in eps)
             s_minutes = sum(int(r.get("total_minutes") or 0) for r in eps)
-            s_span = _msl_history_span(max((s_dates[-1] - s_dates[0]).days, 0)) if len(s_dates) >= 2 else "en un jour"
+            s_span = _msl_history_span(max((s_dates[-1] - s_dates[0]).days, 0)) if len(s_dates) >= 2 else ""
             when = (
                 f"du {s_dates[0].strftime('%d/%m/%Y')} au {s_dates[-1].strftime('%d/%m/%Y')}"
                 if len(s_dates) >= 2
                 else (f"le {s_dates[0].strftime('%d/%m/%Y')}" if s_dates else "")
             )
             meta = (
-                f"{len(eps)} épisode(s) vus · {s_span}"
-                + (f" ({when})" if when else "")
+                f"{len(eps)} épisode(s) vus"
+                + (f" · {s_span} ({when})" if s_span else (f" ({when})" if when else ""))
                 + f" · {_format_minutes(s_minutes)}"
                 + (f" · {s_plays - len(eps)} rewatch(s)" if s_plays - len(eps) > 0 else "")
             )
@@ -6058,22 +6089,32 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
                 label = str(r.get("episode_label") or "?")
                 m = _re.match(r"S(\d+)E(\d+)(?:\s*·\s*(.*))?\s*$", label)
                 if m:
+                    s_no = int(m.group(1))
                     ep_no = int(m.group(2))
-                    code = f"S{int(m.group(1)):02d}E{ep_no:02d}"
+                    code = f"S{s_no:02d}E{ep_no:02d}"
                     ep_title = (m.group(3) or "").strip()
                 else:
-                    ep_no = 0
+                    s_no, ep_no = 0, 0
                     code = label
                     ep_title = ""
                 if not ep_title:
                     ep_title = ep_names.get(ep_no, "") or (f"Épisode {ep_no}" if ep_no else "Épisode")
+                # V170 — le code SxxEyy ouvre la page TMDB de l'ÉPISODE
+                if m and ep_no:
+                    code_html = (
+                        f'<a class="msl-hist-code" href="https://www.themoviedb.org/tv/{tmdb_id}/season/{s_no}/episode/{ep_no}" '
+                        f'target="_blank" rel="noopener noreferrer" '
+                        f'title="Voir cet épisode sur TMDB (nouvel onglet)">{escape(code)}</a>'
+                    )
+                else:
+                    code_html = f'<span class="msl-hist-code">{escape(code)}</span>'
                 when_r = r.get("watched_at")
                 date_txt = when_r.strftime("%d/%m/%Y") if when_r else "—"
                 n_plays = int(r.get("plays") or 1)
                 rew = f'<span class="msl-hist-rw">×{n_plays}</span>' if n_plays > 1 else ""
                 ep_parts.append(
                     f'<div class="msl-hist-ep">'
-                    f'<span class="msl-hist-code">{escape(code)}</span>'
+                    f'{code_html}'
                     f'<span class="msl-hist-title" title="{escape(ep_title, quote=True)}">{escape(ep_title)}</span>'
                     f'<span class="msl-hist-date">{escape(date_txt)}{rew}</span></div>'
                 )
@@ -6087,16 +6128,16 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
                 f'</details></div>'
             )
         if season_blocks:
-            # V169 — RUBAN « Mon histoire détaillée » : un niveau
-            # d'enroulement de plus (retour utilisateur : sur les séries
-            # longues comme DBZ, l'info des coulisses était très loin en
-            # bas). Par défaut on ne voit que la carte de stats + ce ruban
-            # fermé ; on le déroule pour les saisons, puis une saison pour
-            # ses épisodes.
+            # V170 — ruban habillé en VRAI bouton : bordure pleine, fond
+            # net, « dérouler / refermer » explicite (retour : « l'encadré
+            # en tiret n'est pas très joli, je veux qu'on comprenne que
+            # c'est un ruban déroulant »).
             seasons_html = (
                 f'<details class="msl-hist-master"><summary>'
                 f'<span class="msl-hist-mtitle">📜 Mon histoire détaillée</span>'
-                f'<span class="msl-hist-mmeta">{len(season_blocks)} saison(s) · épisode par épisode</span>'
+                f'<span class="msl-hist-mmeta">{len(season_blocks)} saison(s) · épisode par épisode — '
+                f'<span class="msl-hist-lblc">dérouler</span>'
+                f'<span class="msl-hist-lblo">refermer</span></span>'
                 f'<span class="msl-hist-chev">▶</span></summary>'
                 f'<div class="msl-hist-seasons">{"".join(season_blocks)}</div>'
                 f'</details>'
@@ -6110,17 +6151,23 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f"padding:.45rem .7rem;font-size:.86rem;"
         f"color:rgb({a3r},{a3g},{a3b});line-height:1.65;}}"
         f".msl-hist-card strong{{color:rgb({a2r},{a2g},{a2b});}}"
-        f".msl-hist-master{{margin-top:9px;border:1px dashed rgba({ar},{ag},{ab},.40);"
-        f"border-radius:12px;padding:7px 10px;background:rgba({ar},{ag},{ab},.05);}}"
+        f".msl-hist-master{{margin-top:9px;border:1px solid rgba({ar},{ag},{ab},.45);"
+        f"border-radius:12px;padding:8px 12px;background:rgba({ar},{ag},{ab},.12);"
+        f"transition:background .15s ease;}}"
+        f".msl-hist-master:hover{{background:rgba({ar},{ag},{ab},.20);}}"
         f".msl-hist-master>summary{{cursor:pointer;list-style:none;"
         f"display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:1px 0;}}"
         f".msl-hist-master>summary::-webkit-details-marker{{display:none;}}"
-        f".msl-hist-mtitle{{color:rgb({a2r},{a2g},{a2b});font-weight:800;font-size:.88rem;}}"
-        f".msl-hist-mmeta{{color:rgba({a3r},{a3g},{a3b},.70);font-size:.76rem;}}"
+        f".msl-hist-mtitle{{color:rgb({a2r},{a2g},{a2b});font-weight:800;font-size:.9rem;}}"
+        f".msl-hist-mmeta{{color:rgba({a3r},{a3g},{a3b},.75);font-size:.78rem;}}"
+        f".msl-hist-lblo{{display:none;}}"
+        f".msl-hist-master[open] .msl-hist-lblc{{display:none;}}"
+        f".msl-hist-master[open] .msl-hist-lblo{{display:inline;}}"
+        f".msl-hist-master .msl-hist-chev{{font-size:.8rem;}}"
         f".msl-hist-master[open]>summary .msl-hist-chev{{transform:rotate(90deg);}}"
         f".msl-hist-seasons{{display:flex;flex-direction:column;gap:7px;margin-top:7px;}}"
         f".msl-hist-srow{{display:flex;gap:10px;align-items:flex-start;"
-        f"border:1px solid rgba({ar},{ag},{ab},.30);background:rgba({ar},{ag},{ab},.07);"
+        f"border:1px solid rgba({ar},{ag},{ab},.30);background:transparent;"
         f"border-radius:12px;padding:7px 10px;}}"
         f".msl-hist-poster{{flex:0 0 44px;display:block;}}"
         f".msl-hist-poster img{{width:44px;display:block;border-radius:7px;"
@@ -6140,12 +6187,15 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f"transition:transform .18s ease;flex-shrink:0;}}"
         f".msl-hist-season[open]>summary .msl-hist-chev{{transform:rotate(90deg);}}"
         f".msl-hist-eps{{margin-top:5px;display:flex;flex-direction:column;}}"
-        f".msl-hist-ep{{display:grid;grid-template-columns:62px minmax(0,1fr) auto;"
+        f".msl-hist-ep{{display:grid;grid-template-columns:68px minmax(0,1fr) auto;"
         f"column-gap:10px;row-gap:1px;align-items:baseline;padding:3px 0;"
         f"font-size:.82rem;border-top:1px dashed rgba({ar},{ag},{ab},.16);}}"
         f".msl-hist-ep:first-child{{border-top:none;}}"
         f".msl-hist-code{{color:rgb({a2r},{a2g},{a2b});font-weight:700;"
         f"font-variant-numeric:tabular-nums;}}"
+        f"a.msl-hist-code{{text-decoration:none;"
+        f"border-bottom:1px dotted rgba({a2r},{a2g},{a2b},.55);}}"
+        f"a.msl-hist-code:hover{{color:#fff;border-bottom-style:solid;}}"
         f".msl-hist-title{{color:rgba(255,255,255,.94);overflow:hidden;"
         f"text-overflow:ellipsis;white-space:nowrap;}}"
         f".msl-hist-date{{color:rgba({a3r},{a3g},{a3b},.85);white-space:nowrap;"
@@ -6154,7 +6204,7 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f"@media(max-width:640px){{.msl-hist-poster{{flex-basis:36px;}}"
         f".msl-hist-poster img{{width:36px;}}"
         f".msl-hist-srow{{gap:8px;padding:6px 8px;}}"
-        f".msl-hist-ep{{grid-template-columns:52px minmax(0,1fr) auto;"
+        f".msl-hist-ep{{grid-template-columns:56px minmax(0,1fr) auto;"
         f"column-gap:7px;font-size:.76rem;}}"
         f".msl-hist-smeta{{font-size:.72rem;}}}}"
         "</style>"
@@ -6203,6 +6253,45 @@ def _actor_dialog_chrome_css() -> str:
         "padding:5px!important;}"
         "</style>"
     )
+
+
+def _personal_ratings_typed() -> dict:
+    """Notes personnelles par clé typée (« movie:123 » / « tv:456 ») — V170 :
+    sert au score moyen de la fiche acteur. Lecture pure des sections
+    ratings (films + séries ; les notes d'épisodes restent au niveau de la
+    série pour rester lisible)."""
+    dataset = _dataset()
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+    ratings = sections.get("ratings") or {}
+    out: dict = {}
+    for bucket, kind in (("movies", "Film"), ("shows", "Série")):
+        for entry in (ratings.get(bucket) or []):
+            media = _unwrap_media(entry) or (entry if isinstance(entry, dict) else {})
+            if not isinstance(media, dict):
+                continue
+            value = None
+            for k in ("rating", "user_rating", "personal_rating"):
+                v = entry.get(k) if isinstance(entry, dict) else None
+                if v is None:
+                    v = media.get(k)
+                if v is not None:
+                    value = v
+                    break
+            if value is None:
+                continue
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                continue
+            tmdb = _media_tmdb_id_strict(media)
+            if not tmdb:
+                continue
+            try:
+                key = _typed_media_key(kind, tmdb)
+            except (TypeError, ValueError):
+                continue
+            out.setdefault(key, value)
+    return out
 
 
 def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> None:
@@ -6299,6 +6388,28 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     # « N déjà dans ton historique » : union des contenus VUS des deux facettes
     # (V150 : croisement par clé typée movie/tv — cf. Days of Thunder/Supercopter).
     total_seen = sum(1 for c in all_credits.values() if _bucket(c) == "vu")
+    # V170 — SCORE MOYEN de tes contenus NOTÉS avec cette personne (local,
+    # instantané : croise la filmographie avec tes notes personnelles).
+    _avg_txt = ""
+    try:
+        _pr_map = _personal_ratings_typed()
+        _rated_vals = []
+        for c in all_credits.values():
+            if _bucket(c) != "vu":
+                continue
+            try:
+                _rk = _typed_media_key(c["kind"], c["id"])
+            except (TypeError, ValueError):
+                continue
+            if _rk in _pr_map:
+                _rated_vals.append(_pr_map[_rk])
+        if _rated_vals:
+            _avg_str = f"{sum(_rated_vals) / len(_rated_vals):.1f}".replace(".", ",")
+            _avg_txt = (f' · <strong style="color:var(--am-yellow);">note moyenne : '
+                        f'{_avg_str}/10</strong> ({len(_rated_vals)} noté'
+                        f'{"s" if len(_rated_vals) > 1 else ""})')
+    except Exception:
+        _avg_txt = ""
 
     dept_parts = [facet_labels[f][0] for f in facet_order if facets.get(f)]
     dept = " & ".join(dept_parts) if dept_parts else "Carrière"
@@ -6317,7 +6428,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         f'<div class="actor-head">{head_photo}<div style="min-width:0;">'
         f'<p class="actor-name">{escape(str(person["name"]))}</p>'
         f'<p class="actor-meta">{escape(dept)} · {total_career} titre(s) · '
-        f'<strong style="color:var(--am-yellow);">{total_seen} déjà dans ton historique</strong></p>'
+        f'<strong style="color:var(--am-yellow);">{total_seen} déjà dans ton historique</strong>{_avg_txt}</p>'
         f'<div style="margin-top:.35rem;">{tmdb_link}</div>'
         f"</div></div>",
         unsafe_allow_html=True,
@@ -6405,6 +6516,11 @@ def _open_cinema_detail(row: dict) -> None:
     V150 : purge l'anecdote en session → une anecdote NOUVELLE à chaque
     ouverture de la fiche (demande utilisateur)."""
     st.session_state["_cinema_detail_row"] = row
+    # V170 — purge des accusés d'ajout (popover ➕) : une nouvelle fiche
+    # repart sans vieux message « ✓ AJOUTÉ ».
+    for _k in list(st.session_state):
+        if isinstance(_k, str) and _k.startswith("fiche_add_done_"):
+            st.session_state.pop(_k, None)
     ids = row.get("ids") if isinstance(row.get("ids"), dict) else (row.get("item") or {}).get("ids") if isinstance(row.get("item"), dict) else {}
     try:
         _anecdote_tid = int((ids or {}).get("tmdb") or 0)
@@ -8074,6 +8190,140 @@ def _sort_rows_by_mode(rows: list[dict], sort_mode: str) -> list[dict]:
     else:
         rows.sort(key=lambda r: -r.get("score", 0))
     return rows
+
+
+def _render_fiche_add_popover(row: dict, item: dict, tmdb_id: int | None) -> None:
+    """➕ Ajouter CE contenu à la Watchlist ou à une liste statique,
+    directement depuis sa fiche cinéma (V170 — demande utilisateur du
+    07/10 : « ajouter un contenu à une liste / à la Watchlist depuis la
+    fiche cinéma »).
+
+    • Uniquement en session MDBList connectée (l'écriture passe par l'API
+      MDBList — en mode ZIP Trakt, le bouton n'apparaît pas) ;
+    • la Watchlist n'est PAS proposée si le contenu y figure déjà ;
+    • les listes qui CONTIENNENT déjà le contenu sont écartées (retour :
+      « si le contenu est déjà dans une liste, on ne le propose pas une
+      nouvelle fois ») ; les listes dynamiques/IA ne sont JAMAIS proposées ;
+    • mêmes appels que le popover « ➕ Ajouter une découverte » de la page
+      Watchlist (éprouvés en production) : une écriture par ajout,
+      réversible depuis MDBList."""
+    if not tmdb_id or not mdb_oauth.is_connected():
+        return
+    is_show = row.get("type") == "Série"
+    kind_code = "tv" if is_show else "mv"
+    dataset = _dataset()
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+
+    def _bucket_contains(tmdb: int, movies: list, shows: list) -> bool:
+        for entry in list(movies or []) + list(shows or []):
+            media = _unwrap_media(entry)
+            if media and _media_tmdb_id_strict(media) == tmdb:
+                return True
+        return False
+
+    in_watchlist = _bucket_contains(
+        tmdb_id,
+        (sections.get("watchlist") or {}).get("movies") or [],
+        (sections.get("watchlist") or {}).get("shows") or [],
+    )
+    excluded_ids: set = set()
+    for lst in (sections.get("user_lists") or []):
+        if not isinstance(lst, dict):
+            continue
+        if _bucket_contains(tmdb_id, lst.get("movies"), lst.get("shows")) or \
+                _bucket_contains(tmdb_id, lst.get("items"), []):
+            try:
+                excluded_ids.add(int(lst.get("id")))
+            except (TypeError, ValueError):
+                pass
+    sources = dataset.get("sources") if isinstance(dataset.get("sources"), list) else []
+    static_lists = []
+    for s in sources:
+        if not isinstance(s, dict) or str(s.get("type") or "") != "static" or s.get("id") is None:
+            continue
+        try:
+            sid = int(s["id"])
+        except (TypeError, ValueError):
+            continue
+        if sid in excluded_ids:
+            continue
+        static_lists.append((str(s.get("name") or "?"), sid))
+    if in_watchlist and not static_lists:
+        return  # déjà partout : rien à proposer → pas de bouton
+
+    done_key = f"fiche_add_done_{kind_code}{tmdb_id}"
+    title_txt = escape(_media_title(item))
+    # V170 — le LABEL du bouton porte l'accusé : un dialog se re-exécute
+    # en « fragment » (le reste de la page ne bouge pas), donc le retour
+    # doit vivre sur le bouton lui-même pour rester bien visible.
+    _done = st.session_state.get(done_key)
+    # V170b — EXPANDER (et non popover) : dans un dialog, les widgets d'un
+    # popover ne re-déclenchent pas proprement le « fragment » du dialog ;
+    # directement dans la fiche (comme « 🎲 Une autre anecdote »), ils
+    # répondent instantanément. L'expander s'ouvre sans rechargement.
+    with st.expander("✓ Ajouté à mes listes" if _done else "➕ Ajouter à mes listes",
+                     expanded=False):
+        if _done:
+            st.markdown(
+                '<div class="accent-callout"><strong>✓ AJOUTÉ</strong> · '
+                f"« {title_txt} » {st.session_state.get(done_key)} — "
+                "rafraîchis avec « Actualiser » pour le voir dans tes listes.</div>",
+                unsafe_allow_html=True,
+            )
+            return
+        st.caption(
+            "Range ce contenu dans ta Watchlist ou l'une de tes listes statiques MDBList. "
+            "Une écriture par ajout, réversible depuis MDBList."
+        )
+        destination = "🗂️ Une de mes listes statiques"
+        if not in_watchlist:
+            destination = st.radio(
+                "Destination",
+                ["📌 Ma Watchlist", "🗂️ Une de mes listes statiques"],
+                horizontal=True,
+                key=f"fiche_add_dest_{kind_code}{tmdb_id}",
+            )
+        else:
+            st.caption("✓ Déjà dans ta Watchlist — ajoute-le dans une de tes listes :")
+        list_id = None
+        chosen_list = None
+        if destination.startswith("🗂️"):
+            if not static_lists:
+                st.caption("Aucune liste statique disponible (ou ce contenu est déjà dans toutes tes listes).")
+                return
+            list_names = [name for name, _ in static_lists]
+            chosen_list = st.selectbox("Liste", list_names, key=f"fiche_add_list_{kind_code}{tmdb_id}")
+            list_id = next((lid for name, lid in static_lists if name == chosen_list), None)
+        if st.button(f"Ajouter « {_media_title(item)} »", type="primary",
+                     key=f"fiche_add_go_{kind_code}{tmdb_id}"):
+            try:
+                provider = MDBListProvider(mdb_oauth.access_token())
+                if is_show:
+                    if list_id is not None:
+                        provider.add_list_items(int(list_id), shows=[item])
+                    else:
+                        provider.add_watchlist_items(shows=[item])
+                else:
+                    if list_id is not None:
+                        provider.add_list_items(int(list_id), movies=[item])
+                    else:
+                        provider.add_watchlist_items(movies=[item])
+                where = (f"à la liste « {escape(str(chosen_list))} »" if list_id is not None else "à ta Watchlist")
+                st.session_state[done_key] = where
+                try:
+                    st.toast(f"✓ « {_media_title(item)} » ajouté {where}")
+                except Exception:
+                    pass
+                # re-exécution immédiate du SEUL dialog (fragment) : le
+                # libellé passe à « ✓ Ajouté à mes listes » sans fermer la
+                # fiche. (st.rerun() sans scope relancerait tout le script
+                # et fermerait le dialog.)
+                try:
+                    st.rerun(scope="fragment")
+                except TypeError:
+                    st.rerun()
+            except Exception as exc:
+                st.error(f"Ajout impossible : {exc}")
 
 
 def _render_outside_add_popover(rows: list[dict], sources: list, section_key: str) -> None:
@@ -12536,6 +12786,42 @@ def _stats_rated_section(ctx: dict) -> None:
 
 
 
+def _collect_duo_stats(dataset: dict, tmdb_whitelist: set | None = None) -> list[dict]:
+    """🤝 Duos acteur × réalisateur les plus croisés de ton historique
+    (V170 — demande utilisateur). 100 % local et instantané : se base sur
+    les acteurs/réalisateurs stockés avec tes contenus vus (enrichis).
+    Seuls les duos croisés AU MOINS 2 FOIS sont retenus."""
+    from collections import Counter
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+    watched = sections.get("watched") or {}
+    pair_counts: Counter = Counter()
+    names: dict = {}
+    for bucket in ("movies", "shows"):
+        for entry in (watched.get(bucket) or []):
+            media = _unwrap_media(entry) or (entry if isinstance(entry, dict) else {})
+            if not isinstance(media, dict):
+                continue
+            ids = media.get("ids") if isinstance(media.get("ids"), dict) else {}
+            tmdb = str(ids.get("tmdb") or "")
+            if tmdb_whitelist is not None and tmdb not in tmdb_whitelist:
+                continue
+            actors = media.get("actors") or []
+            directors = media.get("directors") or []
+            for a in actors:
+                if not isinstance(a, dict) or not a.get("id"):
+                    continue
+                for d in directors:
+                    if not isinstance(d, dict) or not d.get("id"):
+                        continue
+                    pair_counts[(a["id"], d["id"])] += 1
+                    names[(a["id"], d["id"])] = (a.get("name"), d.get("name"))
+    return [
+        {"actor": names[k][0], "actor_id": k[0], "director": names[k][1], "director_id": k[1], "count": v}
+        for k, v in pair_counts.most_common(3)
+        if v >= 2
+    ]
+
+
 def _stats_people_section(ctx: dict) -> None:
     """👥 Personnes (V154) : réalisateurs/acteurs/studios + recherche. Les collecteurs (filmographies TMDB) ne tournent QUE sur cet onglet → la page est plus rapide ailleurs."""
     dataset = ctx['dataset']
@@ -12589,6 +12875,33 @@ def _stats_people_section(ctx: dict) -> None:
         if studio_stats:
             st.markdown("**🏢 Studios récurrents**")
             st.markdown(_render_studio_chips(studio_stats, limit=12), unsafe_allow_html=True)
+        # V170 — 🤝 duos favoris acteur × réalisateur (local, instantané)
+        duo_stats = _collect_duo_stats(dataset, tmdb_whitelist=filtered_tmdb)
+        if duo_stats:
+            st.markdown("**🤝 Tes duos favoris (acteur × réalisateur)**")
+            st.caption("Les associations que tu croises le plus dans ton historique — liens vers TMDB.")
+            _duo_parts = []
+            for _duo in duo_stats:
+                _a_url = _tmdb_person_url(_duo.get("actor_id"))
+                _d_url = _tmdb_person_url(_duo.get("director_id"))
+                _a = (f'<a class="link-pill" href="{_a_url}" target="_blank" rel="noopener noreferrer" '
+                      f'title="Fiche TMDB">🎭 {escape(str(_duo.get("actor") or "?"))}</a>') if _a_url else \
+                     f'<span class="mc-chip">🎭 {escape(str(_duo.get("actor") or "?"))}</span>'
+                _d = (f'<a class="link-pill" href="{_d_url}" target="_blank" rel="noopener noreferrer" '
+                      f'title="Fiche TMDB">🎬 {escape(str(_duo.get("director") or "?"))}</a>') if _d_url else \
+                     f'<span class="mc-chip">🎬 {escape(str(_duo.get("director") or "?"))}</span>'
+                _duo_parts.append(
+                    f'<div class="duo-line">{_a}<span class="duo-x">×</span>{_d}'
+                    f'<span class="duo-n">{_duo["count"]} contenu(s) ensemble</span></div>'
+                )
+            st.markdown(
+                '<style>.duo-box{display:flex;flex-direction:column;gap:.35rem;margin:.35rem 0 .5rem;}'
+                '.duo-line{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;}'
+                '.duo-x{color:#FFE100;font-weight:800;font-size:1rem;}'
+                '.duo-n{color:#9DC5BF;font-size:.8rem;}</style>'
+                '<div class="duo-box">' + "".join(_duo_parts) + '</div>',
+                unsafe_allow_html=True,
+            )
     else:
         st.caption(
             "Aucun acteur ou studio détecté sur cette sélection. "
