@@ -803,6 +803,58 @@ def coulisses_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "
     return {"anecdote": anecdote, "pros": pros, "cons": cons}
 
 
+def context_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -> dict:
+    """🕰️ POURQUOI MAINTENAU (V172 — idée choisie par l'utilisateur) :
+    l'HÉRITAGE CULTUREL d'une œuvre — ce qu'elle a changé ou laissé dans
+    la culture populaire (objets, modes, technologies, expressions,
+    imaginaires collectifs — ex. la DeLorean de « Retour vers le futur »,
+    l'hoverboard du 2), le contexte de son époque, et pourquoi elle reste
+    (ou non) d'actualité. ZÉRO SPOILER : jamais l'intrigue, jamais les
+    événements de l'œuvre.
+
+    Retourne {"skip": False, "pourquoi": str, "heritage": [..],
+    "anecdote": str} — ou {"skip": True} si l'œuvre n'a pas d'héritage
+    culturel notable (dans ce cas l'app n'affiche RIEN). Lève
+    RuntimeError (raison lisible). Retry 503/timeout inclus."""
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    prompt = (
+        "Tu es un historien du cinéma et de la culture populaire. À propos de "
+        f"{subject}" + (f" ({hint})" if hint else "") + ", raconte ce que cette œuvre a "
+        "changé ou laissé dans la CULTURE : objets devenus iconiques, modes, "
+        "technologies, expressions, imaginaires collectifs, héritage dans d'autres "
+        "œuvres — et le contexte de son époque (pourquoi elle est arrivée à ce "
+        "moment-là). Exemples du niveau attendu : « Retour vers le futur » a "
+        "transformé la DeLorean en voiture culte ; son deuxième volet a ancré "
+        "l'hoverboard dans l'imaginaire collectif.\n"
+        "Règles strictes :\n"
+        "- AUCUN SPOILER : ne révèle NI l'intrigue, NI des événements, NI la "
+        "fin ; parle uniquement de contexte, de culture et d'héritage ;\n"
+        "- si cette œuvre n'a PAS d'héritage culturel notable, choisis skip "
+        "(on n'affichera rien du tout) ;\n"
+        "- tout en français, factuel et vivant, sans enjolivement.\n"
+        'Réponds STRICTEMENT en JSON : {"skip": false, "pourquoi": "1 à 2 '
+        'phrases (pourquoi cette œuvre compte culturellement)", "heritage": '
+        '["…", "…", "…"] (2 à 4 traces culturelles courtes), "anecdote": '
+        '"une anecdote culturelle courte et vérifiable"}'
+    )
+    text = ia_complete(gemini_key, groq_key, prompt, 1.0, 1200, "contexte")
+    if not text.strip():
+        raise RuntimeError("Réponse IA vide — relance")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        raise RuntimeError("Réponse illisible — relance")
+    if parsed.get("skip"):
+        return {"skip": True}
+    pourquoi = str(parsed.get("pourquoi") or "").strip()
+    heritage = [str(x).strip() for x in (parsed.get("heritage") or []) if str(x).strip()][:4]
+    anecdote = str(parsed.get("anecdote") or "").strip()
+    if len(pourquoi) < 30:
+        raise RuntimeError("Réponse incomplète — relance")
+    return {"skip": False, "pourquoi": pourquoi, "heritage": heritage, "anecdote": anecdote}
+
+
 def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[dict],
                     kind: str = "Peu importe", avoid_titles: list | None = None) -> dict:
     """✍️ POP LIBRE (V152) : l'utilisateur décrit son envie en une phrase

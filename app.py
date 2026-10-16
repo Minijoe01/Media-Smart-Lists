@@ -109,7 +109,7 @@ _CURRENT_YEAR = datetime.now(ZoneInfo("Europe/Paris")).year
 
 PAGES = [
     "🏠 Tableau de bord",
-    "▶️ En cours de lecture",
+    "▶️ Vos visionnages en cours",
     "👻 Progression Fantôme",
     "🧹 Nettoyage des listes",
     "🎯 Que regarder ?",
@@ -832,16 +832,19 @@ st.markdown(
         transform: translateY(-2px);
     }
     /* V146 — FICHE ACTEUR (dialog, ouverte depuis Statistiques) */
-    .actor-head { display: flex; gap: 16px; align-items: center; padding: .95rem 1rem .5rem; }
+    .actor-head { display: flex; gap: 16px; align-items: center; padding: 1rem 1rem .8rem;
+                   margin: .7rem .8rem 0; background: rgba(8,55,50,.45);
+                   border: 1px solid rgba(0,163,146,.35); border-radius: 14px; }
     .actor-photo { width: 96px; height: 96px; border-radius: 50%; object-fit: cover;
                    border: 3px solid var(--am-yellow); box-shadow: 0 8px 22px rgba(0,0,0,.5); flex-shrink: 0; }
     .actor-name { font-size: 1.3rem; font-weight: 900; color: #fff; margin: 0; line-height: 1.2; }
     .actor-meta { color: var(--am-text-muted); font-size: .82rem; margin-top: .15rem; line-height: 1.4; }
     .actor-bio { font-size: .82rem !important; color: #b0ccc8 !important; line-height: 1.55 !important;
                  margin: .6rem 1rem .25rem !important; }
-    .actor-grid { display: flex; flex-wrap: wrap; gap: .5rem; padding: .2rem 1rem .45rem; }
+    .actor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+                   gap: .5rem; padding: .25rem 1rem .5rem; }
     .actor-credit { display: flex; gap: 8px; align-items: center; background: rgba(8,55,50,.55);
-                    border: 1px solid rgba(0,163,146,.35); border-radius: 10px; padding: 4px 10px 4px 4px; max-width: 290px;
+                    border: 1px solid rgba(0,163,146,.35); border-radius: 10px; padding: 4px 10px 4px 4px;
                     transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
     .actor-credit:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(0,0,0,.45); border-color: rgba(0,163,146,.6); }
     .actor-credit img { width: 34px; height: 50px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: rgba(0,0,0,.3); }
@@ -850,7 +853,8 @@ st.markdown(
     .actor-credit .t { font-size: .74rem; font-weight: 700; color: var(--am-text); line-height: 1.15; }
     .actor-credit .d { font-size: .63rem; color: var(--am-text-muted); line-height: 1.25; }
     .actor-section-title { font-size: .8rem; font-weight: 800; letter-spacing: .04em; color: var(--am-yellow);
-                           text-transform: uppercase; margin: 1.1rem 1rem .3rem; }
+                           text-transform: uppercase; margin: 1.15rem 1rem .35rem;
+                           border-left: 3px solid var(--am-yellow); padding-left: .55rem; }
     /* V171 — badge facette (EN TANT QU'ACTEUR / RÉALISATEUR) espacé :
        retour utilisateur (« un peu plus d'espace entre les facettes »). */
     .actor-facet-tag { display: inline-block; margin: 1.05rem 1rem .15rem !important; padding: .22rem .65rem;
@@ -1285,7 +1289,8 @@ st.markdown(
         margin: .5rem 1rem .2rem !important;
     }
     .actor-grid {
-        display: flex;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
         flex-wrap: wrap;
         gap: .45rem;
         padding: .15rem 1rem .3rem;
@@ -5934,6 +5939,17 @@ def _render_cinema_detail_body(row: dict) -> None:
             f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
             accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
         )
+        # V172 — 🕰️ POURQUOI MAINTENAU : héritage culturel sans spoiler,
+        # même précalcul que les coulisses ; rien ne s'affiche si l'IA
+        # n'a rien de notable à raconter.
+        try:
+            _render_ia_context(
+                f"{'tv' if row.get('type') == 'Série' else 'movie'}_{tmdb_id}",
+                f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
+                accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
+            )
+        except Exception:
+            pass
 
 def _msl_history_span(days: int) -> str:
     """« 1 an 11 mois 15 jours » / « 16 mois » / « 9 jours » — durée LISIBLE
@@ -6140,13 +6156,19 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
                     f'<span class="msl-hist-title" title="{escape(ep_title, quote=True)}">{escape(ep_title)}</span>'
                     f'<span class="msl-hist-date">{escape(date_txt)}{rew}</span></div>'
                 )
+            # V172 — EN-TÊTES DE COLONNES (retour utilisateur) : N° |
+            # Titre de l'épisode | Vu le — même grille que les épisodes.
+            ep_head = (
+                '<div class="msl-hist-ephead"><span>N°</span>'
+                "<span>Titre de l'épisode</span><span>Vu le</span></div>"
+            )
             season_blocks.append(
                 f'<div class="msl-hist-srow">{poster_html}'
                 f'<details class="msl-hist-season"><summary>'
                 f'<span class="msl-hist-sname">{escape(season_name)}</span>'
                 f'<span class="msl-hist-smeta">{escape(meta)}</span>'
                 f'<span class="msl-hist-chev">▶</span></summary>'
-                f'<div class="msl-hist-eps">{"".join(ep_parts)}</div>'
+                f'<div class="msl-hist-eps">{ep_head}{"".join(ep_parts)}</div>'
                 f'</details></div>'
             )
         if season_blocks:
@@ -6185,7 +6207,7 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f".msl-hist-master .msl-hist-chev{{font-size:.8rem;}}"
         f".msl-hist-master[open]>summary .msl-hist-chev{{transform:rotate(90deg);}}"
         f".msl-hist-seasons{{display:flex;flex-direction:column;gap:7px;margin-top:7px;}}"
-        f".msl-hist-srow{{display:flex;gap:10px;align-items:flex-start;"
+        f".msl-hist-srow{{display:flex;gap:10px;align-items:stretch;"
         f"border:1px solid rgba({ar},{ag},{ab},.30);background:transparent;"
         f"border-radius:12px;padding:7px 10px;}}"
         # V171 — survol des posters : MÊME effet que les affiches de
@@ -6202,7 +6224,9 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f".msl-hist-season{{flex:1;min-width:0;}}"
         f".msl-hist-season>summary{{cursor:pointer;list-style:none;"
         f"display:flex;align-items:center;gap:8px;flex-wrap:wrap;"
-        f"padding:1px 0;}}"
+        f"padding:1px 0;min-height:64px;}}"
+        # V172 — TOUTE la tuile de saison est cliquable (le summary
+        # remplit la hauteur du poster), comme le ruban « Mon histoire ».
         f".msl-hist-season>summary::-webkit-details-marker{{display:none;}}"
         f".msl-hist-sname{{color:rgb({a2r},{a2g},{a2b});font-weight:800;font-size:.92rem;}}"
         f".msl-hist-smeta{{color:rgba({a3r},{a3g},{a3b},.80);font-size:.80rem;}}"
@@ -6210,6 +6234,11 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f"transition:transform .18s ease;flex-shrink:0;}}"
         f".msl-hist-season[open]>summary .msl-hist-chev{{transform:rotate(90deg);}}"
         f".msl-hist-eps{{margin-top:5px;display:flex;flex-direction:column;}}"
+        f".msl-hist-ephead{{display:grid;grid-template-columns:68px minmax(0,1fr) auto;"
+        f"column-gap:10px;padding:2px 0 4px;font-size:.66rem;font-weight:800;"
+        f"letter-spacing:.06em;text-transform:uppercase;"
+        f"color:rgba({a3r},{a3g},{a3b},.62);"
+        f"border-bottom:1px solid rgba({ar},{ag},{ab},.30);}}"
         f".msl-hist-ep{{display:grid;grid-template-columns:68px minmax(0,1fr) auto;"
         f"column-gap:10px;row-gap:1px;align-items:baseline;padding:3px 0;"
         f"font-size:.82rem;border-top:1px dashed rgba({ar},{ag},{ab},.16);}}"
@@ -6230,8 +6259,11 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f"@media(max-width:640px){{.msl-hist-poster{{flex-basis:36px;}}"
         f".msl-hist-poster img{{width:36px;}}"
         f".msl-hist-srow{{gap:8px;padding:6px 8px;}}"
+        f".msl-hist-season>summary{{min-height:52px;}}"
         f".msl-hist-ep{{grid-template-columns:56px minmax(0,1fr) auto;"
         f"column-gap:7px;font-size:.76rem;}}"
+        f".msl-hist-ephead{{grid-template-columns:56px minmax(0,1fr) auto;"
+        f"column-gap:7px;font-size:.62rem;}}"
         f".msl-hist-smeta{{font-size:.72rem;}}}}"
         "</style>"
     )
@@ -8295,6 +8327,22 @@ def _render_fiche_add_popover(row: dict, item: dict, tmdb_id: int | None,
         f"color:rgb({a2r},{a2g},{a2b})!important;font-weight:700!important;}}"
         f'[data-testid="stDialog"] [data-testid="stExpander"] summary svg{{'
         f"color:rgb({a2r},{a2g},{a2b})!important;}}"
+        # V172 — FINI LE VERT partout dans le ruban : fond du contenu
+        # déroulé, champ « Liste », pastilles radio et bouton « Ajouter »
+        # passent à la couleur d'accent de la fiche (retour utilisateur).
+        f'[data-testid="stDialog"] [data-testid="stExpander"] [data-testid="stExpanderDetails"]{{'
+        f"background:rgba({ar},{ag},{ab},.05)!important;}}"
+        f'[data-testid="stDialog"] [data-testid="stExpanderDetails"] input[role="combobox"]{{'
+        f"background:rgba({ar},{ag},{ab},.16)!important;"
+        f"border-color:rgba({ar},{ag},{ab},.45)!important;color:#fff!important;}}"
+        f'[data-testid="stDialog"] [data-testid="stExpanderDetails"] input[type="radio"]{{'
+        f"accent-color:rgb({ar},{ag},{ab})!important;}}"
+        f'[data-testid="stDialog"] [data-testid="stExpanderDetails"] button[kind="primary"]{{'
+        f"background:rgb({ar},{ag},{ab})!important;"
+        f"border:1px solid rgba({a2r},{a2g},{a2b},.55)!important;"
+        f"color:#fff!important;box-shadow:none!important;}}"
+        f'[data-testid="stDialog"] [data-testid="stExpanderDetails"] button[kind="primary"]:hover{{'
+        f"background:rgb({a2r},{a2g},{a2b})!important;color:#06211d!important;}}"
         "</style>",
         unsafe_allow_html=True,
     )
@@ -9828,6 +9876,8 @@ def _ia_prefetch_launch(store_key: str, gemini_key: str, groq_key: str, subject:
     _channel_fn = {
         "coulisses": pop_engine.coulisses_ask_ai,
         "score": pop_engine.score_story_ask_ai,
+        # V172 — « Pourquoi maintenant » : héritage culturel sans spoiler
+        "context": pop_engine.context_ask_ai,
     }.get(channel, pop_engine.coulisses_ask_ai)
 
     def _work() -> None:
@@ -9864,6 +9914,10 @@ def _ia_fetch_or_wait(store_key: str, gemini_key: str, groq_key: str, subject: s
         _fn = {
             "coulisses": pop_engine.coulisses_ask_ai,
             "score": pop_engine.score_story_ask_ai,
+            # V172 — « Pourquoi maintenant » : héritage culturel sans
+            # spoiler (SANS cette clé, le secours retombait sur les
+            # coulisses → mauvais contenu sous le bon titre).
+            "context": pop_engine.context_ask_ai,
         }.get(channel, pop_engine.coulisses_ask_ai)
         return _fn(gemini_key, groq_key, subject, hint), ""
     except RuntimeError as exc:
@@ -10060,6 +10114,80 @@ def _render_ia_coulisses(state_key: str, subject: str, hint: str = "",
                     unsafe_allow_html=True)
         if st.button("🎲 Une autre anecdote", key=f"{session_key}_again", use_container_width=True):
             st.session_state[f"{session_key}_again_clicked"] = True
+
+def _render_ia_context(state_key: str, subject: str, hint: str = "",
+                       accent: str = "#FFE100",
+                       accent_soft: str = "rgba(255,225,0,.32)",
+                       accent_text: str = "#EAF6F3") -> None:
+    """🕰️ « POURQUOI MAINTENAU » (V172 — idée choisie par l'utilisateur) :
+    l'HÉRITAGE CULTUREL d'une œuvre — ce qu'elle a changé ou laissé dans
+    la culture populaire (objets, modes, technologies, expressions,
+    imaginaires collectifs), le contexte de son époque, et pourquoi elle
+    reste d'actualité. ZÉRO SPOILER.
+
+    Même mécanique que l'info des coulisses : précalcul en arrière-plan
+    pendant la lecture de la fiche → aucune lenteur, le bloc apparaît en
+    bas quand il est prêt. Si l'IA n'a rien de notable à raconter
+    (« skip »), AUCUN bloc ne s'affiche (demande utilisateur)."""
+    gemini_key = _gemini_api_key()
+    groq_key = _groq_api_key()
+    if not gemini_key and not groq_key:
+        return
+    session_key = f"ia_context_{state_key}"
+    nonce = st.session_state.get(f"ia_nonce_{state_key}") or ""
+    store_key = f"{nonce}|ctx|{state_key}"
+    _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel="context")
+
+    shown = st.session_state.get(session_key)
+    again = st.session_state.pop(f"{session_key}_again_clicked", False)
+    if not shown or again:
+        if again:
+            _IA_PREFETCH.pop(store_key, None)
+            _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel="context")
+        with st.spinner("✨ Une autre histoire culturelle…" if again else "✨ Pourquoi maintenant arrive…"):
+            data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint,
+                                            wait=22.0, channel="context")
+        st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
+        shown = st.session_state.get(session_key)
+
+    if not shown:
+        return
+    if shown.get("error") or shown.get("skip"):
+        return  # rien de notable → pas de bloc (demande utilisateur)
+    st.markdown(_ia_coulisses_css(accent, accent_soft, accent_text), unsafe_allow_html=True)
+    spark = _ia_spark_svg(16, accent, "#FFFFFF")
+    pourquoi_txt = escape(str(shown.get("pourquoi") or ""))
+    anecdote_txt = str(shown.get("anecdote") or "").strip()
+    heritage_items = "".join(f"<li>{escape(str(h))}</li>" for h in (shown.get("heritage") or [])[:4])
+    heritage_html = (
+        f'<div class="col pros"><b>🏛️ SON HÉRITAGE CULTUREL</b><ul>{heritage_items}</ul></div>'
+        if heritage_items else ""
+    )
+    anecdote_html = (
+        f'<div class="ia-text" style="margin-top:.3rem;"><em>💡 {escape(anecdote_txt)}</em></div>'
+        if anecdote_txt else ""
+    )
+    head_html = (
+        f'<div class="ia-head">{spark}<div>'
+        '<div class="ia-title">POURQUOI MAINTENAU</div>'
+        '<div class="ia-sub">héritage culturel et contexte de son époque · générée par IA — sans aucun spoiler</div>'
+        "</div></div>"
+    )
+    st.markdown(
+        '<div class="ia-block">'
+        + head_html
+        + f'<div class="ia-text"><strong>{pourquoi_txt}</strong></div>'
+        + f'<div class="ia-pc">{heritage_html}</div>'
+        + anecdote_html
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(f'<div class="ia-again-anchor" style="--ia-accent:{accent};"></div>',
+                unsafe_allow_html=True)
+    if st.button("🕰️ Une autre histoire", key=f"{session_key}_again", use_container_width=True):
+        st.session_state[f"{session_key}_again_clicked"] = True
+
+
 
 def _groq_api_key() -> str:
     """Clé Groq (facultative, V154) depuis les Secrets Streamlit — provider
@@ -10547,7 +10675,7 @@ def render_pop_page() -> None:
 
 
 def render_progress_page() -> None:
-    st.markdown('<div class="page-title">▶️ En cours de lecture</div>', unsafe_allow_html=True)
+    st.markdown('<div class="page-title">▶️ Vos visionnages en cours</div>', unsafe_allow_html=True)
     sections = _sections()
     playback = sections.get("playback") or []
     progress_rows = _dataset().get("progress") or []
@@ -11008,7 +11136,7 @@ def render_ghost_page() -> None:
         '<div class="accent-callout"><strong>REPRISES EN PAUSE</strong> · '
         'Ici, uniquement les contenus MIS EN PAUSE ou arrêtés en cours de route, avec leur point de '
         'reprise (que tu peux supprimer). Ce qui est en cours de lecture MAINTENANT se trouve sur la '
-        'page « ▶️ En cours de lecture ». Les filtres et calculs utilisent les données déjà chargées '
+        'page « ▶️ Vos visionnages en cours ». Les filtres et calculs utilisent les données déjà chargées '
         'et préservent votre quota. Aucune progression n’est modifiée.</div>',
         unsafe_allow_html=True,
     )
@@ -15324,7 +15452,7 @@ page = navigation()
 header()
 if page == "🏠 Tableau de bord":
     page_dashboard()
-elif page == "▶️ En cours de lecture":
+elif page == "▶️ Vos visionnages en cours":
     render_progress_page()
 elif page == "👻 Progression Fantôme":
     render_ghost_page()

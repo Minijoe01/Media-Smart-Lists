@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 16 octobre 2026 · Dernière version déployée : V171.
+> Dernière mise à jour : 16 octobre 2026 (soir) · Dernière version déployée : V172.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1381,6 +1381,29 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       Titanic/First Man, facettes espacées, duos espacés,
       non-régressions) + 23/23 tests.
 
+### Fait en V172 (retours du 16/10 — saisons cliquables, fin du vert, IA culture)
+- [x] 📜 TON HISTOIRE :
+      • chaque saison = TUILE CLIQUABLE SUR TOUTE SA SURFACE (plus besoin
+        de viser le nom — comme le ruban) ;
+      • EN-TÊTES DE COLONNES dans chaque saison déroulée : N° | Titre de
+        l'épisode | Vu le (alignés sur la grille).
+- [x] ➕ Ruban d'ajout : FINI LE VERT — fond du contenu déroulé, champ
+      « Liste », pastilles radio et bouton « Ajouter » passent à la
+      couleur d'accent de la fiche.
+- [x] 👤 Fiche acteur (passe 2) : en-tête en TUILE arrondie, titres de
+      section avec LISERÉ jaune, crédits en GRILLE uniforme (carré).
+- [x] 🧭 Onglet « ▶️ En cours de lecture » → « ▶️ Vos visionnages en
+      cours » (retour : le 1er indiquait une lecture à l'instant T).
+- [x] 🕰️ IA SANS SPOILER — « POURQUOI MAINTENAU » (idée choisie par
+      l'utilisateur) : bloc en bas de fiche avec l'HÉRITAGE CULTUREL de
+      l'œuvre (objets iconiques, imaginaires collectifs, contexte de
+      l'époque — ex. la DeLorean de Retour vers le futur), précalculé en
+      arrière-plan comme l'info des coulisses (zéro lenteur) ; si l'IA
+      n'a rien de notable → AUCUN bloc. Bouton « 🕰️ Une autre histoire ».
+- [x] Banc : 28/29 (le 29e = artefact de charge du harnais ; le
+      comportement « skip » a été prouvé par un test direct dédié) +
+      23/23 tests.
+
 ### PROCHAINES ÉTAPES (au choix de l'utilisateur)
 - [ ] (facultatif) Score moyen sur la fiche acteur · duo favori stats
 - [ ] README : refonte par l'utilisateur À LA FIN (il gère).
@@ -1411,7 +1434,8 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] (fait en V167 → affiné V168) Fiche film/série d'un contenu VU → bloc « 📜 TON HISTOIRE ».
 - [x] (fait en V170) Fiche acteur → score moyen de ses contenus notés.
 - [x] (fait en V170) Stats → « duo favori » (acteur × réalisateur le plus croisé).
-- [ ] Idées IA SANS SPOILER (à valider avec l'utilisateur,contrainte : ZÉRO
+- [x] (fait en V172) « Pourquoi maintenant » — héritage culturel.
+- [ ] Idées IA SANS SPOULER suite (contrainte : ZÉRO
       lenteur — précalcul comme l'info des coulisses) : « L'esprit du film »
       (3 mots-clés d'ambiance + humeur de visionnage), « Pourquoi maintenant »
       (contexte de sortie), fiche acteur enrichie (anecdote de carrière /
