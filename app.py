@@ -832,23 +832,31 @@ st.markdown(
         transform: translateY(-2px);
     }
     /* V146 — FICHE ACTEUR (dialog, ouverte depuis Statistiques) */
-    .actor-head { display: flex; gap: 16px; align-items: center; padding: .8rem 1rem .4rem; }
+    .actor-head { display: flex; gap: 16px; align-items: center; padding: .95rem 1rem .5rem; }
     .actor-photo { width: 96px; height: 96px; border-radius: 50%; object-fit: cover;
                    border: 3px solid var(--am-yellow); box-shadow: 0 8px 22px rgba(0,0,0,.5); flex-shrink: 0; }
     .actor-name { font-size: 1.3rem; font-weight: 900; color: #fff; margin: 0; line-height: 1.2; }
     .actor-meta { color: var(--am-text-muted); font-size: .82rem; margin-top: .15rem; line-height: 1.4; }
     .actor-bio { font-size: .82rem !important; color: #b0ccc8 !important; line-height: 1.55 !important;
-                 margin: .5rem 1rem .2rem !important; }
-    .actor-grid { display: flex; flex-wrap: wrap; gap: .45rem; padding: .15rem 1rem .3rem; }
+                 margin: .6rem 1rem .25rem !important; }
+    .actor-grid { display: flex; flex-wrap: wrap; gap: .5rem; padding: .2rem 1rem .45rem; }
     .actor-credit { display: flex; gap: 8px; align-items: center; background: rgba(8,55,50,.55);
-                    border: 1px solid rgba(0,163,146,.35); border-radius: 10px; padding: 4px 10px 4px 4px; max-width: 290px; }
+                    border: 1px solid rgba(0,163,146,.35); border-radius: 10px; padding: 4px 10px 4px 4px; max-width: 290px;
+                    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease; }
+    .actor-credit:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(0,0,0,.45); border-color: rgba(0,163,146,.6); }
     .actor-credit img { width: 34px; height: 50px; border-radius: 6px; object-fit: cover; flex-shrink: 0; background: rgba(0,0,0,.3); }
     .actor-credit .noimg { width: 34px; height: 50px; border-radius: 6px; flex-shrink: 0; display: flex;
                            align-items: center; justify-content: center; background: rgba(0,0,0,.3); font-size: .9rem; }
     .actor-credit .t { font-size: .74rem; font-weight: 700; color: var(--am-text); line-height: 1.15; }
     .actor-credit .d { font-size: .63rem; color: var(--am-text-muted); line-height: 1.25; }
     .actor-section-title { font-size: .8rem; font-weight: 800; letter-spacing: .04em; color: var(--am-yellow);
-                           text-transform: uppercase; margin: .9rem 1rem .25rem; }
+                           text-transform: uppercase; margin: 1.1rem 1rem .3rem; }
+    /* V171 — badge facette (EN TANT QU'ACTEUR / RÉALISATEUR) espacé :
+       retour utilisateur (« un peu plus d'espace entre les facettes »). */
+    .actor-facet-tag { display: inline-block; margin: 1.05rem 1rem .15rem !important; padding: .22rem .65rem;
+                       border: 1px solid rgba(255,225,0,.35); border-radius: 8px;
+                       background: rgba(255,225,0,.07); color: var(--am-yellow);
+                       letter-spacing: .12em; font-size: .68rem; font-weight: 800; }
     .actor-count { display: inline-block; font-size: .68rem; font-weight: 800; color: var(--am-yellow);
                    background: rgba(255,225,0,.1); border: 1px solid rgba(255,225,0,.4);
                    border-radius: 999px; padding: 0 .45rem; margin-left: .35rem; vertical-align: middle; }
@@ -4778,12 +4786,15 @@ def _fiche_status_pill(tmdb_id: int | None, kind: Any = None) -> str:
     _date_pills = []
     if want_kind == "tv":
         try:
+            # V171 — les épisodes SPÉCIAUX (saison 00) sont exclus des
+            # dates de la pastille, comme dans TON HISTOIRE (cohérence).
             _ep_dates = sorted(
                 row.get("watched_at")
                 for row in _history_rows_for_fiche()
                 if row.get("type") == "Épisode"
                 and row.get("watched_at") is not None
                 and (row.get("ids") or {}).get("tmdb") == tmdb_id
+                and not str(row.get("episode_label") or "").startswith("S00E")
             )
             if len(_ep_dates) >= 2:
                 _date_pills = [
@@ -5902,7 +5913,7 @@ def _render_cinema_detail_body(row: dict) -> None:
     # V170 — ➕ AJOUTER À MES LISTES depuis la fiche (session MDBList
     # uniquement — en mode ZIP Trakt, le bouton n'apparaît pas).
     try:
-        _render_fiche_add_popover(row, item, tmdb_id)
+        _render_fiche_add_popover(row, item, tmdb_id, a_rgb, a2_rgb)
     except Exception:
         pass
     try:
@@ -5946,36 +5957,46 @@ def _msl_history_span(days: int) -> str:
 def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
                          a_rgb: tuple, a2_rgb: tuple, a3_rgb: tuple,
                          total_episodes: int = 0) -> None:
-    """📜 TON HISTOIRE (V167 → V170, retours utilisateur) : statistiques de
+    """📜 TON HISTOIRE (V167 → V171, retours utilisateur) : statistiques de
     visionnage dans la fiche d'un contenu VU. Lecture pure du moteur
     normalisé (rien n'est modifié dans tes données).
 
-    V170 :
-    • durées EXPLICITES : « 1 an 11 mois 15 jours » plutôt que « 23 mois » ;
-    • carte reformulée : « 1er épisode vu le … · dernier épisode vu le … ·
-      série regardée durant … », « N épisode(s) visionné(s) sur un total
-      de X » (total TMDB, déjà chargé par la fiche) et, pour une série EN
-      COURS : « il reste X épisode(s) à visionner, soit environ … » ;
-    • chaque code SxxEyy est CLIQUABLE → la page TMDB de l'épisode ;
-    • ruban « Mon histoire détaillée » habillé en vrai BOUTON (bordure
-      pleine, fond net, « dérouler / refermer » explicite, survol réactif)
-      et saisons sur fond TRANSPARENT (fini l'éclaircissement cumulé).
+    V171 :
+    • ÉPISODES SPÉCIAUX (saison 00) : toujours visibles dans le détail,
+      mais exclus de TOUT les statistiques — intervalle, épisodes vus,
+      temps, « il reste », et nombre de saisons (retour DBZ : « il y a un
+      total de 9 saisons régulières pour DBZ, pas 10 ») ;
+    • le lien SxxEyy reste COULEUR D'ACCENT (plus de bleu hypertexte) ;
+    • la carte devient une VRAIE TUILE arrondie, aux couleurs d'accent,
+      comme le reste de la fiche (retour : « trop basique ») ;
+    • posters de saisons : MÊME survol que les affiches de la fiche ;
+    • ruban : « dérouler / refermer » retiré (inutile), le reste intact.
 
-    V169 : toutes les saisons enroulées derrière un ruban unique (séries
-    longues). V168 : grille alignée SxxEyy | titre | date, posters de
-    saison cliquables (page TMDB de la saison), gap 7 px, accent de fiche.
+    V170 : durées explicites, carte reformulée (« sur un total de X »,
+    « Il reste X épisode(s)… »), SxxEyy cliquables → page TMDB de
+    l'épisode. V169 : saisons enroulées derrière un ruban unique.
+    V168 : grille alignée, posters cliquables (saison TMDB), accent fiche.
     """
     if not tmdb_id:
         return
     is_show = row.get("type") == "Série"
-    rows = [
+    rows_all = [
         r for r in _history_rows_for_fiche()
         if (r.get("ids") or {}).get("tmdb") == tmdb_id
         and (r.get("type") == ("Épisode" if is_show else "Film"))
     ]
-    if not rows:
+    if not rows_all:
         return
     import re as _re
+
+    def _row_season(r: dict) -> int:
+        m = _re.match(r"S(\d+)E(\d+)", str(r.get("episode_label") or ""))
+        return int(m.group(1)) if m else 1
+
+    # V171 — les épisodes spéciaux ne comptent pas dans les statistiques.
+    rows = [r for r in rows_all if _row_season(r) != 0]
+    if not rows:
+        return
     try:
         ar, ag, ab = (int(c) for c in a_rgb)
         a2r, a2g, a2b = (int(c) for c in a2_rgb)
@@ -5986,7 +6007,7 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         a3r, a3g, a3b = 90, 216, 201
 
     def _row_note() -> str:
-        notes = [r.get("personal_rating") for r in rows if r.get("personal_rating")]
+        notes = [r.get("personal_rating") for r in rows_all if r.get("personal_rating")]
         return f" · ta note : <strong>{max(notes):.0f}/10</strong>" if notes else ""
 
     dates = sorted(r.get("watched_at") for r in rows if r.get("watched_at") is not None)
@@ -6030,7 +6051,7 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
     seasons_html = ""
     if is_show:
         seasons: dict[int, list] = {}
-        for r in rows:
+        for r in rows_all:
             m = _re.match(r"S(\d+)E(\d+)", str(r.get("episode_label") or ""))
             if m:
                 seasons.setdefault(int(m.group(1)), []).append(r)
@@ -6082,7 +6103,8 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
                 poster_html = (
                     f'<a class="msl-hist-poster msl-hist-noimg" href="{escape(season_href, quote=True)}" '
                     f'target="_blank" rel="noopener noreferrer" '
-                    f'title="{escape(season_name)} sur TMDB (nouvel onglet)">S{season_no}</a>'
+                    f'title="{escape(season_name)} sur TMDB (nouvel onglet)">'
+                    f'{"S" + str(season_no) if season_no >= 1 else "✦"}</a>'
                 )
             ep_parts = []
             for r in eps:
@@ -6128,16 +6150,13 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
                 f'</details></div>'
             )
         if season_blocks:
-            # V170 — ruban habillé en VRAI bouton : bordure pleine, fond
-            # net, « dérouler / refermer » explicite (retour : « l'encadré
-            # en tiret n'est pas très joli, je veux qu'on comprenne que
-            # c'est un ruban déroulant »).
+            # V171 — le compte de saisons n'inclut PAS les épisodes
+            # spéciaux (saison 00) ; « dérouler/refermer » retiré.
+            n_regular_seasons = len([s for s in seasons if s >= 1])
             seasons_html = (
                 f'<details class="msl-hist-master"><summary>'
                 f'<span class="msl-hist-mtitle">📜 Mon histoire détaillée</span>'
-                f'<span class="msl-hist-mmeta">{len(season_blocks)} saison(s) · épisode par épisode — '
-                f'<span class="msl-hist-lblc">dérouler</span>'
-                f'<span class="msl-hist-lblo">refermer</span></span>'
+                f'<span class="msl-hist-mmeta">{n_regular_seasons} saison(s) · épisode par épisode</span>'
                 f'<span class="msl-hist-chev">▶</span></summary>'
                 f'<div class="msl-hist-seasons">{"".join(season_blocks)}</div>'
                 f'</details>'
@@ -6146,10 +6165,13 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
     # ── CSS + rendu : UN SEUL bloc, couleurs d'accent de la fiche ─────────
     css_hist = (
         "<style>"
-        f".msl-hist-card{{border-left:4px solid rgb({ar},{ag},{ab});"
-        f"background:rgba({ar},{ag},{ab},.10);border-radius:0 12px 12px 0;"
-        f"padding:.45rem .7rem;font-size:.86rem;"
-        f"color:rgb({a3r},{a3g},{a3b});line-height:1.65;}}"
+        # V171 — la carte devient une VRAIE TUILE : bordure complète
+        # arrondie aux couleurs d'accent, comme le reste de la fiche.
+        f".msl-hist-card{{border:1px solid rgba({ar},{ag},{ab},.38);"
+        f"border-left:4px solid rgb({ar},{ag},{ab});"
+        f"background:rgba({ar},{ag},{ab},.10);border-radius:14px;"
+        f"padding:.6rem .9rem;font-size:.86rem;"
+        f"color:rgb({a3r},{a3g},{a3b});line-height:1.7;}}"
         f".msl-hist-card strong{{color:rgb({a2r},{a2g},{a2b});}}"
         f".msl-hist-master{{margin-top:9px;border:1px solid rgba({ar},{ag},{ab},.45);"
         f"border-radius:12px;padding:8px 12px;background:rgba({ar},{ag},{ab},.12);"
@@ -6160,18 +6182,19 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f".msl-hist-master>summary::-webkit-details-marker{{display:none;}}"
         f".msl-hist-mtitle{{color:rgb({a2r},{a2g},{a2b});font-weight:800;font-size:.9rem;}}"
         f".msl-hist-mmeta{{color:rgba({a3r},{a3g},{a3b},.75);font-size:.78rem;}}"
-        f".msl-hist-lblo{{display:none;}}"
-        f".msl-hist-master[open] .msl-hist-lblc{{display:none;}}"
-        f".msl-hist-master[open] .msl-hist-lblo{{display:inline;}}"
         f".msl-hist-master .msl-hist-chev{{font-size:.8rem;}}"
         f".msl-hist-master[open]>summary .msl-hist-chev{{transform:rotate(90deg);}}"
         f".msl-hist-seasons{{display:flex;flex-direction:column;gap:7px;margin-top:7px;}}"
         f".msl-hist-srow{{display:flex;gap:10px;align-items:flex-start;"
         f"border:1px solid rgba({ar},{ag},{ab},.30);background:transparent;"
         f"border-radius:12px;padding:7px 10px;}}"
-        f".msl-hist-poster{{flex:0 0 44px;display:block;}}"
+        # V171 — survol des posters : MÊME effet que les affiches de
+        # saisons / recommandations de la fiche (translateY + ombre).
+        f".msl-hist-poster{{flex:0 0 44px;display:block;transition:transform .16s ease;}}"
+        f".msl-hist-srow:hover .msl-hist-poster{{transform:translateY(-3px);}}"
         f".msl-hist-poster img{{width:44px;display:block;border-radius:7px;"
-        f"box-shadow:0 6px 16px rgba(0,0,0,.40);}}"
+        f"box-shadow:0 6px 16px rgba(0,0,0,.40);transition:box-shadow .16s ease;}}"
+        f".msl-hist-srow:hover .msl-hist-poster img{{box-shadow:0 12px 26px rgba(0,0,0,.6);}}"
         f"a.msl-hist-noimg{{height:64px;display:flex;align-items:center;"
         f"justify-content:center;border:1px dashed rgba({ar},{ag},{ab},.45);"
         f"border-radius:7px;color:rgb({a2r},{a2g},{a2b});font-weight:800;"
@@ -6193,9 +6216,12 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f".msl-hist-ep:first-child{{border-top:none;}}"
         f".msl-hist-code{{color:rgb({a2r},{a2g},{a2b});font-weight:700;"
         f"font-variant-numeric:tabular-nums;}}"
-        f"a.msl-hist-code{{text-decoration:none;"
+        # V171 — le lien SxxEyy reste COULEUR D'ACCENT : le bleu « lien
+        # hypertexte » du thème ne doit JAMAIS passer devant (!important).
+        f"a.msl-hist-code{{color:rgb({a2r},{a2g},{a2b})!important;"
+        f"text-decoration:none;"
         f"border-bottom:1px dotted rgba({a2r},{a2g},{a2b},.55);}}"
-        f"a.msl-hist-code:hover{{color:#fff;border-bottom-style:solid;}}"
+        f"a.msl-hist-code:hover{{color:#fff!important;border-bottom-style:solid;}}"
         f".msl-hist-title{{color:rgba(255,255,255,.94);overflow:hidden;"
         f"text-overflow:ellipsis;white-space:nowrap;}}"
         f".msl-hist-date{{color:rgba({a3r},{a3g},{a3b},.85);white-space:nowrap;"
@@ -6461,8 +6487,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         _label, role_word, facet_tag = facet_labels[facet_name]
         if multi_facets:
             st.markdown(
-                f'<p class="actor-section-title" style="color:var(--am-yellow);'
-                f'letter-spacing:.12em;font-size:.72rem;">{facet_tag}</p>',
+                f'<p class="actor-facet-tag">{facet_tag}</p>',
                 unsafe_allow_html=True,
             )
         films = {cid: c for cid, c in facet_map.items() if c["kind"] == "Film"}
@@ -8192,21 +8217,21 @@ def _sort_rows_by_mode(rows: list[dict], sort_mode: str) -> list[dict]:
     return rows
 
 
-def _render_fiche_add_popover(row: dict, item: dict, tmdb_id: int | None) -> None:
-    """➕ Ajouter CE contenu à la Watchlist ou à une liste statique,
-    directement depuis sa fiche cinéma (V170 — demande utilisateur du
-    07/10 : « ajouter un contenu à une liste / à la Watchlist depuis la
-    fiche cinéma »).
+def _render_fiche_add_popover(row: dict, item: dict, tmdb_id: int | None,
+                              a_rgb: tuple = (), a2_rgb: tuple = ()) -> None:
+    """➕ Ajouter CE contenu à la Watchlist ou à une liste statique, depuis
+    sa fiche cinéma (V170 — demande du 07/10 ; V171, retours utilisateur).
 
-    • Uniquement en session MDBList connectée (l'écriture passe par l'API
-      MDBList — en mode ZIP Trakt, le bouton n'apparaît pas) ;
-    • la Watchlist n'est PAS proposée si le contenu y figure déjà ;
-    • les listes qui CONTIENNENT déjà le contenu sont écartées (retour :
-      « si le contenu est déjà dans une liste, on ne le propose pas une
-      nouvelle fois ») ; les listes dynamiques/IA ne sont JAMAIS proposées ;
-    • mêmes appels que le popover « ➕ Ajouter une découverte » de la page
-      Watchlist (éprouvés en production) : une écriture par ajout,
-      réversible depuis MDBList."""
+    V171 — le ruban n'apparaît que pour un contenu « à ranger » :
+    • déjà en Watchlist → PAS de ruban ;
+    • déjà dans L'UNE de tes listes → PAS de ruban du tout (retour : « si
+      le contenu est déjà dans une liste, il ne faut pas non plus le
+      proposer dans les autres listes ni dans la Watchlist ») ;
+    • série EN COURS de visionnage → PAS de ruban (« on ne rajoute pas un
+      contenu qu'on est en train de regarder ») ;
+    • habillage aux COULEURS D'ACCENT de la fiche.
+    Seule une session MDBList connectée voit le ruban (jamais en ZIP) ;
+    listes statiques uniquement, une écriture par ajout, réversible."""
     if not tmdb_id or not mdb_oauth.is_connected():
         return
     is_show = row.get("type") == "Série"
@@ -8226,41 +8251,61 @@ def _render_fiche_add_popover(row: dict, item: dict, tmdb_id: int | None) -> Non
         (sections.get("watchlist") or {}).get("movies") or [],
         (sections.get("watchlist") or {}).get("shows") or [],
     )
-    excluded_ids: set = set()
-    for lst in (sections.get("user_lists") or []):
-        if not isinstance(lst, dict):
-            continue
-        if _bucket_contains(tmdb_id, lst.get("movies"), lst.get("shows")) or \
-                _bucket_contains(tmdb_id, lst.get("items"), []):
-            try:
-                excluded_ids.add(int(lst.get("id")))
-            except (TypeError, ValueError):
-                pass
+    in_any_list = any(
+        isinstance(lst, dict)
+        and (_bucket_contains(tmdb_id, lst.get("movies"), lst.get("shows"))
+             or _bucket_contains(tmdb_id, lst.get("items"), []))
+        for lst in (sections.get("user_lists") or [])
+    )
+    try:
+        _prog_keys, _ = _watch_status_keys()
+        _typed_add = _typed_media_key("tv" if is_show else "movie", tmdb_id)
+    except Exception:
+        _prog_keys, _typed_add = set(), ""
+    if in_watchlist or in_any_list or (_typed_add and _typed_add in _prog_keys):
+        return
     sources = dataset.get("sources") if isinstance(dataset.get("sources"), list) else []
     static_lists = []
     for s in sources:
         if not isinstance(s, dict) or str(s.get("type") or "") != "static" or s.get("id") is None:
             continue
         try:
-            sid = int(s["id"])
+            static_lists.append((str(s.get("name") or "?"), int(s["id"])))
         except (TypeError, ValueError):
             continue
-        if sid in excluded_ids:
-            continue
-        static_lists.append((str(s.get("name") or "?"), sid))
-    if in_watchlist and not static_lists:
-        return  # déjà partout : rien à proposer → pas de bouton
+    if not static_lists:
+        return  # aucune destination possible → pas de ruban
+
+    try:
+        ar, ag, ab = (int(c) for c in a_rgb)
+        a2r, a2g, a2b = (int(c) for c in a2_rgb)
+    except (TypeError, ValueError):
+        ar, ag, ab = 0, 163, 146
+        a2r, a2g, a2b = 64, 255, 230
+    # V171 — le ruban (expander natif) habillé aux couleurs d'accent de la
+    # fiche : bordure, fond teinté, libellé et chevron accentués.
+    st.markdown(
+        "<style>"
+        f'[data-testid="stDialog"] [data-testid="stExpander"]{{'
+        f"border:1px solid rgba({ar},{ag},{ab},.45)!important;"
+        f"border-radius:12px!important;background:rgba({ar},{ag},{ab},.10)!important;}}"
+        f'[data-testid="stDialog"] [data-testid="stExpander"] summary{{'
+        f"color:rgb({a2r},{a2g},{a2b})!important;}}"
+        f'[data-testid="stDialog"] [data-testid="stExpander"] summary p{{'
+        f"color:rgb({a2r},{a2g},{a2b})!important;font-weight:700!important;}}"
+        f'[data-testid="stDialog"] [data-testid="stExpander"] summary svg{{'
+        f"color:rgb({a2r},{a2g},{a2b})!important;}}"
+        "</style>",
+        unsafe_allow_html=True,
+    )
 
     done_key = f"fiche_add_done_{kind_code}{tmdb_id}"
     title_txt = escape(_media_title(item))
-    # V170 — le LABEL du bouton porte l'accusé : un dialog se re-exécute
-    # en « fragment » (le reste de la page ne bouge pas), donc le retour
-    # doit vivre sur le bouton lui-même pour rester bien visible.
-    _done = st.session_state.get(done_key)
     # V170b — EXPANDER (et non popover) : dans un dialog, les widgets d'un
     # popover ne re-déclenchent pas proprement le « fragment » du dialog ;
     # directement dans la fiche (comme « 🎲 Une autre anecdote »), ils
     # répondent instantanément. L'expander s'ouvre sans rechargement.
+    _done = st.session_state.get(done_key)
     with st.expander("✓ Ajouté à mes listes" if _done else "➕ Ajouter à mes listes",
                      expanded=False):
         if _done:
@@ -8272,25 +8317,18 @@ def _render_fiche_add_popover(row: dict, item: dict, tmdb_id: int | None) -> Non
             )
             return
         st.caption(
-            "Range ce contenu dans ta Watchlist ou l'une de tes listes statiques MDBList. "
-            "Une écriture par ajout, réversible depuis MDBList."
+            "Range ce contenu dans ta Watchlist ou l'une de tes listes statiques "
+            "MDBList. Une écriture par ajout, réversible depuis MDBList."
         )
-        destination = "🗂️ Une de mes listes statiques"
-        if not in_watchlist:
-            destination = st.radio(
-                "Destination",
-                ["📌 Ma Watchlist", "🗂️ Une de mes listes statiques"],
-                horizontal=True,
-                key=f"fiche_add_dest_{kind_code}{tmdb_id}",
-            )
-        else:
-            st.caption("✓ Déjà dans ta Watchlist — ajoute-le dans une de tes listes :")
+        destination = st.radio(
+            "Destination",
+            ["📌 Ma Watchlist", "🗂️ Une de mes listes statiques"],
+            horizontal=True,
+            key=f"fiche_add_dest_{kind_code}{tmdb_id}",
+        )
         list_id = None
         chosen_list = None
         if destination.startswith("🗂️"):
-            if not static_lists:
-                st.caption("Aucune liste statique disponible (ou ce contenu est déjà dans toutes tes listes).")
-                return
             list_names = [name for name, _ in static_lists]
             chosen_list = st.selectbox("Liste", list_names, key=f"fiche_add_list_{kind_code}{tmdb_id}")
             list_id = next((lid for name, lid in static_lists if name == chosen_list), None)
@@ -8324,6 +8362,7 @@ def _render_fiche_add_popover(row: dict, item: dict, tmdb_id: int | None) -> Non
                     st.rerun()
             except Exception as exc:
                 st.error(f"Ajout impossible : {exc}")
+
 
 
 def _render_outside_add_popover(rows: list[dict], sources: list, section_key: str) -> None:
@@ -12878,7 +12917,12 @@ def _stats_people_section(ctx: dict) -> None:
         # V170 — 🤝 duos favoris acteur × réalisateur (local, instantané)
         duo_stats = _collect_duo_stats(dataset, tmdb_whitelist=filtered_tmdb)
         if duo_stats:
-            st.markdown("**🤝 Tes duos favoris (acteur × réalisateur)**")
+            # V171 — espace avant le titre (retour : « les studios
+            # semblent collés au titre duos »).
+            st.markdown(
+                '<p style="margin:.95rem 0 .2rem;"><strong>🤝 Tes duos favoris (acteur × réalisateur)</strong></p>',
+                unsafe_allow_html=True,
+            )
             st.caption("Les associations que tu croises le plus dans ton historique — liens vers TMDB.")
             _duo_parts = []
             for _duo in duo_stats:

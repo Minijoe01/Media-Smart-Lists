@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 15 octobre 2026 (soir) · Dernière version déployée : V170.
+> Dernière mise à jour : 16 octobre 2026 · Dernière version déployée : V171.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1354,6 +1354,32 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] Banc : 28/28 (carte reformulée + total + reste, ruban-bouton, fond
       transparent, liens épisodes TMDB, score acteur, duos, ajout Watchlist
       + liste statique avec exclusions, non-régressions) + 23/23 tests.
+
+### Fait en V171 (retours du 15/10 nuit — corrections ciblées)
+- [x] 📜 TON HISTOIRE v5 :
+      • lien SxxEyy en COULEUR D'ACCENT (plus de bleu hypertexte) ;
+      • « dérouler / refermer » retiré du ruban (inutile) ;
+      • ÉPISODES SPÉCIAUX (saison 00) exclus de TOUTES les stats —
+        intervalle, épisodes vus, temps, « il reste », compte de saisons
+        (retour DBZ : « 9 saisons régulières, pas 10 ») — mais toujours
+        visibles dans le détail ; pastille bannière alignée (exclusion
+        identique) ;
+      • carte en VRAIE TUILE arrondie aux couleurs d'accent ;
+      • posters de saisons : MÊME survol que les affiches de la fiche
+        (translateY -3px + ombre, mesuré au banc).
+- [x] ➕ Ruban d'ajout : habillage COULEURS D'ACCENT (bordure/fond/
+      libellé) ; MASQUÉ si le contenu est déjà en Watchlist OU dans
+      l'une des listes OU en cours de visionnage (retour : « on ne
+      rajoute pas un contenu déjà rangé ou qu'on regarde »).
+- [x] 👤 Fiche acteur : badges facettes « EN TANT QU'ACTEUR /
+      RÉALISATEUR » espacés et encadrés, sections aérées, cartes
+      crédits avec soulèvement au survol.
+- [x] 📊 Stats : espace avant « 🤝 Tes duos favoris » (plus collé aux
+      studios).
+- [x] Banc : 28/28 (spéciaux exclus de bout en bout, tuile, lien
+      accent, hover -3px mesuré, ruban d'ajout accent + masquages
+      Titanic/First Man, facettes espacées, duos espacés,
+      non-régressions) + 23/23 tests.
 
 ### PROCHAINES ÉTAPES (au choix de l'utilisateur)
 - [ ] (facultatif) Score moyen sur la fiche acteur · duo favori stats
