@@ -2117,11 +2117,27 @@ st.markdown(
         position: relative;
         z-index: 8;
     }
-    /* V175 — GRILLE SIMILAIRES / SAGA : cartes adaptatives à leur colonne
-       (4 par ligne ; sur GSM la colonne ≈ 80 px, la carte suit). */
-    .sim-card.msl-click { width: 100%; max-width: 104px; }
-    .sim-card.msl-click img { width: 100%; max-width: 104px; }
-    .sim-card.msl-click .sim-noimg { width: 100%; max-width: 104px; }
+    /* V176 — BANDEAU DÉFILANT (retour utilisateur : « j'adorais la
+       disposition… la possibilité de scroller vers la droite ») : la rangée
+       de colonnes devient scrollable, colonnes à largeur FIXE (84 px, comme
+       les mini-cartes d'origine) — posters côte à côte, même écart qu'avant,
+       ET chaque carte reste un bouton transparent. */
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click) {
+        overflow-x: auto;
+        padding: .45rem .1rem .35rem;
+        scrollbar-width: thin;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click) > div[data-testid="stColumn"] {
+        flex: 0 0 auto !important;
+        width: 84px !important;
+        min-width: 84px !important;
+        max-width: 84px !important;
+    }
+    /* V176 — ligne « personnage joué » des cartes filmographie acteur */
+    .sim-card .c { font-size: .6rem; font-style: italic; color: var(--am-text-muted);
+                   line-height: 1.15; margin-top: 1px; min-height: 1.25em;
+                   overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 1;
+                   -webkit-box-orient: vertical; overflow: hidden; }
     /* Tuiles empaquetées (st.container) : resserrées comme avant le
        calque — l'écart de bloc de 16 px entre deux paires est compensé,
        comme la règle V137 le faisait pour les cartes nues. */
@@ -4261,16 +4277,20 @@ def _accent_rgb_parts(color: str) -> tuple:
     return (255, 225, 0)
 
 
-def _open_fiche_in_dialog(kind: str, tmdb_id: int) -> None:
-    """V175 — FICHE DEPUIS UNE FICHE, SANS NOUVEL ONGLET : un poster
-    Similaires / Saga / MÊME ESPRIT cliqué remplace le contenu du dialog
-    OUVERT. Pourquoi ça marche : le corps du dialog (_cinema_detail_dialog)
-    relit st.session_state["_cinema_detail_row"] à CHAQUE rerun de
-    fragment — il suffit de poser la nouvelle row puis de relancer le
-    fragment. Fini le lien ?msl_fiche : Streamlit force target=_blank sur
+def _open_fiche_in_dialog(kind: str, tmdb_id: int, return_actor: dict | None = None) -> None:
+    """V175/V176 — FICHE DEPUIS UNE FICHE, SANS NOUVEL ONGLET : un poster
+    Similaires / Saga / MÊME ESPRIT / filmographie cliqué ouvre la fiche du
+    contenu. Fini le lien ?msl_fiche : Streamlit force target=_blank sur
     les ancres du markdown (prouvé au banc V175) → nouvel onglet qu'on ne
-    pouvait pas fermer dans l'appli installée (retour utilisateur : « je
-    perds tout juste en cliquant sur un poster »)."""
+    pouvait pas fermer dans l'appli installée.
+    V176 — la nouvelle fiche démarre EN HAUT de la fenêtre (retour
+    utilisateur : « celle-ci garde la position de la précédente, je dois
+    scroller vers le haut ») : un rerun de FRAGMENT conserve la position
+    de défilement du dialog → on passe par une ré-ouverture COMPLÈTE. Le
+    mode heartbeat V174 protège la fiche neuve des reruns automatiques.
+    `return_actor` (depuis la filmographie d'une fiche acteur) : refermer
+    la fiche film ROUVIRA la fiche acteur — un dialog ne peut pas s'en
+    empiler sur un autre, c'est le retour le plus proche."""
     try:
         tmdb_id = int(tmdb_id or 0)
     except (TypeError, ValueError):
@@ -4319,7 +4339,17 @@ def _open_fiche_in_dialog(kind: str, tmdb_id: int) -> None:
         st.session_state.pop(f"ia_coulisses_{_ik}_{_tid}", None)
         st.session_state[f"ia_nonce_{_ik}_{_tid}"] = time.time()
     st.session_state["_cinema_detail_row"] = media_row
-    st.rerun(scope="fragment")
+    # V176 — ré-ouverture par le main : dialog NEUF = scroll EN HAUT,
+    # protégé par le mode heartbeat (V174) contre les reruns automatiques.
+    st.session_state["_msl_fiche_link_mode"] = True
+    st.session_state["_msl_fiche_heartbeat"] = time.time()
+    st.session_state["_msl_fiche_nav_pending"] = True
+    if return_actor:
+        st.session_state["_msl_return_to_actor"] = {
+            "person_id": int(return_actor.get("person_id") or 0),
+            "person_kind": str(return_actor.get("person_kind") or "acteur"),
+        }
+    st.rerun()
 
 
 def _auto_restore_session() -> None:
@@ -5363,25 +5393,25 @@ def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: st
     )
 
 
-def _render_sim_grid(entries: list, watched: set, listed: set, list_names: dict,
+def _render_sim_strip(entries: list, watched: set, listed: set, list_names: dict,
                      kind: str, title_html: str, key_prefix: str = "sim") -> None:
-    """V175 — grille SIMILAIRES / SAGA : les mini-cartes passent du bandeau
-    à faire défiler à une grille lisible d'un coup (4 par ligne, visible
-    PC comme GSM). Chaque carte est couverte par un bouton TRANSPARENT :
-    le clic ouvre la fiche DANS le dialog ouvert (le corps du dialog
-    relit st.session_state["_cinema_detail_row"] à chaque rerun de
-    fragment) — aucun rechargement, aucun nouvel onglet."""
+    """V176 — SIMILAIRES / SAGA : RETOUR AU BANDEAU DÉFILANT (retour
+    utilisateur : « j'adorais la disposition de la fiche, la possibilité de
+    scroller vers la droite ») — tous les posters côte à côte, même écart
+    qu'avant (colonnes de 84 px, gap 8 px). Chaque carte reste un BOUTON
+    TRANSPARENT (V175) : le clic ouvre la fiche dans la fenêtre, sans
+    rechargement ni nouvel onglet. La rangée de colonnes défile en CSS
+    (overflow-x), les colonnes gardent une largeur fixe : les cartes ne
+    s'écrasent jamais, PC comme GSM."""
     if not entries:
         return
     st.markdown(title_html, unsafe_allow_html=True)
-    per_row = 4
-    for start in range(0, len(entries), per_row):
-        chunk = entries[start:start + per_row]
-        cols = st.columns(per_row, gap="small")
-        for col, entry in zip(cols, chunk):
-            if col is None:
-                continue
-            with col:
+    entries = entries[:12]
+    cols = st.columns(len(entries), gap="small")
+    for col, entry in zip(cols, entries):
+        if col is None:
+            continue
+        with col:
                 st.markdown(
                     _sim_card(entry, watched, listed, list_names, kind=kind, clickable=True),
                     unsafe_allow_html=True,
@@ -6241,8 +6271,8 @@ def _render_cinema_detail_body(row: dict) -> None:
     )
     # V175 — grilles Similaires / Saga cliquables (fiche dans le dialog).
     try:
-        _render_sim_grid(saga_entries, _grid_watched, _grid_listed, _grid_names, "movie", saga_title_html, key_prefix="saga")
-        _render_sim_grid(sim_entries, _grid_watched, _grid_listed, _grid_names, reco_kind, sim_title_html, key_prefix="sim")
+        _render_sim_strip(saga_entries, _grid_watched, _grid_listed, _grid_names, "movie", saga_title_html, key_prefix="saga")
+        _render_sim_strip(sim_entries, _grid_watched, _grid_listed, _grid_names, reco_kind, sim_title_html, key_prefix="sim")
     except Exception:
         pass
     if trailer_html or providers_html or links_html:
@@ -6657,7 +6687,18 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
 
 
 
-@st.dialog(" ", width="large")
+def _msl_on_cinema_dismiss(*_args) -> None:
+    """V176 — appelée par Streamlit quand TU fermes la fiche cinéma (croix,
+    Échap ou clic sur le voile). Pose un drapeau et déclenche une rerun :
+    le main éteint alors le mode heartbeat (la fiche ne se rouvre plus) et,
+    si la fiche avait été ouverte depuis une filmographie d'acteur, ROUVRE
+    la fiche acteur « du dessous ». Sans ce callback, la fermeture d'un
+    dialog ne déclenche AUCUNE rerun (prouvé au banc) : le retour ne
+    pouvait pas se déclencher tout seul."""
+    st.session_state["_msl_fiche_dismissed"] = True
+
+
+@st.dialog(" ", width="large", on_dismiss=_msl_on_cinema_dismiss)
 def _cinema_detail_dialog() -> None:
     """Fenêtre modale : fiche cinéma du contenu choisi (V124)."""
     _render_cinema_detail_body(st.session_state.get("_cinema_detail_row") or {})
@@ -6787,6 +6828,10 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         return None
 
     def _card(credit: dict, badge: str | None) -> str:
+        """V176 — carte filmographie au format « Similaires » (retour
+        utilisateur : poster, nom du contenu, année, pastille — ET le nom
+        du personnage joué). La carte est un BOUTON TRANSPARENT : le clic
+        ouvre la fiche du contenu ; refermée, on RETROUVE la fiche acteur."""
         name = escape(credit["title"])
         if credit["poster"]:
             img = (
@@ -6794,7 +6839,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                 f' alt="" loading="lazy">'
             )
         else:
-            img = '<span class="noimg">🎬</span>'
+            img = '<span class="sim-noimg">🎬</span>'
         if badge == "vu":
             badge_html = '<span class="sim-badge vu">✅ Vu</span>'
         elif badge == "liste":
@@ -6804,15 +6849,13 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                 else '<span class="sim-badge liste">📌 Watchlist</span>'
             )
         else:
-            badge_html = ""
-        role = f" · {escape(credit['role'])}" if credit["role"] else ""
-        href = f"https://www.themoviedb.org/{'tv' if credit['kind'] == 'Série' else 'movie'}/{credit['id']}"
+            badge_html = '<span class="sim-badge hors">🌐 À découvrir</span>'
+        role = escape(str(credit.get("role") or "").strip())
         return (
-            f'<a class="actor-credit sim-link" href="{escape(href, quote=True)}"'
-            f' target="_blank" rel="noopener noreferrer" title="Voir « {name} » sur TMDB">{img}'
-            f'<div><div class="t">{name}</div>'
-            f'<div class="d">{credit["kind"]}{(" · " + credit["year"]) if credit["year"] else ""}{role}</div>'
-            f'{badge_html}</div></a>'
+            f'<div class="sim-card msl-click">{img}'
+            f'<div class="t">{name}</div>'
+            f'<div class="c">{role}</div>'
+            f'<div class="d">{credit["year"] or ""}</div>{badge_html}</div>'
         )
 
     # Union des contenus des DEUX facettes (pour le compteur d'en-tête et
@@ -6875,17 +6918,40 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         shown = bio if len(bio) <= 480 else bio[:bio.find(" ", 440) if bio.find(" ", 440) > 0 else 440] + "…"
         st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
 
-    def _section(title: str, rows: list, empty_skip: bool = True) -> None:
+    def _section(title: str, rows: list, empty_skip: bool = True, key_prefix: str = "s") -> None:
+        """V176 — BANDEAU DÉFILANT de posters cliquables (comme
+        Similaires/Saga des fiches film) : tout est visible d'un coup et
+        on fait défiler vers la droite. Chaque carte ouvre la fiche du
+        contenu ; refermée, la fiche acteur revient (return_actor)."""
         if not rows and empty_skip:
             return
-        cards = "".join(_card(c, _bucket(c)) for c in rows[:24])
         extra = f'<span class="actor-count">{len(rows)}</span>'
         more = f'<p class="actor-meta" style="margin:.2rem 1rem;">+ {len(rows) - 24} autre(s)…</p>' if len(rows) > 24 else ""
         st.markdown(
-            f'<p class="actor-section-title">{title} {extra}</p>'
-            f'<div class="actor-grid">{cards}</div>{more}',
+            f'<p class="actor-section-title">{title} {extra}</p>{more}',
             unsafe_allow_html=True,
         )
+        shown = rows[:24]
+        cols = st.columns(len(shown), gap="small")
+        for col, c in zip(cols, shown):
+            if col is None:
+                continue
+            with col:
+                st.markdown(_card(c, _bucket(c)), unsafe_allow_html=True)
+                try:
+                    _cid = int(c["id"] or 0)
+                except (TypeError, ValueError):
+                    _cid = 0
+                if _cid and st.button(
+                    "🎬 Ouvrir la fiche",
+                    key=f"actnav_{key_prefix}_{c['kind']}_{_cid}",
+                    use_container_width=True,
+                    type="secondary",
+                ):
+                    _open_fiche_in_dialog(
+                        "tv" if c["kind"] == "Série" else "movie", _cid,
+                        return_actor={"person_id": person_id, "person_kind": person_kind},
+                    )
 
     any_seen_any_listed = False
     # Le séparateur de facette n'est utile que si les DEUX facettes existent
@@ -6909,16 +6975,16 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         listed_series = [c for c in series.values() if _bucket(c) == "liste"]
         if vus_films or vus_series or listed_films or listed_series:
             any_seen_any_listed = True
-        _section(f"🎬 Films vus avec {role_word}", sorted(vus_films, key=lambda c: c["date"], reverse=True))
-        _section(f"📺 Séries vues avec {role_word}", sorted(vus_series, key=lambda c: c["date"], reverse=True))
-        _section("📌 Films dans tes listes", sorted(listed_films, key=lambda c: c["date"], reverse=True))
-        _section("📌 Séries dans tes listes", sorted(listed_series, key=lambda c: c["date"], reverse=True))
+        _section(f"🎬 Films vus avec {role_word}", sorted(vus_films, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-vf")
+        _section(f"📺 Séries vues avec {role_word}", sorted(vus_series, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-vs")
+        _section("📌 Films dans tes listes", sorted(listed_films, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-lf")
+        _section("📌 Séries dans tes listes", sorted(listed_series, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-ls")
 
     decouvrir = sorted(
         (c for c in all_credits.values() if _bucket(c) is None),
         key=lambda c: c["date"], reverse=True,
     )[:12]
-    _section("🌐 À découvrir", decouvrir)
+    _section("🌐 À découvrir", decouvrir, key_prefix="dec")
     if not any_seen_any_listed:
         role_word = "ce réalisateur" if is_director else "cet acteur"
         st.markdown(
@@ -10740,7 +10806,7 @@ def _alike_lookup(kind_label: str, title: str, year: str) -> dict:
         return {}
     if not found.get("id"):
         return {}
-    return {
+    info = {
         "id": int(found["id"]),
         "kind": "tv" if str(found.get("kind") or "").lower() in ("série", "serie", "tv") else "movie",
         "note": found.get("note"),
@@ -10748,6 +10814,54 @@ def _alike_lookup(kind_label: str, title: str, year: str) -> dict:
         "title": found.get("title") or title,
         "year": found.get("year") or year,
     }
+    # V176 — ENRICHISSEMENT (retour utilisateur : « ajoute les genres,
+    # studios, acteur, réal, saga… exactement comme mes tuiles Que
+    # regarder ») : un appel TMDB par œuvre, DÉJÀ en cache 30 jours
+    # (_fetch_tmdb_item) — zéro appel IA, et tout ce lookup est lui-même
+    # caché 30 j : rien à refaire aux vues suivantes.
+    try:
+        payload = _fetch_tmdb_item(info["kind"], info["id"], api_key) or {}
+    except Exception:
+        payload = {}
+    if payload:
+        try:
+            info["genres"] = [str(g.get("name") or "") for g in (payload.get("genres") or []) if g.get("name")][:3]
+        except Exception:
+            info["genres"] = []
+        try:
+            _cos = (payload.get("production_companies") or payload.get("networks") or [])[:2]
+            info["studios"] = [str(c.get("name") or "") for c in _cos if c.get("name")]
+        except Exception:
+            info["studios"] = []
+        _credits = payload.get("credits") if isinstance(payload.get("credits"), dict) else {}
+        try:
+            info["people"] = [str(p.get("name") or "") for p in (_credits.get("cast") or [])[:3] if p.get("name")]
+        except Exception:
+            info["people"] = []
+        try:
+            _crew = _credits.get("crew") or []
+            info["directors"] = [str(p.get("name") or "") for p in _crew if p.get("job") == "Director" and p.get("name")][:2]
+            if not info.get("directors"):
+                info["directors"] = [str(p.get("name") or "") for p in (payload.get("created_by") or []) if p.get("name")][:2]
+        except Exception:
+            info["directors"] = []
+        try:
+            _rt = int(payload.get("runtime") or 0)
+            if not _rt:
+                _eps_rt = payload.get("episode_run_time") or []
+                _rt = int(_eps_rt[0] or 0) if _eps_rt else 0
+            info["runtime"] = _rt or None
+        except (TypeError, ValueError, IndexError):
+            info["runtime"] = None
+        try:
+            info["seasons"] = int(payload.get("number_of_seasons") or 0)
+            info["episodes"] = int(payload.get("number_of_episodes") or 0)
+        except (TypeError, ValueError):
+            info["seasons"] = 0
+            info["episodes"] = 0
+        _coll = payload.get("belongs_to_collection") if isinstance(payload.get("belongs_to_collection"), dict) else {}
+        info["collection"] = str(_coll.get("name") or "") or None
+    return info
 
 
 def _render_ia_spirit(state_key: str, subject: str, hint: str = "",
@@ -10825,11 +10939,24 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
         f'<span class="mc-year" data-tooltip="Année de sortie">{year}</span>'
         if year else ""
     )
+    # V176 — pilule de tête : durée du film ou pastille série (saisons et
+    # épisodes), exactement comme les tuiles « Que regarder ? ».
+    lead_pill = ""
+    if lk_kind == "tv" and (lk.get("seasons") or lk.get("episodes")):
+        _stip = f"{lk.get('seasons') or '?'} saison(s) · {lk.get('episodes') or '?'} épisode(s)"
+        lead_pill = (
+            f'<span class="mc-year" data-tooltip="{escape(_stip, quote=True)}">'
+            f"📺 {lk.get('seasons') or '?'}S · {lk.get('episodes') or '?'}ép</span>"
+        )
+    elif lk.get("runtime"):
+        lead_pill = (
+            f'<span class="mc-year" data-tooltip="Durée">{_format_minutes(int(lk["runtime"]))}</span>'
+        )
     head = (
         f'<div class="mc-head">{_type_chip("Série" if lk_kind == "tv" else "Film")}'
         f"<strong>{title}</strong>"
         f'<span style="display:inline-flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
-        f"{note_pill}{year_pill}</span></div>"
+        f"{lead_pill}{note_pill}{year_pill}</span></div>"
     )
     # Pastille d'état : MÊMES classes/priorités que les tuiles « Que
     # regarder ? » (en cours > abandonnée > vu > liste > watchlist > hors).
@@ -10850,7 +10977,21 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
             state_chip = '<span class="mc-chip" data-tooltip="Se trouve dans ta Watchlist">📌 Watchlist</span>'
         else:
             state_chip = '<span class="mc-chip" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>'
-    small = f"<small>{state_chip}</small>" if state_chip else ""
+    # V176 — chips COMPLÈTES comme les tuiles « Que regarder ? » :
+    # genres, studios, acteurs, réalisateur, saga (info-bulle = liste).
+    meta_chips = []
+    if lk.get("genres"):
+        meta_chips.append(_meta_chip("🎭", lk["genres"], "Genres", "Genres"))
+    if lk.get("studios"):
+        meta_chips.append(_meta_chip("🏢", lk["studios"], "Studio", "Studios"))
+    if lk.get("people"):
+        meta_chips.append(_meta_chip("👥", lk["people"], "Acteurs", "Acteurs"))
+    if lk.get("directors"):
+        meta_chips.append(_meta_chip("🎬", lk["directors"], "Réal.", "Réalisateur"))
+    if lk.get("collection"):
+        meta_chips.append(_raw_chip(f"🔗 {lk['collection']}", f"La saga : {lk['collection']}"))
+    _small_parts = [p for p in [state_chip] + meta_chips if p]
+    small = f"<small>{' · '.join(_small_parts)}</small>" if _small_parts else ""
     if lk_id:
         links = (
             f'<a class="link-pill" href="https://www.themoviedb.org/{lk_kind}/{lk_id}" '
@@ -10929,73 +11070,90 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
         _lk_prog, _lk_drop = set(), set()
         _lk_watched, _lk_listed, _lk_names = set(), set(), {}
     ar, ag, ab = _accent_rgb_parts(accent)
-    # Barre de tête du bloc (même habillage que les autres blocs IA).
+    # V176 — CADRE UNI (retour utilisateur : « entre la tête, les 3 tuiles
+    # puis le bouton, j'ai l'impression de sortir de MÊME ESPRIT, le cadre
+    # est comme cassé ») : tête + tuiles + bouton vivent dans UN SEUL
+    # st.container, et c'est le BLOC de ce container qui porte l'habillage
+    # « bloc IA » (bordure accent, fond verre) — plus rien ne sort du cadre.
     st.markdown(_ia_coulisses_css(accent, accent_soft, accent_text), unsafe_allow_html=True)
-    spark = _ia_spark_svg(16, accent, "#FFFFFF")
-    st.markdown(
-        '<div class="ia-block ia-head-block">'
-        f'<div class="ia-head">{spark}<div>'
-        f'<div class="ia-title">MÊME ESPRIT</div>'
-        f'<div class="ia-sub">si cet esprit te plaît… · généré par IA · sans spoiler</div>'
-        "</div></div></div>",
-        unsafe_allow_html=True,
-    )
-    # Tuiles format « Que regarder ? » recolorées à l'accent de la fiche.
-    # (L'accent du dialog est déjà posé par accent_css pour la bordure
-    # gauche ; ici : fonds, chips, pastilles, barre, colonne note.)
-    css_alike = (
-        "<style>"
-        f".media-list-card.alike-qr{{background:rgba({ar},{ag},{ab},.13)!important;"
-        f"border:1px solid rgba({ar},{ag},{ab},.40)!important;}}"
-        f".media-list-card.alike-qr .mc-chip{{background:rgba({ar},{ag},{ab},.17);"
-        f"border:1px solid rgba({ar},{ag},{ab},.42);}}"
-        f".media-list-card.alike-qr .mc-year,.media-list-card.alike-qr .mc-note{{"
-        f"color:{accent_text};border:1px solid rgba({ar},{ag},{ab},.55);"
-        f"background:linear-gradient(135deg,rgba({ar},{ag},{ab},.18),rgba(0,0,0,.50));}}"
-        f".media-list-card.alike-qr .media-list-pct{{color:{accent_text};"
-        f"border-left:1px solid rgba({ar},{ag},{ab},.32);}}"
-        f".media-list-card.alike-qr .link-pill{{border:1px solid rgba({ar},{ag},{ab},.45);}}"
-        f".media-list-card.alike-qr .progress-bar-container::before{{"
-        f"background:rgb({ar},{ag},{ab});}}"
-        ".media-list-card.alike-qr:hover,"
-        'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .msl-click):has(+ div[data-testid="stElementContainer"] button[kind="secondary"]:hover) .media-list-card.alike-qr{'
-        f"background:rgba({ar},{ag},{ab},.22)!important;"
-        f"border-color:rgba({ar},{ag},{ab},.65)!important;"
-        f"box-shadow:0 8px 22px rgba({ar},{ag},{ab},.20);}}"
-        ".ia-head-block{padding-bottom:.5rem;}"
-        ".alike-why-body{font-size:.78rem;color:var(--am-text-muted);line-height:1.5;padding:.2rem 0 .1rem;}"
-        # Tuiles resserrées entre elles + pied « une autre » soudé sous la
-        # dernière tuile (compensation de l'écart de bloc de 16 px, même
-        # principe que V174 — ciblé : uniquement après une tuile alike).
-        'div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
-        ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr){'
-        "margin-top:-0.95rem !important;}"
-        'div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
-        ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor){'
-        "margin-top:-0.95rem !important;}"
-        "</style>"
-    )
-    st.markdown(css_alike, unsafe_allow_html=True)
-    for idx, pick in enumerate(picks):
-        tile_html, (lk_kind, lk_id) = _alike_tile_html(
-            pick, accent, accent_text, _lk_prog, _lk_drop, _lk_watched, _lk_listed, _lk_names
+    with st.container():
+        spark = _ia_spark_svg(16, accent, "#FFFFFF")
+        st.markdown(
+            '<div class="ia-block ia-head-block">'
+            f'<div class="ia-head">{spark}<div>'
+            f'<div class="ia-title">MÊME ESPRIT</div>'
+            f'<div class="ia-sub">si cet esprit te plaît… · généré par IA · sans spoiler</div>'
+            "</div></div></div>",
+            unsafe_allow_html=True,
         )
-        with st.container():
-            st.markdown(tile_html, unsafe_allow_html=True)
-            if lk_id and st.button(
-                "🎬 Ouvrir la fiche",
-                key=f"alikenav_{state_key}_{idx}_{lk_kind}_{lk_id}",
-                use_container_width=True,
-                type="secondary",
-            ):
-                _open_fiche_in_dialog(lk_kind, lk_id)
-    # Pied « une autre », soudé à la dernière tuile (comme le pied des
-    # tuiles « Que regarder ? » avant la V175).
-    st.markdown(f'<div class="ia-again-anchor" style="--ia-accent:{accent};"></div>',
-                unsafe_allow_html=True)
-    if st.button("🔄 D'autres suggestions", key=f"{session_key}_again", use_container_width=True):
-        st.session_state[f"{session_key}_again_clicked"] = True
-        st.session_state[f"ia_var_{channel}_{state_key}"] = variant + 1
+        # Tuiles format « Que regarder ? » recolorées à l'accent de la fiche.
+        # (L'accent du dialog est déjà posé par accent_css pour la bordure
+        # gauche ; ici : fonds, chips, pastilles, barre, colonne note.)
+        css_alike = (
+            "<style>"
+            f".media-list-card.alike-qr{{background:rgba({ar},{ag},{ab},.13)!important;"
+            f"border:1px solid rgba({ar},{ag},{ab},.40)!important;}}"
+            f".media-list-card.alike-qr .mc-chip{{background:rgba({ar},{ag},{ab},.17);"
+            f"border:1px solid rgba({ar},{ag},{ab},.42);}}"
+            f".media-list-card.alike-qr .mc-year,.media-list-card.alike-qr .mc-note{{"
+            f"color:{accent_text};border:1px solid rgba({ar},{ag},{ab},.55);"
+            f"background:linear-gradient(135deg,rgba({ar},{ag},{ab},.18),rgba(0,0,0,.50));}}"
+            f".media-list-card.alike-qr .media-list-pct{{color:{accent_text};"
+            f"border-left:1px solid rgba({ar},{ag},{ab},.32);}}"
+            f".media-list-card.alike-qr .link-pill{{border:1px solid rgba({ar},{ag},{ab},.45);}}"
+            f".media-list-card.alike-qr .progress-bar-container::before{{"
+            f"background:rgb({ar},{ag},{ab});}}"
+            ".media-list-card.alike-qr:hover,"
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .msl-click):has(+ div[data-testid="stElementContainer"] button[kind="secondary"]:hover) .media-list-card.alike-qr{'
+            f"background:rgba({ar},{ag},{ab},.22)!important;"
+            f"border-color:rgba({ar},{ag},{ab},.65)!important;"
+            f"box-shadow:0 8px 22px rgba({ar},{ag},{ab},.20);}}"
+            # V176 — dans le CADRE UNI, la tête n'a plus de bordure propre.
+            ".ia-head-block{border:none !important;background:transparent !important;"
+            "backdrop-filter:none !important;-webkit-backdrop-filter:none !important;"
+            "padding:.25rem .35rem .1rem !important;margin:0 !important;}"
+            ".alike-why-body{font-size:.78rem;color:var(--am-text-muted);line-height:1.5;padding:.2rem 0 .1rem;}"
+            # V176 — le CADRE UNI : le bloc du container porte bordure et
+            # fond « bloc IA » ; tête, tuiles et bouton sont dedans.
+            'div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stLayoutWrapper"] .alike-qr){'
+            f"border:1px solid {accent_soft};border-left:4px solid {accent};border-radius:13px;"
+            "background:rgba(3,22,19,.52);padding:.35rem .45rem .12rem;}"
+            # glue : la 1re tuile remonte sous la tête (compense le gap
+            # 16 px — le voisin suivant de la tête est le WRAPPER de tuile)
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-head-block)'
+            ' + div[data-testid="stLayoutWrapper"]:has(.alike-qr){'
+            "margin-top:-0.95rem !important;}"
+            # Tuiles resserrées entre elles + pied « une autre » soudé sous la
+            # dernière tuile (compensation de l'écart de bloc de 16 px, même
+            # principe que V174 — ciblé : uniquement après une tuile alike).
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
+            ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr){'
+            "margin-top:-0.95rem !important;}"
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
+            ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor){'
+            "margin-top:-0.95rem !important;}"
+            "</style>"
+        )
+        st.markdown(css_alike, unsafe_allow_html=True)
+        for idx, pick in enumerate(picks):
+            tile_html, (lk_kind, lk_id) = _alike_tile_html(
+                pick, accent, accent_text, _lk_prog, _lk_drop, _lk_watched, _lk_listed, _lk_names
+            )
+            with st.container():
+                st.markdown(tile_html, unsafe_allow_html=True)
+                if lk_id and st.button(
+                    "🎬 Ouvrir la fiche",
+                    key=f"alikenav_{state_key}_{idx}_{lk_kind}_{lk_id}",
+                    use_container_width=True,
+                    type="secondary",
+                ):
+                    _open_fiche_in_dialog(lk_kind, lk_id)
+        # Pied « une autre », soudé à la dernière tuile — il ferme le cadre.
+        st.markdown(f'<div class="ia-again-anchor" style="--ia-accent:{accent};"></div>',
+                    unsafe_allow_html=True)
+        if st.button("🔄 D'autres suggestions", key=f"{session_key}_again", use_container_width=True):
+            st.session_state[f"{session_key}_again_clicked"] = True
+            st.session_state[f"ia_var_{channel}_{state_key}"] = variant + 1
 
 
 def _render_ia_career(state_key: str, subject: str, hint: str = "",
@@ -11726,27 +11884,31 @@ def render_progress_page() -> None:
                 f'{note_html}'
                 f'</div>'
             )
-            st.markdown(
-                f'<div class="media-list-card upnext-card">{image_html}'
-                f'<div class="media-list-content" style="width:100%;">'
-                f'{head}'
-                f'{info_html}'
-                f'{bar_html}'
-                f'{links_html}'
-                f'</div>{pct_col}</div>',
-                unsafe_allow_html=True,
-            )
-            # V141 — bouton « VOIR LA FICHE » comme sur « Que regarder ? »
-            _up_tmdb = ""
-            try:
-                _up_tmdb = str(int((show_ids.get("tmdb") or 0)) or "")
-            except (TypeError, ValueError):
-                pass
-            if st.button("🎬 Voir la fiche", key=f"cin_up_{_up_tmdb or raw_show_title[:40]}", use_container_width=True, type="secondary"):
-                _up_fiche = _history_fiche_row({"ids": show_ids, "title": raw_show_title, "type": "Série", "progress_pct": percent})
-                if not _up_fiche:
-                    _up_fiche = {"item": show_ref or {}, "type": "Série", "key": f"up_{_up_tmdb}", "progress_pct": percent}
-                _open_cinema_detail(_up_fiche)
+            # V176 — TUILE ENTIÈREMENT CLIQUABLE (calque transparent), comme
+            # « Que regarder ? » (retour utilisateur : « reproduis la même
+            # chose partout où j'ai des tuiles »).
+            with st.container():
+                st.markdown(
+                    f'<div class="media-list-card upnext-card msl-click">{image_html}'
+                    f'<div class="media-list-content" style="width:100%;">'
+                    f'{head}'
+                    f'{info_html}'
+                    f'{bar_html}'
+                    f'{links_html}'
+                    f'</div>{pct_col}</div>',
+                    unsafe_allow_html=True,
+                )
+                # V141 — bouton « VOIR LA FICHE » comme sur « Que regarder ? »
+                _up_tmdb = ""
+                try:
+                    _up_tmdb = str(int((show_ids.get("tmdb") or 0)) or "")
+                except (TypeError, ValueError):
+                    pass
+                if st.button("🎬 Voir la fiche", key=f"cin_up_{_up_tmdb or raw_show_title[:40]}", use_container_width=True, type="secondary"):
+                    _up_fiche = _history_fiche_row({"ids": show_ids, "title": raw_show_title, "type": "Série", "progress_pct": percent})
+                    if not _up_fiche:
+                        _up_fiche = {"item": show_ref or {}, "type": "Série", "key": f"up_{_up_tmdb}", "progress_pct": percent}
+                    _open_cinema_detail(_up_fiche)
 
         if len(filtered_rows) > display_limit:
             st.caption(
@@ -11768,20 +11930,22 @@ def render_progress_page() -> None:
             # utilisateur : « on affiche juste le nom du contenu, donc autant
             # réduire la hauteur de la tuile »). Classe dédiée → hauteur
             # minimale et padding réduits (CSS .dropped-compact).
-            st.markdown(
-                f'<div class="media-list-card dropped-compact"><div class="media-list-content">'
-                f'<strong>{escape(_media_title(item))}</strong></div></div>',
-                unsafe_allow_html=True,
-            )
-            # V148 — bouton « Voir la fiche » aussi ici (liseré VERT : la
-            # tuile abandonnée n'a volontairement PAS de liseré jaune).
-            _dr_tmdb = ""
-            try:
-                _dr_tmdb = str(int(_media_tmdb_id(item) or 0) or "")
-            except (TypeError, ValueError):
-                pass
-            if st.button("🎬 Voir la fiche", key=f"cin_dr_{_dr_tmdb or _media_title(item)[:40]}", use_container_width=True, type="secondary"):
-                _open_cinema_detail(_dropped_fiche_row(item))
+            # V176 — TUILE ENTIÈREMENT CLIQUABLE (calque transparent).
+            with st.container():
+                st.markdown(
+                    f'<div class="media-list-card dropped-compact msl-click"><div class="media-list-content">'
+                    f'<strong>{escape(_media_title(item))}</strong></div></div>',
+                    unsafe_allow_html=True,
+                )
+                # V148 — bouton « Voir la fiche » aussi ici (liseré VERT : la
+                # tuile abandonnée n'a volontairement PAS de liseré jaune).
+                _dr_tmdb = ""
+                try:
+                    _dr_tmdb = str(int(_media_tmdb_id(item) or 0) or "")
+                except (TypeError, ValueError):
+                    pass
+                if st.button("🎬 Voir la fiche", key=f"cin_dr_{_dr_tmdb or _media_title(item)[:40]}", use_container_width=True, type="secondary"):
+                    _open_cinema_detail(_dropped_fiche_row(item))
 
 
 NOW_PLAYING_CACHE_KEY = "_mdblist_now_playing_live"
@@ -12099,28 +12263,30 @@ def render_ghost_page() -> None:
             f'{_public_note_html(row)}'
             f'</div>'
         )
-        st.markdown(
-            f'<div class="media-list-card upnext-card">{image_html}'
-            f'<div class="media-list-content" style="width:100%;">'
-            f'{head}'
-            f'{info_html}'
-            f'<div class="progress-bar-container" style="--pct:{max(0,min(progress,100))}%;">'
-            f'<div class="progress-rest"></div></div>'
-            f'{links_html}'
-            f'</div>{pct_col}</div>',
-            unsafe_allow_html=True,
-        )
-        # V141 — bouton « VOIR LA FICHE » comme sur « Que regarder ? »
-        _gh_tmdb = ""
-        try:
-            _gh_tmdb = str(int((row_ids.get("tmdb") or 0)) or "")
-        except (TypeError, ValueError):
-            pass
-        if st.button("🎬 Voir la fiche", key=f"cin_gh_{_gh_tmdb or str(row.get('title') or '')[:40]}", use_container_width=True, type="secondary"):
-            _gh_fiche = _history_fiche_row({**row, "progress_pct": progress})
-            if not _gh_fiche:
-                _gh_fiche = {"item": {"title": row.get("title"), "ids": row_ids}, "type": row.get("type") or "Série", "key": f"gh_{_gh_tmdb}", "progress_pct": progress}
-            _open_cinema_detail(_gh_fiche)
+        # V176 — TUILE ENTIÈREMENT CLIQUABLE (calque transparent).
+        with st.container():
+            st.markdown(
+                f'<div class="media-list-card upnext-card msl-click">{image_html}'
+                f'<div class="media-list-content" style="width:100%;">'
+                f'{head}'
+                f'{info_html}'
+                f'<div class="progress-bar-container" style="--pct:{max(0,min(progress,100))}%;">'
+                f'<div class="progress-rest"></div></div>'
+                f'{links_html}'
+                f'</div>{pct_col}</div>',
+                unsafe_allow_html=True,
+            )
+            # V141 — bouton « VOIR LA FICHE » comme sur « Que regarder ? »
+            _gh_tmdb = ""
+            try:
+                _gh_tmdb = str(int((row_ids.get("tmdb") or 0)) or "")
+            except (TypeError, ValueError):
+                pass
+            if st.button("🎬 Voir la fiche", key=f"cin_gh_{_gh_tmdb or str(row.get('title') or '')[:40]}", use_container_width=True, type="secondary"):
+                _gh_fiche = _history_fiche_row({**row, "progress_pct": progress})
+                if not _gh_fiche:
+                    _gh_fiche = {"item": {"title": row.get("title"), "ids": row_ids}, "type": row.get("type") or "Série", "key": f"gh_{_gh_tmdb}", "progress_pct": progress}
+                _open_cinema_detail(_gh_fiche)
 
     if len(visible) > display_limit:
         st.caption(f"{len(visible) - display_limit} progression(s) supplémentaire(s) masquée(s).")
@@ -13194,22 +13360,24 @@ def _render_calendar_body(rows: list[dict], checked_caption: str,
                     f'<span class="sub">horaire</span></div>'
                     if time_text else ""
                 )
-                st.markdown(
-                    f'<div class="media-list-card poster-card">{image_html}'
-                    f'<div class="media-list-content" style="width:100%;">'
-                    f'{head}'
-                    f'{info_html}{links_html}'
-                    f'</div>{time_pct}</div>',
-                    unsafe_allow_html=True,
-                )
-                # V141 — bouton « VOIR LA FICHE » comme sur « Que regarder ? »
-                _cal_tmdb = ""
-                try:
-                    _cal_tmdb = str(int((row_ids.get("tmdb") or 0)) or "")
-                except (TypeError, ValueError):
-                    pass
-                if st.button("🎬 Voir la fiche", key=f"cin_cal_{_cal_tmdb or str(row.get('title') or '')[:40]}", use_container_width=True, type="secondary"):
-                    _open_cinema_detail(_history_fiche_row(row) or {"item": {"title": row.get("title"), "ids": row_ids}, "type": row.get("type") or "Série", "key": f"cal_{_cal_tmdb}"})
+                # V176 — TUILE ENTIÈREMENT CLIQUABLE (calque transparent).
+                with st.container():
+                    st.markdown(
+                        f'<div class="media-list-card poster-card msl-click">{image_html}'
+                        f'<div class="media-list-content" style="width:100%;">'
+                        f'{head}'
+                        f'{info_html}{links_html}'
+                        f'</div>{time_pct}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    # V141 — bouton « VOIR LA FICHE » comme sur « Que regarder ? »
+                    _cal_tmdb = ""
+                    try:
+                        _cal_tmdb = str(int((row_ids.get("tmdb") or 0)))
+                    except (TypeError, ValueError):
+                        pass
+                    if st.button("🎬 Voir la fiche", key=f"cin_cal_{_cal_tmdb or str(row.get('title') or '')[:40]}", use_container_width=True, type="secondary"):
+                        _open_cinema_detail(_history_fiche_row(row) or {"item": {"title": row.get("title"), "ids": row_ids}, "type": row.get("type") or "Série", "key": f"cal_{_cal_tmdb}"})
         remaining -= len(shown)
 
     rendered = min(len(visible), display_limit)
@@ -16296,16 +16464,49 @@ elif st.session_state.get("_msl_fiche_link_mode"):
     # V174 — la fiche-lien reste ouverte à travers les reruns automatiques
     # (retour utilisateur : elle se fermait dès que le dashboard
     # s'actualisait). On la ré-ouvre tant que son heartbeat est frais
-    # (< 3 s) ; fermée par l'utilisateur, le heartbeat expire et le mode
+    # (< 4 s) ; fermée par l'utilisateur, le heartbeat expire et le mode
     # s'éteint au rerun suivant.
+    # V176 — la navigation DANS une fiche (Similaires / Saga / MÊME ESPRIT /
+    # filmographie acteur) passe par ICI : le main ouvre un dialog NEUF qui
+    # démarre EN HAUT de la fenêtre (un rerun de fragment gardait la
+    # position de défilement de la fiche précédente).
     try:
         _fresh = time.time() - float(st.session_state.get("_msl_fiche_heartbeat") or 0) < 4.0
     except (TypeError, ValueError):
         _fresh = False
-    if _fresh and st.session_state.get("_cinema_detail_row"):
+    _nav_pending = st.session_state.pop("_msl_fiche_nav_pending", None)
+    _dismissed = st.session_state.pop("_msl_fiche_dismissed", None)
+    if not _dismissed and (_fresh or _nav_pending) and st.session_state.get("_cinema_detail_row"):
         _cinema_detail_dialog()
     else:
         st.session_state.pop("_msl_fiche_link_mode", None)
+        # V176 — fermeture PAR L'UTILISATEUR (callback on_dismiss) d'une
+        # fiche ouverte depuis une filmographie d'acteur → retour immédiat
+        # à la fiche acteur (un dialog ne peut pas s'empiler sur un autre).
+        if _dismissed and st.session_state.get("_msl_return_to_actor"):
+            _ret_actor = st.session_state.pop("_msl_return_to_actor", None) or {}
+            try:
+                _actor_detail_dialog(int(_ret_actor.get("person_id") or 0),
+                                     str(_ret_actor.get("person_kind") or "acteur"))
+            except Exception:
+                pass
+# V176 — RETOUR À LA FICHE ACTEUR : une fiche film ouverte depuis la
+# filmographie d'une fiche acteur bat le cœur (mode heartbeat) tant
+# qu'elle est ouverte ; refermée, on ROUVRE la fiche acteur « du dessous »
+# (un dialog ne peut pas s'empiler sur un autre dialog — c'est le retour
+# le plus proche de « je retrouve ma fiche acteur »).
+if st.session_state.get("_msl_return_to_actor"):
+    try:
+        _ret_age = time.time() - float(st.session_state.get("_msl_fiche_heartbeat") or 0)
+    except (TypeError, ValueError):
+        _ret_age = 1.0e9
+    if _ret_age > 4.0:
+        _ret_actor = st.session_state.pop("_msl_return_to_actor", None) or {}
+        try:
+            _actor_detail_dialog(int(_ret_actor.get("person_id") or 0),
+                                 str(_ret_actor.get("person_kind") or "acteur"))
+        except Exception:
+            pass
 page = navigation()
 header()
 if page == "🏠 Tableau de bord":

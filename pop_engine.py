@@ -672,6 +672,48 @@ def ia_complete(gemini_key: str, groq_key: str, prompt: str,
     raise RuntimeError(" · ".join(errors) or "Aucune clé IA configurée")
 
 
+def _recover_json(text: str):
+    """V176 — récupère un JSON abîmé par le modèle : fences ```json, texte
+    autour, accolade OUVRANTE perdue (retour utilisateur : la réponse
+    commençait par « in_list_id": … »), accolade finale perdue. Retourne
+    le dict parsé, ou None si rien n'y fait."""
+    s = str(text or "").strip()
+    s = re.sub(r"^```(?:json)?\s*|\s*```$", "", s)
+    candidates = [s]
+    if not s.startswith("{"):
+        candidates += ["{" + s, '{"' + s]
+    for cand in candidates:
+        for variant in (cand, cand + "}" if not cand.endswith("}") else cand):
+            try:
+                parsed = json.loads(variant)
+            except ValueError:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+    _start = s.find("{")
+    _end = s.rfind("}")
+    if _start >= 0 and _end > _start:
+        try:
+            parsed = json.loads(s[_start:_end + 1])
+            if isinstance(parsed, dict):
+                return parsed
+        except ValueError:
+            pass
+    return None
+
+
+def _norm_kind(raw) -> str:
+    """V176 — normalise le type renvoyé par l'IA. Les modèles abîment
+    parfois ce champ (« Séri », « séries », « Film. », « movie »…) et la
+    recherche TMDB partait alors du mauvais côté (retour utilisateur :
+    The Haunting of Hill House introuvable parce que « Séri » ≠ « Série »,
+    donc cherchée comme un film)."""
+    s = str(raw or "").strip().lower().rstrip(".").strip()
+    if s.startswith("sér") or s.startswith("ser") or s in ("tv", "show"):
+        return "Série"
+    return "Film"
+
+
 def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict],
                avoid_titles: list | None = None, time_hint: str = "Peu importe") -> dict:
     """Appelle Gemini (endpoint NATIF, compatible clés AQ. et AIza).
@@ -690,9 +732,14 @@ def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict]
     text = ia_complete(gemini_key, groq_key, _gemini_prompt(mood, candidates, avoid_titles, time_hint), 0.9, 1200, "pop")
     if not text.strip():
         raise RuntimeError("Réponse IA vide — relance")
-    try:
-        parsed = json.loads(text)
-    except ValueError:
+    # V176 — JSON ROBUSTE (retour utilisateur : Groq a renvoyé un JSON à
+    # peine abîmé — accolade d'ouverture perdue — et l'app affichait le
+    # JSON BRUT comme raison + perdait la proposition hors-listes) :
+    # 1) on tente le texte tel quel ; 2) on retire les fences ```json ;
+    # 3) on extrait du 1er « { » au dernier « } » ; 4) seulement ensuite,
+    # le repli regex d'avant.
+    parsed = _recover_json(text)
+    if parsed is None:
         match = re.search(r'"(?:pick_id|in_list_id)"\s*:\s*(\d+)', text)
         if not match:
             raise RuntimeError("Réponse IA sans choix exploitable")
@@ -715,7 +762,7 @@ def pop_ask_ai(gemini_key: str, groq_key: str, mood: str, candidates: list[dict]
         "outside": {
             "title": str(outside.get("title") or "").strip(),
             "year": year,
-            "kind": "Série" if str(outside.get("kind") or "").strip().lower() in ("série", "serie", "tv") else "Film",
+            "kind": _norm_kind(outside.get("kind")),
         },
         "reason": reason, "model": "ia",
     }
@@ -1054,9 +1101,9 @@ def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[
     text = ia_complete(gemini_key, groq_key, prompt, 0.9, 1200, "pop-libre")
     if not text.strip():
         raise RuntimeError("Réponse IA vide — relance")
-    try:
-        parsed = json.loads(text)
-    except ValueError:
+    # V176 — JSON ROBUSTE (même garde-fou que le tirage par humeur).
+    parsed = _recover_json(text)
+    if parsed is None:
         raise RuntimeError("Réponse illisible — relance")
     try:
         in_list_id = int(parsed.get("in_list_id") or 0)
@@ -1075,7 +1122,7 @@ def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[
         "outside": {
             "title": str(outside.get("title") or "").strip(),
             "year": year,
-            "kind": "Série" if str(outside.get("kind") or "").strip().lower() in ("série", "serie", "tv") else "Film",
+            "kind": _norm_kind(outside.get("kind")),
         },
         "reason": reason,
     }
