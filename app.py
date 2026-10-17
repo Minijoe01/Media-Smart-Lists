@@ -1220,6 +1220,13 @@ st.markdown(
     .sim-link { color: inherit; transition: transform .16s ease; }
     .sim-link:hover { transform: translateY(-3px); }
     .sim-link:hover img { box-shadow: 0 12px 24px rgba(0, 0, 0, .55); }
+    /* V173 — FICHE DEPUIS UNE FICHE : le poster ouvre la fiche locale,
+    le titre reste un lien TMDB ; la carte entière se soulève au survol. */
+    .sim-card { transition: transform .16s ease; }
+    .sim-card:hover { transform: translateY(-3px); }
+    .sim-card:hover img { box-shadow: 0 12px 24px rgba(0, 0, 0, .55); }
+    .sim-card a.sim-poster-link { display: block; text-decoration: none; }
+    .sim-card a.sim-tmlink { text-decoration: none; }
     .sim-card img { width: 84px; height: 126px; border-radius: 9px; object-fit: cover; box-shadow: 0 8px 18px rgba(0, 0, 0, .45); }
     .sim-noimg { display: flex; width: 84px; height: 126px; border-radius: 9px; align-items: center;
                  justify-content: center; background: rgba(0, 0, 0, .35); font-size: 1.6rem; }
@@ -4049,6 +4056,74 @@ def _save_session_snapshot() -> None:
         pass
 
 
+def _history_fiche_row_for_link(tmdb_id: int, is_show: bool) -> dict | None:
+    """Cherche une row « fiche » exploitable dans TES données pour le
+    contenu cliqué depuis Similaires/Saga (V173) : None si absent."""
+    dataset = _dataset()
+    sections = dataset.get("sections") if isinstance(dataset.get("sections"), dict) else {}
+    want = "shows" if is_show else "movies"
+    media_kind = "Série" if is_show else "Film"
+    for entry in ((sections.get("watched") or {}).get(want) or []):
+        media = _unwrap_media(entry)
+        if media and _media_tmdb_id_strict(media) == tmdb_id:
+            return {"item": dict(media), "key": f"lnk_w_{tmdb_id}", "type": media_kind,
+                    "source": "Historique"}
+    for lst in (sections.get("user_lists") or []):
+        if not isinstance(lst, dict):
+            continue
+        for entry in (lst.get(want) or []):
+            media = _unwrap_media(entry)
+            if media and _media_tmdb_id_strict(media) == tmdb_id:
+                return {"item": dict(media), "key": f"lnk_l_{tmdb_id}", "type": media_kind,
+                        "source": str(lst.get("name") or "Liste")}
+    for entry in ((sections.get("watchlist") or {}).get(want) or []):
+        media = _unwrap_media(entry)
+        if media and _media_tmdb_id_strict(media) == tmdb_id:
+            return {"item": dict(media), "key": f"lnk_wl_{tmdb_id}", "type": media_kind,
+                    "source": "Watchlist"}
+    return None
+
+
+def _open_fiche_from_link(raw: str) -> None:
+    """V173 — FICHE DEPUIS UNE FICHE : ouvre la fiche cinéma demandée par
+    le lien ?msl_fiche=kind:id posé sur les posters Similaires / Saga.
+    La page vient de se recharger (session restaurée par le self-heal) ;
+    on construit la row : données locales si le contenu y est, sinon
+    fiche TMDB — la même mécanique que les tirages Pépie."""
+    try:
+        kind_raw, _, id_raw = str(raw or "").partition(":")
+        tmdb_id = int(id_raw or 0)
+    except (TypeError, ValueError):
+        return
+    if not tmdb_id or kind_raw not in ("movie", "tv"):
+        return
+    is_show = kind_raw == "tv"
+    try:
+        media_row = _history_fiche_row_for_link(tmdb_id, is_show)
+    except Exception:
+        media_row = None
+    if media_row:
+        _open_cinema_detail(media_row)
+        return
+    api_key = _tmdb_api_key()
+    if not api_key:
+        return
+    try:
+        payload = _fetch_tmdb_item(kind_raw, tmdb_id, api_key) or {}
+        item = _build_item_from_tmdb(tmdb_id, kind_raw, payload)
+        _open_cinema_detail({
+            "item": item,
+            "key": f"lnk_{kind_raw}_{tmdb_id}",
+            "type": "Série" if is_show else "Film",
+            "genres": item.get("genres") or [],
+            "note": round((item.get("score_average") or 0) / 10, 1) or None,
+            "runtime": item.get("runtime") or None,
+            "source": "Similaires",
+        })
+    except Exception:
+        pass
+
+
 def _auto_restore_session() -> None:
     """V136/V137 — Restaure AUTOMATIQUEMENT les données d'une session précédente.
 
@@ -5056,16 +5131,24 @@ def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: st
     else:
         badge = '<span class="sim-badge hors">🌐 Hors de tes listes</span>'
     tmdb_href = f"https://www.themoviedb.org/{kind}/{entry_id}" if entry_id else ""
-    if tmdb_href:
-        return (
-            f'<a class="sim-card sim-link" href="{escape(tmdb_href, quote=True)}"'
-            f' target="_blank" rel="noopener noreferrer" title="Voir « {title} » sur TMDB">{img}'
-            f'<div class="t">{title}</div>'
-            f'<div class="d">{year}</div>{badge}</a>'
-        )
+    # V173 — FICHE DEPUIS UNE FICHE (maquette validée) : le POSTER ouvre
+    # la fiche LOCALE (?msl_fiche=kind:id — la page se recharge et la
+    # fiche s'ouvre) ; le TITRE garde le lien TMDB externe.
+    fiche_href = f"?msl_fiche={kind}:{entry_id}" if entry_id else ""
+    poster_link = (
+        f'<a class="sim-poster-link" href="{escape(fiche_href, quote=True)}" '
+        f'title="Ouvrir la fiche de {title} dans l’app">{img}</a>'
+        if fiche_href else img
+    )
+    title_html = (
+        f'<a class="t sim-tmlink" href="{escape(tmdb_href, quote=True)}" '
+        f'target="_blank" rel="noopener noreferrer" title="Voir sur TMDB (nouvel onglet)">{title}</a>'
+        if tmdb_href
+        else f'<div class="t">{title}</div>'
+    )
     return (
-        f'<div class="sim-card">{img}'
-        f'<div class="t">{title}</div>'
+        f'<div class="sim-card">{poster_link}'
+        f'{title_html}'
         f'<div class="d">{year}</div>{badge}</div>'
     )
 
@@ -5939,13 +6022,34 @@ def _render_cinema_detail_body(row: dict) -> None:
             f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
             accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
         )
-        # V172 — 🕰️ POURQUOI MAINTENAU : héritage culturel sans spoiler,
+        # V172 — 🕰️ POURQUOI ÇA COMPTE : héritage culturel sans spoiler,
         # même précalcul que les coulisses ; rien ne s'affiche si l'IA
         # n'a rien de notable à raconter.
+        _ia_subject = (
+            f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else "")
+        )
+        _ia_state = f"{'tv' if row.get('type') == 'Série' else 'movie'}_{tmdb_id}"
         try:
             _render_ia_context(
-                f"{'tv' if row.get('type') == 'Série' else 'movie'}_{tmdb_id}",
-                f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
+                _ia_state, _ia_subject,
+                accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
+            )
+        except Exception:
+            pass
+        # V173 — 🎭 L'ESPRIT : ambiance, bon moment, sensations.
+        try:
+            _render_ia_spirit(
+                _ia_state, _ia_subject,
+                accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
+                title_label=("L'ESPRIT DE LA SÉRIE" if row.get("type") == "Série" else "L'ESPRIT DU FILM"),
+            )
+        except Exception:
+            pass
+        # V173 — 🔄 MÊME ESPRIT : 2-3 œuvres au même esprit (retour :
+        # « ex. pour The Office, je veux Parks & Recreation »).
+        try:
+            _render_ia_alike(
+                _ia_state, _ia_subject,
                 accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
             )
         except Exception:
@@ -6554,6 +6658,17 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     # Couleurs du thème (jaune) + fond glass.
     if (api_key or _groq_api_key()) and person_id:
         job_word = "réalisateur" if facets.get("realisateur") else "acteur·rice"
+        # V173 — 👤 SON PARCOURS : le rôle qui a tout changé + le duo
+        # décisif (retour : « ex. le duo Jonah Hill / Michael Cera »).
+        try:
+            _render_ia_career(
+                f"person_{person_id}",
+                f"la carrière de {'réalisateur' if is_director else 'comédien·ne'} {person['name']}",
+                hint=f"connu·e comme {job_word}",
+                accent="#FFE100", accent_soft="rgba(255,225,0,.32)", accent_text="#EAF6F3",
+            )
+        except Exception:
+            pass
         _render_ia_coulisses(
             f"person_{person_id}",
             f"la carrière de {'réalisateur' if is_director else 'comédien·ne'} {person['name']}",
@@ -9876,8 +9991,12 @@ def _ia_prefetch_launch(store_key: str, gemini_key: str, groq_key: str, subject:
     _channel_fn = {
         "coulisses": pop_engine.coulisses_ask_ai,
         "score": pop_engine.score_story_ask_ai,
-        # V172 — « Pourquoi maintenant » : héritage culturel sans spoiler
+        # V172 — « Pourquoi ça compte » : héritage culturel sans spoiler
         "context": pop_engine.context_ask_ai,
+        # V173 — « L'esprit », « Même esprit », « Son parcours »
+        "spirit": pop_engine.spirit_ask_ai,
+        "alike": pop_engine.alike_ask_ai,
+        "career": pop_engine.career_ask_ai,
     }.get(channel, pop_engine.coulisses_ask_ai)
 
     def _work() -> None:
@@ -9914,10 +10033,14 @@ def _ia_fetch_or_wait(store_key: str, gemini_key: str, groq_key: str, subject: s
         _fn = {
             "coulisses": pop_engine.coulisses_ask_ai,
             "score": pop_engine.score_story_ask_ai,
-            # V172 — « Pourquoi maintenant » : héritage culturel sans
+            # V172 — « Pourquoi ça compte » : héritage culturel sans
             # spoiler (SANS cette clé, le secours retombait sur les
             # coulisses → mauvais contenu sous le bon titre).
             "context": pop_engine.context_ask_ai,
+            # V173 — esprit / même esprit / parcours
+            "spirit": pop_engine.spirit_ask_ai,
+            "alike": pop_engine.alike_ask_ai,
+            "career": pop_engine.career_ask_ai,
         }.get(channel, pop_engine.coulisses_ask_ai)
         return _fn(gemini_key, groq_key, subject, hint), ""
     except RuntimeError as exc:
@@ -9950,6 +10073,12 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     bouton « Une autre » (rendu dans un autre conteneur) en profite aussi."""
     return f"""
     <style>
+    /* V173 — blocs IA RAPPROCHÉS (retour utilisateur : « rapprocher un peu
+    l'info des coulisses et pourquoi ça compte ») : marges des conteneurs
+    markdown qui portent un bloc IA réduites au minimum. */
+    [data-testid="stDialog"] [data-testid="stMarkdownContainer"]:has(.ia-block) {{
+        margin-bottom: .15rem !important;
+    }}
     :root {{
         --ia-accent: {accent};
         --ia-accent-soft: {accent_soft};
@@ -10119,7 +10248,7 @@ def _render_ia_context(state_key: str, subject: str, hint: str = "",
                        accent: str = "#FFE100",
                        accent_soft: str = "rgba(255,225,0,.32)",
                        accent_text: str = "#EAF6F3") -> None:
-    """🕰️ « POURQUOI MAINTENAU » (V172 — idée choisie par l'utilisateur) :
+    """🕰️ « POURQUOI ÇA COMPTE » (V172 — idée choisie par l'utilisateur) :
     l'HÉRITAGE CULTUREL d'une œuvre — ce qu'elle a changé ou laissé dans
     la culture populaire (objets, modes, technologies, expressions,
     imaginaires collectifs), le contexte de son époque, et pourquoi elle
@@ -10144,7 +10273,7 @@ def _render_ia_context(state_key: str, subject: str, hint: str = "",
         if again:
             _IA_PREFETCH.pop(store_key, None)
             _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel="context")
-        with st.spinner("✨ Une autre histoire culturelle…" if again else "✨ Pourquoi maintenant arrive…"):
+        with st.spinner("✨ Une autre histoire culturelle…" if again else "✨ Pourquoi ça compte arrive…"):
             data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint,
                                             wait=22.0, channel="context")
         st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
@@ -10169,8 +10298,8 @@ def _render_ia_context(state_key: str, subject: str, hint: str = "",
     )
     head_html = (
         f'<div class="ia-head">{spark}<div>'
-        '<div class="ia-title">POURQUOI MAINTENAU</div>'
-        '<div class="ia-sub">héritage culturel et contexte de son époque · générée par IA — sans aucun spoiler</div>'
+        '<div class="ia-title">POURQUOI ÇA COMPTE</div>'
+        '<div class="ia-sub">héritage culturel & contexte de l’époque · généré par IA · sans spoiler</div>'
         "</div></div>"
     )
     st.markdown(
@@ -10187,6 +10316,147 @@ def _render_ia_context(state_key: str, subject: str, hint: str = "",
     if st.button("🕰️ Une autre histoire", key=f"{session_key}_again", use_container_width=True):
         st.session_state[f"{session_key}_again_clicked"] = True
 
+
+
+def _ia_generic_render(state_key: str, subject: str, hint: str, channel: str,
+                       accent: str, accent_soft: str, accent_text: str,
+                       title: str, subtitle: str, spinner_new: str,
+                       spinner_again: str, again_label: str,
+                       body_fn) -> None:
+    """Rendu générique d'un bloc IA précalculé (V173) : même mécanique que
+    l'info des coulisses — précalcul en arrière-plan (zéro lenteur), le
+    bloc apparaît en bas quand il est prêt, « skip » → rien. `body_fn`
+    reçoit les données et retourne le HTML intérieur du bloc."""
+    gemini_key = _gemini_api_key()
+    groq_key = _groq_api_key()
+    if not gemini_key and not groq_key:
+        return
+    session_key = f"ia_{channel}_{state_key}"
+    nonce = st.session_state.get(f"ia_nonce_{state_key}") or ""
+    store_key = f"{nonce}|{channel}|{state_key}"
+    _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel=channel)
+
+    shown = st.session_state.get(session_key)
+    again = st.session_state.pop(f"{session_key}_again_clicked", False)
+    if not shown or again:
+        if again:
+            _IA_PREFETCH.pop(store_key, None)
+            _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel=channel)
+        with st.spinner(spinner_again if again else spinner_new):
+            data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint,
+                                            wait=22.0, channel=channel)
+        st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
+        shown = st.session_state.get(session_key)
+
+    if not shown:
+        return
+    if shown.get("error") or shown.get("skip"):
+        return  # rien de notable → pas de bloc
+    st.markdown(_ia_coulisses_css(accent, accent_soft, accent_text), unsafe_allow_html=True)
+    spark = _ia_spark_svg(16, accent, "#FFFFFF")
+    st.markdown(
+        '<div class="ia-block">'
+        f'<div class="ia-head">{spark}<div>'
+        f'<div class="ia-title">{title}</div>'
+        f'<div class="ia-sub">{subtitle}</div>'
+        "</div></div>"
+        + body_fn(shown)
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(f'<div class="ia-again-anchor" style="--ia-accent:{accent};"></div>',
+                unsafe_allow_html=True)
+    if st.button(again_label, key=f"{session_key}_again", use_container_width=True):
+        st.session_state[f"{session_key}_again_clicked"] = True
+
+
+def _render_ia_spirit(state_key: str, subject: str, hint: str = "",
+                      accent: str = "#FFE100", accent_soft: str = "rgba(255,225,0,.32)",
+                      accent_text: str = "#EAF6F3", title_label: str = "L'ESPRIT DU FILM") -> None:
+    """🎭 « L'ESPRIT DU FILM / DE LA SÉRIE » (V173 — idée retravaillée :
+    ambiance + bon moment + sensations, pas des mots-clés secs)."""
+    def _body(shown: dict) -> str:
+        sensations = "".join(f"<li>{escape(str(s))}</li>" for s in (shown.get("sensations") or [])[:3])
+        sensations_html = (
+            f'<div class="col pros"><b>✨ SENSATIONS</b><ul>{sensations}</ul></div>'
+            if sensations else ""
+        )
+        humeur_html = (
+            f'<div class="ia-text" style="margin-top:.3rem;">'
+            f"<em>🎯 {escape(str(shown.get('humeur') or ''))}</em></div>"
+            if shown.get("humeur") else ""
+        )
+        return (
+            f'<div class="ia-text"><strong>{escape(str(shown.get("esprit") or ""))}</strong></div>'
+            f'<div class="ia-pc">{sensations_html}</div>'
+            f"{humeur_html}"
+        )
+    _ia_generic_render(state_key, subject, hint, "spirit", accent, accent_soft, accent_text,
+                       title_label, "ambiance & moment idéal · généré par IA · sans spoiler",
+                       "✨ L'esprit arrive…", "✨ Un autre esprit…", "🎭 Un autre regard",
+                       _body)
+
+
+def _render_ia_alike(state_key: str, subject: str, hint: str = "",
+                     accent: str = "#FFE100", accent_soft: str = "rgba(255,225,0,.32)",
+                     accent_text: str = "#EAF6F3") -> None:
+    """🔄 « MÊME ESPRIT » (V173 — demande utilisateur : « l'IA me fait des
+    recommandations où je retrouve le même esprit, ex. The Office →
+    Parks & Recreation »). Chaque proposition porte un lien TMDB."""
+    def _body(shown: dict) -> str:
+        parts = []
+        for pick in (shown.get("picks") or [])[:3]:
+            title = escape(str(pick.get("title") or "?"))
+            kind = escape(str(pick.get("kind") or ""))
+            year = escape(str(pick.get("year") or ""))
+            why = escape(str(pick.get("why") or ""))
+            search = quote(str(pick.get("title") or ""))
+            meta = " · ".join(x for x in (kind, year) if x)
+            parts.append(
+                f'<div class="alike-pick">'
+                f'<div class="alike-t"><strong>{title}</strong>'
+                + (f' <span class="alike-m">({meta})</span>' if meta else "")
+                + f' <a class="link-pill alike-link" href="https://www.themoviedb.org/search?query={escape(search, quote=True)}" '
+                f'target="_blank" rel="noopener noreferrer" title="Chercher sur TMDB">TMDB</a></div>'
+                f'<div class="alike-why">{why}</div></div>'
+            )
+        css = (
+            "<style>.alike-pick{padding:.35rem 0;border-top:1px dashed "
+            "rgba(255,255,255,.12);}.alike-pick:first-child{border-top:none;}"
+            ".alike-t{font-size:.9rem;}.alike-m{opacity:.7;font-size:.78rem;}"
+            ".alike-why{font-size:.82rem;opacity:.9;margin-top:.1rem;}"
+            ".alike-link{font-size:.66rem;padding:.05rem .45rem;margin-left:.3rem;}"
+            "</style>"
+        )
+        return css + "".join(parts)
+    _ia_generic_render(state_key, subject, hint, "alike", accent, accent_soft, accent_text,
+                       "MÊME ESPRIT", "si cet esprit te plaît… · généré par IA · sans spoiler",
+                       "✨ Les propositions arrivent…", "✨ D'autres propositions…",
+                       "🔄 D'autres suggestions", _body)
+
+
+def _render_ia_career(state_key: str, subject: str, hint: str = "",
+                      accent: str = "#FFE100", accent_soft: str = "rgba(255,225,0,.32)",
+                      accent_text: str = "#EAF6F3") -> None:
+    """👤 « SON PARCOURS » (V173 — fiche acteur enrichie) : le rôle qui a
+    tout changé + le duo décisif (ex. Jonah Hill / Michael Cera), sans
+    raconter les films."""
+    def _body(shown: dict) -> str:
+        duo_html = ""
+        if shown.get("duo"):
+            duo_html = (
+                f'<div class="ia-text" style="margin-top:.3rem;">'
+                f"<strong>🤝 Le duo décisif</strong> — {escape(str(shown.get('duo') or ''))}</div>"
+            )
+        return (
+            f'<div class="ia-text"><strong>💥 Le rôle qui a tout changé</strong> — '
+            f"{escape(str(shown.get('carriere') or ''))}</div>"
+            f"{duo_html}"
+        )
+    _ia_generic_render(state_key, subject, hint, "career", accent, accent_soft, accent_text,
+                       "SON PARCOURS", "comment tout a commencé · généré par IA · sans spoiler",
+                       "✨ Le parcours arrive…", "✨ Une autre histoire…", "👤 Une autre anecdote",
+                       _body)
 
 
 def _groq_api_key() -> str:
@@ -15448,6 +15718,17 @@ except Exception:
 
 _auto_restore_session()  # V136 — retour d'arrière-plan GSM : données+page+filtres restaurés sans appel API
 _session_self_heal()    # V158 — session perdue après inactivité : reruns de relance jusqu'à restauration
+# V173 — FICHE DEPUIS UNE FICHE : un poster Similaires/Saga a été cliqué
+# (?msl_fiche=kind:id) → ouvrir la fiche, UNE fois (le drapeau de session
+# évite la ré-ouverture à la fermeture du dialog ; le param reste dans
+# l'URL, ce qui permet de partager/recharger le lien).
+_fiche_link_raw = str(st.query_params.get("msl_fiche") or "")
+if _fiche_link_raw and st.session_state.get("_msl_fiche_done") != _fiche_link_raw:
+    st.session_state["_msl_fiche_done"] = _fiche_link_raw
+    try:
+        _open_fiche_from_link(_fiche_link_raw)
+    except Exception:
+        pass
 page = navigation()
 header()
 if page == "🏠 Tableau de bord":

@@ -855,6 +855,153 @@ def context_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "")
     return {"skip": False, "pourquoi": pourquoi, "heritage": heritage, "anecdote": anecdote}
 
 
+def spirit_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -> dict:
+    """🎭 L'ESPRIT (V173 — idée « L'esprit du film » retravaillée suite à
+    la remarque « les mots-clés ne sont pas assez parlants ») :
+      • l'ESPRIT de l'œuvre : son ton, son ambiance, son énergie (1-2
+        phrases vivantes) ;
+      • le BON MOMENT pour la lancer : dans quelle humeur, quel moment
+        de la semaine (1 phrase) ;
+      • 2-3 SENSATIONS courtes (des mini-phrases, PAS des mots-clés
+        secs).
+    Zéro spoiler : jamais l'intrigue ni les événements. Retourne
+    {"skip": False, "esprit", "humeur", "sensations": [..]} ou
+    {"skip": True} si l'œuvre est trop peu connue."""
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    prompt = (
+        "Tu es programmateur cinéma et spécialiste des ambiances. À propos de "
+        f"{subject}" + (f" ({hint})" if hint else "") + ", décris son ESPRIT :\n"
+        "1. SON ESPRIT : ton, ambiance, énergie — 1 à 2 phrases vivantes qui "
+        "donnent ENVIE (ou préviennent) sans rien raconter ;\n"
+        "2. LE BON MOMENT : dans quelle humeur / quel moment idéal pour se "
+        "lancer (1 phrase, ex. « un dimanche pluvieux sous une couverture ») ;\n"
+        "3. Deux à trois SENSATIONS en mini-phrases (PAS des mots-clés secs — "
+        "ex. « rires tendres », « nostalgie qui réchauffe »).\n"
+        "Règles strictes :\n"
+        "- AUCUN SPOILER : ni intrigue, ni événement, ni fin ;\n"
+        "- si tu ne connais pas assez cette œuvre, choisis skip ;\n"
+        "- tout en français, concret et chaleureux.\n"
+        'Réponds STRICTEMENT en JSON : {"skip": false, "esprit": "…", '
+        '"humeur": "…", "sensations": ["…", "…"]}'
+    )
+    text = ia_complete(gemini_key, groq_key, prompt, 1.0, 900, "esprit")
+    if not text.strip():
+        raise RuntimeError("Réponse IA vide — relance")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        raise RuntimeError("Réponse illisible — relance")
+    if parsed.get("skip"):
+        return {"skip": True}
+    esprit = str(parsed.get("esprit") or "").strip()
+    humeur = str(parsed.get("humeur") or "").strip()
+    sensations = [str(x).strip() for x in (parsed.get("sensations") or []) if str(x).strip()][:3]
+    if len(esprit) < 30:
+        raise RuntimeError("Réponse incomplète — relance")
+    return {"skip": False, "esprit": esprit, "humeur": humeur, "sensations": sensations}
+
+
+def alike_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -> dict:
+    """🔄 MÊME ESPRIT (V173 — demande utilisateur : « l'IA me fait des
+    recommandations où je retrouve le même esprit, ex. The Office →
+    Parks & Recreation ») : 2 à 3 AUTRES œuvres (films OU séries) au
+    MÊME ESPRIT — même ton, même ambiance, même énergie — pas la même
+    intrigue. Pour chaque proposition : titre, type, année, et POURQUOI
+    en 1 phrase. Zéro spoiler (y compris sur les œuvres proposées).
+    Retourne {"skip": False, "picks": [{"title", "kind", "year", "why"}]}
+    ou {"skip": True} si pas d'équivalents clairs."""
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    prompt = (
+        "Tu es curateur de sélections cinéma/séries. À propos de "
+        f"{subject}" + (f" ({hint})" if hint else "") + ", propose 2 à 3 AUTRES "
+        "œuvres (films OU séries) au MÊME ESPRIT : même ton, même ambiance, "
+        "même énergie — PAS la même intrigue, et PAS des suites/remakes de la "
+        "même franchise. Varie (au moins une proposition inattendue).\n"
+        "Règles strictes :\n"
+        "- AUCUN SPOILER : ni sur l'œuvre de départ, ni sur les propositions ;\n"
+        "- chaque proposition : titre EXACT, type (Film ou Série), année, et "
+        "POURQUOI cet esprit se retrouve (1 phrase) ;\n"
+        "- si tu n'as pas d'équivalents clairs, choisis skip ;\n"
+        "- tout en français.\n"
+        'Réponds STRICTEMENT en JSON : {"skip": false, "picks": [{"title": '
+        '"…", "kind": "Série", "year": "2009", "why": "…"}, …]}'
+    )
+    text = ia_complete(gemini_key, groq_key, prompt, 1.0, 1100, "meme-esprit")
+    if not text.strip():
+        raise RuntimeError("Réponse IA vide — relance")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        raise RuntimeError("Réponse illisible — relance")
+    if parsed.get("skip"):
+        return {"skip": True}
+    picks = []
+    for p in (parsed.get("picks") or []):
+        if not isinstance(p, dict):
+            continue
+        title = str(p.get("title") or "").strip()
+        why = str(p.get("why") or "").strip()
+        if not title or not why:
+            continue
+        picks.append({
+            "title": title,
+            "kind": "Série" if "série" in str(p.get("kind") or "").lower() or "serie" in str(p.get("kind") or "").lower() else "Film",
+            "year": str(p.get("year") or "").strip()[:4],
+            "why": why,
+        })
+    picks = picks[:3]
+    if not picks:
+        raise RuntimeError("Réponse incomplète — relance")
+    return {"skip": False, "picks": picks}
+
+
+def career_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -> dict:
+    """👤 SON PARCOURS (V173 — fiche acteur enrichie, demande utilisateur :
+    « comment est-il devenu connu, qui l'a aidé, y a-t-il un autre acteur
+    ou un réal sans qui rien ne serait arrivé ? ex. le duo Jonah Hill /
+    Michael Cera ») :
+      • LE RÔLE QUI A TOUT CHANGÉ : le tournant de la carrière (1-2
+        phrases) ;
+      • LE DUO DÉCISIF : la rencontre/association sans qui rien ne serait
+        arrivé (1-2 phrases).
+    Sans raconter les films (zéro spoiler). Retourne {"skip": False,
+    "carriere", "duo"} ou {"skip": True}."""
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    prompt = (
+        "Tu es biographe du cinéma. À propos de "
+        f"{subject}" + (f" ({hint})" if hint else "") + ", raconte :\n"
+        "1. LE RÔLE QUI A TOUT CHANGÉ : le tournant de sa carrière, comment "
+        "il/elle est devenu·e connu·e (1-2 phrases) ;\n"
+        "2. LE DUO DÉCISIF : une association sans qui rien ne serait arrivé — "
+        "un·e autre acteur·rice, un·e réalisateur·rice, une rencontre "
+        "(1-2 phrases ; ex. le duo Jonah Hill / Michael Cera).\n"
+        "Règles strictes :\n"
+        "- NE RACONTE PAS LES FILMS : aucun événement d'intrigue, aucune fin ; "
+        "parle uniquement de carrière et de rencontres ;\n"
+        "- si tu ne connais pas assez cette personne, choisis skip ;\n"
+        "- tout en français, vivant et factuel.\n"
+        'Réponds STRICTEMENT en JSON : {"skip": false, "carriere": "…", '
+        '"duo": "…"}'
+    )
+    text = ia_complete(gemini_key, groq_key, prompt, 1.0, 900, "parcours")
+    if not text.strip():
+        raise RuntimeError("Réponse IA vide — relance")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        raise RuntimeError("Réponse illisible — relance")
+    if parsed.get("skip"):
+        return {"skip": True}
+    carriere = str(parsed.get("carriere") or "").strip()
+    duo = str(parsed.get("duo") or "").strip()
+    if len(carriere) < 30:
+        raise RuntimeError("Réponse incomplète — relance")
+    return {"skip": False, "carriere": carriere, "duo": duo}
+
+
 def freeform_ask_ai(gemini_key: str, groq_key: str, wish: str, candidates: list[dict],
                     kind: str = "Peu importe", avoid_titles: list | None = None) -> dict:
     """✍️ POP LIBRE (V152) : l'utilisateur décrit son envie en une phrase

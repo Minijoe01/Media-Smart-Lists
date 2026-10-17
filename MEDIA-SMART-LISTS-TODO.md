@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 16 octobre 2026 (soir) · Dernière version déployée : V172.
+> Dernière mise à jour : 16 octobre 2026 (nuit) · Dernière version déployée : V173.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1404,6 +1404,31 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       comportement « skip » a été prouvé par un test direct dédié) +
       23/23 tests.
 
+### Fait en V173 (retours du 16/10 soir — coquilles + les 3 chantiers IA)
+- [x] ✍️ COQUILLES : « POURQUOI MAINTENAU » → « POURQUOI ÇA COMPTE »
+      (retour : « je ne sais pas ce que signifie MAINTENAU ») ; sous-titre
+      « généré par IA · sans spoiler » ; blocs IA RAPPROCHÉS (marge
+      conteneur 2,4 px mesurée).
+- [x] 🎭 « L'ESPRIT DU FILM / DE LA SÉRIE » (idée retravaillée suite à
+      « les mots-clés ne sont pas assez parlants ») : l'esprit de l'œuvre
+      (1-2 phrases) + LE BON MOMENT pour la lancer + 2-3 SENSATIONS en
+      mini-phrases. Précalculé, skip si méconnu.
+- [x] 🔄 « MÊME ESPRIT » (demande utilisateur : « l'IA me fait des
+      recommandations où je retrouve le même esprit, ex. The Office →
+      Parks & Recreation ») : 2-3 œuvres au même esprit avec le pourquoi,
+      chacune avec un lien TMDB. Précalculé, skip si pas d'équivalents.
+- [x] 👤 « SON PARCOURS » sur la fiche acteur (idée « le rôle qui a tout
+      changé / qui l'a aidé / le duo décisif ex. Jonah Hill & Michael
+      Cera ») : le tournant de carrière + le duo décisif, sans raconter
+      les films. Précalculé.
+- [x] 🎬 FICHE DEPUIS UNE FICHE (maquette validée) : les POSTERS des
+      sections Similaires/Saga ouvrent la FICHIE LOCALE du contenu
+      (?msl_fiche=kind:id — la page se recharge et la fiche s'ouvre,
+      données locales si présentes, sinon TMDB comme la Pépite) ; le
+      TITRE garde le lien TMDB externe.
+- [x] Banc : 16/16 + 2/2 (test lien fiche séparé : navigation réelle) +
+      23/23 tests.
+
 ### PROCHAINES ÉTAPES (au choix de l'utilisateur)
 - [ ] (facultatif) Score moyen sur la fiche acteur · duo favori stats
 - [ ] README : refonte par l'utilisateur À LA FIN (il gère).
@@ -1435,12 +1460,11 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
 - [x] (fait en V170) Fiche acteur → score moyen de ses contenus notés.
 - [x] (fait en V170) Stats → « duo favori » (acteur × réalisateur le plus croisé).
 - [x] (fait en V172) « Pourquoi maintenant » — héritage culturel.
-- [ ] Idées IA SANS SPOULER suite (contrainte : ZÉRO
+- [x] (fait en V173) « L'esprit du film » + « Même esprit » + « Son parcours ».
+- [ ] Suite IA éventuelle (contrainte : ZÉRO
       lenteur — précalcul comme l'info des coulisses) : « L'esprit du film »
       (3 mots-clés d'ambiance + humeur de visionnage), « Pourquoi maintenant »
       (contexte de sortie), fiche acteur enrichie (anecdote de carrière /
       le rôle qui a tout changé, sans raconter le film).
-- [ ] Fiche depuis une fiche (Similaires/Saga/Casting) : l'utilisateur est
-      tenté mais craint que les boutons « Voir la fiche » prennent trop de
-      place — à revoir avec lui (variante : poster cliquable ou petit bouton
-      discret au survol).
+- [x] (fait en V173) Fiche depuis une fiche : posters Similaires/Saga →
+      fiche locale (le titre garde TMDB). Casting : à voir si demandé.
