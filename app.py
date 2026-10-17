@@ -2024,6 +2024,119 @@ st.markdown(
         + div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) {
         margin-top: -0.35rem !important;  /* remonte la tuile vers son titre, SANS le chevaucher */
     }
+    /* ══ V175 — TUILE ENTIÈRE CLIQUABLE (bouton transparent) ═════════
+       Retour utilisateur : « pourquoi ne pas utiliser le principe du bouton
+       transparent depuis la tuile Que regarder, afin d'ouvrir la fiche ?
+       Cela permettrait de supprimer le bouton Voir la fiche. » Le bouton
+       devient un CALQUE INVISIBLE couvrant toute la tuile : cliquer
+       n'importe où ouvre la fiche — sans rechargement, sans nouvel onglet.
+       Les pastilles (info-bulles), les liens TMDB/MDBL/JustWatch et
+       « Pourquoi ce score ? » restent AU-DESSUS du calque (z-index 8).
+       Ciblage vérifié au banc de sonde (Chromium) : la paire carte+bouton
+       vit dans un st.container → div.stLayoutWrapper > stVerticalBlock,
+       ou dans une colonne de grille → stColumn > stVerticalBlock. */
+    div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .msl-click):has(> div[data-testid="stElementContainer"] button[kind="secondary"]),
+    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .msl-click):has(> div[data-testid="stElementContainer"] button[kind="secondary"]) {
+        position: relative;
+    }
+    div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .msl-click):has(> div[data-testid="stElementContainer"] button[kind="secondary"])
+        > div[data-testid="stElementContainer"]:has(button[kind="secondary"]),
+    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .msl-click):has(> div[data-testid="stElementContainer"] button[kind="secondary"])
+        > div[data-testid="stElementContainer"]:has(button[kind="secondary"]) {
+        position: absolute !important;
+        inset: 0 !important;
+        margin: 0 !important;
+        min-height: 0 !important;
+        z-index: 5;
+    }
+    /* Le BOUTON lui-même couvre tout son conteneur (position absolute →
+       les éventuels wrappers intermédiaires n'ont plus aucune importance).
+       Opacité 0 : invisible, mais cliquable partout sur la tuile. */
+    div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .msl-click):has(> div[data-testid="stElementContainer"] button[kind="secondary"])
+        > div[data-testid="stElementContainer"]:has(button[kind="secondary"]) button[kind="secondary"],
+    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .msl-click):has(> div[data-testid="stElementContainer"] button[kind="secondary"])
+        > div[data-testid="stElementContainer"]:has(button[kind="secondary"]) button[kind="secondary"] {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        padding: 0 !important;
+        opacity: 0;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        cursor: pointer;
+    }
+    /* Hover : le curseur est sur le CALQUE (au-dessus de la carte, qui ne
+       reçoit plus :hover) → on soulève la carte via :has(+ voisin bouton).
+       Le voisin suivant du conteneur carte est bien son conteneur bouton
+       (vérifié au banc : paire isolée dans le container). */
+    /* V175c — SOULÈVEMENT DU BLOC ENTIERS (carte + calque + pastilles
+       d'un seul tenant) : la carte ne bouge plus SEULE sous le pointeur.
+       Au banc, le clic sur « Pourquoi ce score ? » glissait de 2 px entre
+       l'appui et le relâchement (translateY de la carte au survol) et le
+       déroulé ne se déclenchait pas. Tout le bloc paire se déplace →
+       les clics restent alignés, souris comme tactile. */
+    .media-list-card.msl-click:hover { transform: none; }
+    .sim-card.msl-click:hover { transform: none; }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .msl-click):has(+ div[data-testid="stElementContainer"] button[kind="secondary"]:hover) .media-list-card,
+    .media-list-card.msl-click:hover {
+        background: rgba(0, 163, 146, .12);
+        border-color: rgba(0, 163, 146, .55);
+        border-left-color: var(--am-yellow);
+        box-shadow: 0 8px 22px rgba(0, 163, 146, .18);
+    }
+    .sim-card.msl-click:hover img,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .msl-click):has(+ div[data-testid="stElementContainer"] button[kind="secondary"]:hover) .sim-card img {
+        box-shadow: 0 12px 24px rgba(0, 0, 0, .55);
+    }
+    div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .media-list-card.msl-click):has(*:hover),
+    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .media-list-card.msl-click):has(*:hover) {
+        transition: transform .16s ease;
+        transform: translateY(-2px);
+    }
+    div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .sim-card.msl-click):has(*:hover),
+    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .sim-card.msl-click):has(*:hover) {
+        transition: transform .16s ease;
+        transform: translateY(-3px);
+    }
+    /* La tuile redevient autonome (plus de pied bouton) : rayon complet.
+       Sélecteur volontairement plus long que la règle V136 pour la
+       battre en spécificité. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) .media-list-card.msl-click {
+        border-radius: 13px !important;
+    }
+    /* Éléments interactifs AU-DESSUS du calque : info-bulles des pastilles
+       (déjà position:relative — on n'ajoute que la pile), liens externes,
+       « Pourquoi ce score ? », lien TMDB des mini-cartes. */
+    .msl-click [data-tooltip],
+    .msl-click .link-pill,
+    .msl-click details.pills-details,
+    .msl-click a.sim-tmlink {
+        position: relative;
+        z-index: 8;
+    }
+    /* V175 — GRILLE SIMILAIRES / SAGA : cartes adaptatives à leur colonne
+       (4 par ligne ; sur GSM la colonne ≈ 80 px, la carte suit). */
+    .sim-card.msl-click { width: 100%; max-width: 104px; }
+    .sim-card.msl-click img { width: 100%; max-width: 104px; }
+    .sim-card.msl-click .sim-noimg { width: 100%; max-width: 104px; }
+    /* Tuiles empaquetées (st.container) : resserrées comme avant le
+       calque — l'écart de bloc de 16 px entre deux paires est compensé,
+       comme la règle V137 le faisait pour les cartes nues. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .msl-click) {
+        margin-top: -0.75rem !important;
+    }
+    /* V175b — le calque doit couvrir TOUTE la tuile : la marge négative
+       V137 (-0.75rem) sur le conteneur carte la faisait dépasser de 12 px
+       vers le haut du bloc paire (non couverte). Dans un bloc paire, la
+       carte repart du bord haut — le resserrage entre tuiles est porté
+       par le conteneur paire (règle précédente). */
+    div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .msl-click)
+        > div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card) {
+        margin-top: 0 !important;
+    }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .media-list-card)
@@ -4126,6 +4239,89 @@ def _open_fiche_from_link(raw: str) -> None:
         pass
 
 
+def _accent_rgb_parts(color: str) -> tuple:
+    """V175 — « rgb(r, g, b) » / « rgba(r,g,b,a) » / « #RRGGBB » → (r, g,
+    b). Sert aux tuiles MÊME ESPRIT : décliner l'accent de la fiche en
+    transparences multiples. Repli : jaune Aston."""
+    s = str(color or "").strip()
+    if s.startswith("#") and len(s) >= 7:
+        try:
+            return (int(s[1:3], 16), int(s[3:5], 16), int(s[5:7], 16))
+        except ValueError:
+            pass
+    nums = []
+    for part in s.replace("rgba", " ").replace("rgb", " ").replace("(", " ").replace(")", " ").split(","):
+        part = part.strip()
+        if part.isdigit():
+            nums.append(int(part))
+        if len(nums) == 3:
+            break
+    if len(nums) == 3:
+        return (nums[0], nums[1], nums[2])
+    return (255, 225, 0)
+
+
+def _open_fiche_in_dialog(kind: str, tmdb_id: int) -> None:
+    """V175 — FICHE DEPUIS UNE FICHE, SANS NOUVEL ONGLET : un poster
+    Similaires / Saga / MÊME ESPRIT cliqué remplace le contenu du dialog
+    OUVERT. Pourquoi ça marche : le corps du dialog (_cinema_detail_dialog)
+    relit st.session_state["_cinema_detail_row"] à CHAQUE rerun de
+    fragment — il suffit de poser la nouvelle row puis de relancer le
+    fragment. Fini le lien ?msl_fiche : Streamlit force target=_blank sur
+    les ancres du markdown (prouvé au banc V175) → nouvel onglet qu'on ne
+    pouvait pas fermer dans l'appli installée (retour utilisateur : « je
+    perds tout juste en cliquant sur un poster »)."""
+    try:
+        tmdb_id = int(tmdb_id or 0)
+    except (TypeError, ValueError):
+        return
+    if not tmdb_id or kind not in ("movie", "tv"):
+        return
+    media_row = None
+    try:
+        media_row = _history_fiche_row_for_link(tmdb_id, kind == "tv")
+    except Exception:
+        media_row = None
+    if media_row is None:
+        api_key = _tmdb_api_key()
+        payload = {}
+        if api_key:
+            try:
+                payload = _fetch_tmdb_item(kind, tmdb_id, api_key) or {}
+            except Exception:
+                payload = {}
+        if not payload:
+            return
+        item = _build_item_from_tmdb(tmdb_id, kind, payload)
+        media_row = {
+            "item": item,
+            "key": f"lnk_{kind}_{tmdb_id}",
+            "type": "Série" if kind == "tv" else "Film",
+            "genres": item.get("genres") or [],
+            "note": round((item.get("score_average") or 0) / 10, 1) or None,
+            "runtime": item.get("runtime") or None,
+            "source": "Similaires",
+        }
+    # MÊME hygiène que _open_cinema_detail : anecdote neuve pour la
+    # nouvelle fiche + purge des accusés d'ajout du ruban ➕.
+    for _k in list(st.session_state):
+        if isinstance(_k, str) and _k.startswith("fiche_add_done_"):
+            st.session_state.pop(_k, None)
+    _ids = media_row.get("ids") if isinstance(media_row.get("ids"), dict) else {}
+    if not _ids and isinstance(media_row.get("item"), dict):
+        _ids = media_row["item"].get("ids") if isinstance(media_row["item"].get("ids"), dict) else {}
+    try:
+        _tid = int((_ids or {}).get("tmdb") or 0)
+    except (TypeError, ValueError):
+        _tid = 0
+    if _tid:
+        _ik = "tv" if media_row.get("type") in ("Série", "Épisode") else "movie"
+        st.session_state.pop(f"ia_coulisses_{_ik}_{_tid}", None)
+        st.session_state[f"ia_nonce_{_ik}_{_tid}"] = time.time()
+    st.session_state["_cinema_detail_row"] = media_row
+    st.rerun(scope="fragment")
+
+
 def _auto_restore_session() -> None:
     """V136/V137 — Restaure AUTOMATIQUEMENT les données d'une session précédente.
 
@@ -5105,10 +5301,18 @@ def _typed_media_key(kind_label: Any, tmdb_id: Any) -> str:
     return f"{kind}:{int(tmdb_id)}"
 
 
-def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: str = "movie") -> str:
+def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: str = "movie",
+              clickable: bool = False) -> str:
     """Mini-carte « Similaires / Saga » : affiche + titre + année + badge
     (✅ Vu · 📂 nom de ta liste · 📌 Watchlist · 🌐 Hors de tes listes).
-    V141 : la carte entière est un LIEN vers la fiche TMDB du contenu."""
+    V173 : le poster ouvrait la fiche via un lien ?msl_fiche — mais
+    Streamlit FORCE target=_blank sur toutes les ancres du markdown
+    (prouvé au banc de sonde V175) : nouvel onglet impossible à fermer
+    dans l'appli installée → tout était perdu au clic.
+    V175 : clickable=True (grilles de la fiche) — plus d'ancre du tout ;
+    la carte porte la classe msl-click et un BOUTON TRANSPARENT la
+    couvre : le clic ouvre la fiche DANS le dialog, sans rechargement
+    ni nouvel onglet. Le TITRE garde son lien TMDB externe."""
     entry_id = int(entry.get("id") or 0)
     title = escape(str(entry.get("title") or entry.get("name") or "?"))
     date = str(entry.get("release_date") or entry.get("first_air_date") or "")
@@ -5133,15 +5337,19 @@ def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: st
     else:
         badge = '<span class="sim-badge hors">🌐 Hors de tes listes</span>'
     tmdb_href = f"https://www.themoviedb.org/{kind}/{entry_id}" if entry_id else ""
-    # V173 — FICHE DEPUIS UNE FICHE (maquette validée) : le POSTER ouvre
-    # la fiche LOCALE (?msl_fiche=kind:id — la page se recharge et la
-    # fiche s'ouvre) ; le TITRE garde le lien TMDB externe.
-    fiche_href = f"?msl_fiche={kind}:{entry_id}" if entry_id else ""
-    poster_link = (
-        f'<a class="sim-poster-link" href="{escape(fiche_href, quote=True)}" '
-        f'title="Ouvrir la fiche de {title} dans l’app">{img}</a>'
-        if fiche_href else img
-    )
+    if clickable:
+        # V175 — grille cliquable : PAS d'ancre (le bouton transparent
+        # couvre la carte) ; msl-click active le calque CSS.
+        poster_link = img
+        card_class = "sim-card msl-click"
+    else:
+        fiche_href = f"?msl_fiche={kind}:{entry_id}" if entry_id else ""
+        poster_link = (
+            f'<a class="sim-poster-link" href="{escape(fiche_href, quote=True)}" '
+            f'title="Ouvrir la fiche de {title} dans l’app">{img}</a>'
+            if fiche_href else img
+        )
+        card_class = "sim-card"
     title_html = (
         f'<a class="t sim-tmlink" href="{escape(tmdb_href, quote=True)}" '
         f'target="_blank" rel="noopener noreferrer" title="Voir sur TMDB (nouvel onglet)">{title}</a>'
@@ -5149,10 +5357,46 @@ def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: st
         else f'<div class="t">{title}</div>'
     )
     return (
-        f'<div class="sim-card">{poster_link}'
+        f'<div class="{card_class}">{poster_link}'
         f'{title_html}'
         f'<div class="d">{year}</div>{badge}</div>'
     )
+
+
+def _render_sim_grid(entries: list, watched: set, listed: set, list_names: dict,
+                     kind: str, title_html: str, key_prefix: str = "sim") -> None:
+    """V175 — grille SIMILAIRES / SAGA : les mini-cartes passent du bandeau
+    à faire défiler à une grille lisible d'un coup (4 par ligne, visible
+    PC comme GSM). Chaque carte est couverte par un bouton TRANSPARENT :
+    le clic ouvre la fiche DANS le dialog ouvert (le corps du dialog
+    relit st.session_state["_cinema_detail_row"] à chaque rerun de
+    fragment) — aucun rechargement, aucun nouvel onglet."""
+    if not entries:
+        return
+    st.markdown(title_html, unsafe_allow_html=True)
+    per_row = 4
+    for start in range(0, len(entries), per_row):
+        chunk = entries[start:start + per_row]
+        cols = st.columns(per_row, gap="small")
+        for col, entry in zip(cols, chunk):
+            if col is None:
+                continue
+            with col:
+                st.markdown(
+                    _sim_card(entry, watched, listed, list_names, kind=kind, clickable=True),
+                    unsafe_allow_html=True,
+                )
+                try:
+                    _sid = int(entry.get("id") or 0)
+                except (TypeError, ValueError):
+                    _sid = 0
+                if _sid and st.button(
+                    "🎬 Ouvrir la fiche",
+                    key=f"simnav_{key_prefix}_{kind}_{_sid}",
+                    use_container_width=True,
+                    type="secondary",
+                ):
+                    _open_fiche_in_dialog(kind, _sid)
 
 
 def _render_cinema_detail_body(row: dict) -> None:
@@ -5838,7 +6082,12 @@ def _render_cinema_detail_body(row: dict) -> None:
 
     # V139 — LA SAGA : les autres volets de la collection TMDB, badgés
     # selon ce que tu as déjà vu / tes listes (1 appel, cache 7 j).
-    saga_html = ""
+    # V175 — GRILLE CLIQUABLE : plus de bandeau défilant — une grille de
+    # mini-cartes (4 par ligne) où chaque carte est un bouton transparent
+    # qui ouvre la fiche DANS le dialog (retour utilisateur : l'onglet
+    # ouvert par le lien ?msl_fiche ne pouvait pas être fermé en PWA).
+    saga_entries: list = []
+    saga_title_html = ""
     collection_block = fr_payload.get("belongs_to_collection") if isinstance(fr_payload.get("belongs_to_collection"), dict) else {}
     collection_id = int(collection_block.get("id") or 0)
     if collection_id and api_key:
@@ -5851,24 +6100,21 @@ def _render_cinema_detail_body(row: dict) -> None:
             if isinstance(part, dict) and (part.get("title") or part.get("name"))
         ][:12]
         if len(parts) >= 2:
-            watched_ids, listed_ids, list_names_map = _seen_watchlist_listname_ids()
-            saga_cards = "".join(
-                _sim_card(part, watched_ids, listed_ids, list_names_map, kind="movie") for part in parts
-            )
+            saga_entries = parts
             saga_name = escape(str(collection_payload.get("name") or "Saga"))
-            saga_html = (
-                f'<p class="cinema-section-title">La saga · {saga_name}</p>'
-                f'<div class="sim-strip">{saga_cards}</div>'
+            saga_title_html = (
+                f'<p class="cinema-section-title" style="color:rgb({a2r},{a2g},{a2b});">La saga · {saga_name}</p>'
             )
 
     # V139 — SIMILAIRES : recommandations TMDB croisées avec ton historique
-    # et tes listes (1 appel, cache 7 j).
-    sim_html = ""
+    # et tes listes (1 appel, cache 7 j). V175 — grille cliquable (boutons
+    # transparents → la fiche s'ouvre dans le dialog, sans nouvel onglet).
+    sim_entries: list = []
+    sim_title_html = ""
+    reco_kind = "tv" if row.get("type") == "Série" else "movie"
     if api_key and tmdb_id:
         try:
-            reco_payload = _fetch_recommendations(
-                "tv" if row.get("type") == "Série" else "movie", tmdb_id, api_key
-            )
+            reco_payload = _fetch_recommendations(reco_kind, tmdb_id, api_key)
         except Exception:
             reco_payload = {}
         reco_results = [
@@ -5876,15 +6122,17 @@ def _render_cinema_detail_body(row: dict) -> None:
             if isinstance(r, dict) and (r.get("title") or r.get("name")) and r.get("poster_path")
         ][:10]
         if len(reco_results) >= 3:
-            watched_ids, listed_ids, list_names_map = _seen_watchlist_listname_ids()
-            reco_kind = "tv" if row.get("type") == "Série" else "movie"
-            reco_cards = "".join(
-                _sim_card(r, watched_ids, listed_ids, list_names_map, kind=reco_kind) for r in reco_results
+            sim_entries = reco_results
+            sim_title_html = (
+                f'<p class="cinema-section-title" style="color:rgb({a2r},{a2g},{a2b});">Similaires</p>'
             )
-            sim_html = (
-                f'<p class="cinema-section-title">Similaires</p>'
-                f'<div class="sim-strip">{reco_cards}</div>'
-            )
+    # V175 — états croisés UNE seule fois pour les deux grilles.
+    _grid_watched, _grid_listed, _grid_names = set(), set(), {}
+    if saga_entries or sim_entries:
+        try:
+            _grid_watched, _grid_listed, _grid_names = _seen_watchlist_listname_ids()
+        except Exception:
+            pass
 
     # V136 — bande-annonce (iframe YouTube, lazy) — après la distribution
     trailer_html = ""
@@ -5969,6 +6217,11 @@ def _render_cinema_detail_body(row: dict) -> None:
     # dialog est peinte avec la couleur dominante → un seul flux visuel,
     # de la bannière jusqu'en bas, sans bords noirs. Sur PC : poster 11%
     # à gauche + infos à droite. Sur GSM : poster 38% CENTRÉ en haut.
+    # V175 — le bloc principal S'ARRÊTE après les saisons : Similaires et
+    # Saga deviennent des GRILLES CLIQUABLES (st.columns + boutons
+    # transparents, rendus juste après) ; bande-annonce / plateformes /
+    # liens suivent dans un pied pleine largeur. L'ordre visuel de la
+    # fiche est conservé (saisons → saga → similaires → bande-annonce…).
     st.markdown(
         f"{dialog_css}"
         f'<div style="{wrapper_style}">'
@@ -5983,14 +6236,21 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"{synopsis_html}"
         f"{casting_html}"
         f"{seasons_html}"
-        f"{saga_html}"
-        f"{sim_html}"
-        f"{trailer_html}"
-        f"{providers_html}"
-        f"{links_html}"
         f"</div></div></div>",
         unsafe_allow_html=True,
     )
+    # V175 — grilles Similaires / Saga cliquables (fiche dans le dialog).
+    try:
+        _render_sim_grid(saga_entries, _grid_watched, _grid_listed, _grid_names, "movie", saga_title_html, key_prefix="saga")
+        _render_sim_grid(sim_entries, _grid_watched, _grid_listed, _grid_names, reco_kind, sim_title_html, key_prefix="sim")
+    except Exception:
+        pass
+    if trailer_html or providers_html or links_html:
+        st.markdown(
+            f'<div class="cinema-tail" style="padding:0 .95rem;">'
+            f"{trailer_html}{providers_html}{links_html}</div>",
+            unsafe_allow_html=True,
+        )
 
     # de la fiche (demande utilisateur), re-tirable au bouton. Aucun appel
     # sans clé Gemini.
@@ -6858,7 +7118,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
     # étiré, qualité décevante — retour utilisateur). Le « waouh » vit
     # dans la fiche cinéma (dialog), pas sur les cartes.
     card_html = (
-        f'<div class="media-list-card poster-card{(" " + card_class) if card_class else ""}">{image_html}<div class="media-list-content" style="width:100%;">'
+        f'<div class="media-list-card poster-card msl-click{(" " + card_class) if card_class else ""}">{image_html}<div class="media-list-content" style="width:100%;">'
         f'{roulette_badge}{head}'
         f'<small>{" · ".join(metadata)}</small>{links_html}'
         f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">'
@@ -6876,18 +7136,26 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
     # raccourci « Voir la fiche » (valable films ET séries) + habillage
     # exact des tuiles (CSS :has() ci-dessus — même fond, même liseré,
     # même surbrillance au survol).
-    st.markdown(card_html, unsafe_allow_html=True)
+    # V175 — TUILE ENTIÈRE CLIQUABLE (retour utilisateur : « pourquoi ne
+    # pas utiliser le bouton transparent depuis la tuile Que regarder, et
+    # supprimer le bouton Voir la fiche ? ») : le bouton devient un CALQUE
+    # TRANSPARENT couvrant toute la tuile — cliquer n'importe où ouvre la
+    # fiche, sans rechargement ni nouvel onglet. Les pastilles (info-bulles),
+    # les liens TMDB/MDBL/JustWatch et « Pourquoi ce score ? » restent
+    # au-dessus du calque (CSS .msl-click) → toujours actifs.
     if hide_fiche_button:
+        st.markdown(card_html, unsafe_allow_html=True)
         return
     detail_key = f"{key_prefix}{row.get('key') or id(row)}{'_hl' if highlighted else ''}"
-    if st.button(
-        "🎬 Voir la fiche",
-        key=detail_key,
-        help="Bannière, clear logo TMDB, détails et score expliqué — films et séries",
-        use_container_width=True,
-        type="secondary",
-    ):
-        _open_cinema_detail(row)
+    with st.container():
+        st.markdown(card_html, unsafe_allow_html=True)
+        if st.button(
+            "🎬 Voir la fiche",
+            key=detail_key,
+            use_container_width=True,
+            type="secondary",
+        ):
+            _open_cinema_detail(row)
 
 
 def _render_dilemma_tiles(ordered_rows: list) -> None:
@@ -9985,8 +10253,34 @@ def _ia_now() -> float:
     return time.time()
 
 
+@st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours — V175 éco
+def _ia_ask_cached(channel: str, subject: str, hint: str, gemini_key: str, groq_key: str,
+                   variant: int) -> dict:
+    """V175 — RATIONALISATION DES APPELS IA (retour utilisateur : « cela
+    provoque des appels IA / token supplémentaires ? Important de penser
+    à la planète et la consommation d'eau »). Vérité d'avant V175 : le
+    nonce posé à chaque ouverture de fiche invalidait le précalcul des
+    QUATRE canaux « contenu » (pourquoi ça compte / esprit / même esprit
+    / parcours) → ils étaient re-générés à chaque NOUVELLE SESSION pour
+    chaque contenu, alors que leur réponse ne dépend que de l'œuvre.
+    V175 : ces canaux passent par CE cache 30 jours — générés une seule
+    fois par œuvre (et par variante du bouton « une autre »), partagés
+    entre toutes tes sessions et tous tes appareils. Seule l'INFO DES
+    COULISSES reste régénérée à chaque ouverture (demande V152 :
+    anecdote nouvelle à chaque fiche)."""
+    _fn = {
+        "context": pop_engine.context_ask_ai,
+        "spirit": pop_engine.spirit_ask_ai,
+        "alike": pop_engine.alike_ask_ai,
+        "career": pop_engine.career_ask_ai,
+    }.get(channel)
+    if _fn is None:
+        return {}
+    return _fn(gemini_key, groq_key, subject, hint)
+
+
 def _ia_prefetch_launch(store_key: str, gemini_key: str, groq_key: str, subject: str, hint: str,
-                        channel: str = "coulisses") -> None:
+                        channel: str = "coulisses", variant: int = 0) -> None:
     """Lance (une seule fois) la génération en arrière-plan. Le thread ne
     touche JAMAIS à st.* (interdit hors run) : il écrit dans un dict
     module-level ; l'UI le relit. Garde-fou mémoire : 60 entrées max.
@@ -10016,7 +10310,12 @@ def _ia_prefetch_launch(store_key: str, gemini_key: str, groq_key: str, subject:
 
     def _work() -> None:
         try:
-            data = _channel_fn(gemini_key, groq_key, subject, hint)
+            # V175 — ÉCO : canaux « contenu » → cache 30 jours (générés une
+            # fois par œuvre) ; coulisses/score → appel direct (fraîcheur).
+            if channel in ("context", "spirit", "alike", "career"):
+                data = _ia_ask_cached(channel, subject, hint, gemini_key, groq_key, variant)
+            else:
+                data = _channel_fn(gemini_key, groq_key, subject, hint)
             _IA_PREFETCH[store_key] = {"status": "done", "ts": _ia_now(), "data": data}
         except Exception as exc:  # RuntimeError (lisible) ou imprévu
             _IA_PREFETCH[store_key] = {"status": "error", "ts": _ia_now(),
@@ -10026,7 +10325,7 @@ def _ia_prefetch_launch(store_key: str, gemini_key: str, groq_key: str, subject:
 
 
 def _ia_fetch_or_wait(store_key: str, gemini_key: str, groq_key: str, subject: str, hint: str,
-                      wait: float = 26.0, channel: str = "coulisses") -> tuple[dict | None, str]:
+                      wait: float = 26.0, channel: str = "coulisses", variant: int = 0) -> tuple[dict | None, str]:
     """Attend le précalcul (s'il est en cours) puis, à défaut, appelle
     l'IA directement (retry 503/timeout inclus dans pop_engine).
     V164 — FIX RÉGRESSION V163 : le secours appelait TOUJOURS
@@ -10045,6 +10344,9 @@ def _ia_fetch_or_wait(store_key: str, gemini_key: str, groq_key: str, subject: s
     if channel == "score":
         return None, ""  # V164 : jamais d'appel bloquant pour la phrase du score
     try:
+        # V175 — ÉCO : mêmes canaux « contenu » → cache 30 jours.
+        if channel in ("context", "spirit", "alike", "career"):
+            return _ia_ask_cached(channel, subject, hint, gemini_key, groq_key, variant), ""
         _fn = {
             "coulisses": pop_engine.coulisses_ask_ai,
             "score": pop_engine.score_story_ask_ai,
@@ -10175,8 +10477,8 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
         font-weight: 800 !important;
         text-transform: uppercase !important;
         letter-spacing: .1em !important;
-        min-height: 24px !important;
-        padding: .08rem .55rem !important;
+        min-height: 26px !important;
+        padding: .14rem .55rem !important;
         transition: background .18s ease, border-color .18s ease, color .18s ease,
                      box-shadow .18s ease !important;
     }}
@@ -10188,7 +10490,7 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .70rem !important;
         font-weight: 800 !important;
-        line-height: 1 !important;
+        line-height: 1.15 !important;
         margin: 0 !important;
     }}
     /* Surbrillance au survol : le bouton « s'allume » aux couleurs du bloc. */
@@ -10372,19 +10674,24 @@ def _ia_generic_render(state_key: str, subject: str, hint: str, channel: str,
     if not gemini_key and not groq_key:
         return
     session_key = f"ia_{channel}_{state_key}"
-    nonce = st.session_state.get(f"ia_nonce_{state_key}") or ""
-    store_key = f"{nonce}|{channel}|{state_key}"
-    _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel=channel)
+    # V175 — ÉCO : le nonce (régénération à chaque ouverture) ne concerne
+    # QUE les coulisses. Les autres canaux sont mémorisés 30 jours ; le
+    # bouton « une autre » passe à la VARIANTE suivante (chaque variante
+    # est elle aussi mémorisée → re-cliquer ne re-génère rien).
+    nonce = (st.session_state.get(f"ia_nonce_{state_key}") or "") if channel == "coulisses" else ""
+    variant = int(st.session_state.get(f"ia_var_{channel}_{state_key}") or 0)
+    store_key = f"{nonce}|{channel}|{state_key}|v{variant}"
+    _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel=channel, variant=variant)
 
     shown = st.session_state.get(session_key)
     again = st.session_state.pop(f"{session_key}_again_clicked", False)
     if not shown or again:
         if again:
             _IA_PREFETCH.pop(store_key, None)
-            _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel=channel)
+            _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel=channel, variant=variant)
         with st.spinner(spinner_again if again else spinner_new):
             data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint,
-                                            wait=22.0, channel=channel)
+                                            wait=22.0, channel=channel, variant=variant)
         st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
         shown = st.session_state.get(session_key)
 
@@ -10408,6 +10715,10 @@ def _ia_generic_render(state_key: str, subject: str, hint: str, channel: str,
                 unsafe_allow_html=True)
     if st.button(again_label, key=f"{session_key}_again", use_container_width=True):
         st.session_state[f"{session_key}_again_clicked"] = True
+        if channel != "coulisses":
+            # V175 — nouvelle VARIANTE mémorisée (le cache ne doit pas
+            # renvoyer le même contenu au bouton « une autre »).
+            st.session_state[f"ia_var_{channel}_{state_key}"] = variant + 1
 
 
 @st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours
@@ -10466,128 +10777,225 @@ def _render_ia_spirit(state_key: str, subject: str, hint: str = "",
                        _body)
 
 
+def _alike_tile_html(pick: dict, accent: str, accent_text: str,
+                     prog_keys: set, drop_keys: set, watched: set, listed: set,
+                     list_names: dict) -> tuple:
+    """V175 — UNE tuile « MÊME ESPRIT » au format EXACT des tuiles
+    « Que regarder ? » (_render_recommendation_card) : même structure —
+    poster 88×132, tête de ligne .mc-head + pastilles note/année, chip
+    d'état, lien TMDB, barre de progression, détails « Pourquoi ce
+    contenu ? », colonne note à droite. Seules les COULEURS passent à
+    l'accent de la fiche (retour utilisateur : « qu'elles ressemblent
+    encore plus à mes tuiles dans Que regarder, sauf la couleur »).
+    La note affichée est la note COMMUNAUTÉ TMDB (clairement étiquetée —
+    jamais confondue avec ton score personnel).
+    Retourne (html, (kind, id)) ; id = 0 si l'œuvre est introuvable sur
+    TMDB (tuile sans calque, lien de recherche TMDB à la place)."""
+    title_raw = str(pick.get("title") or "?")
+    kind_raw = str(pick.get("kind") or "Film")
+    year_raw = str(pick.get("year") or "")
+    why = escape(str(pick.get("why") or ""))
+    lk = {}
+    try:
+        lk = _alike_lookup(kind_raw, title_raw, year_raw) or {}
+    except Exception:
+        lk = {}
+    lk_id = int(lk.get("id") or 0)
+    lk_kind = str(lk.get("kind") or ("tv" if kind_raw.lower().startswith("s") else "movie"))
+    title = escape(str(lk.get("title") or title_raw))
+    year = escape(str(lk.get("year") or year_raw or ""))
+    note = None
+    if lk.get("note"):
+        try:
+            note = round(float(lk["note"]), 1)
+        except (TypeError, ValueError):
+            note = None
+    if lk_id and lk.get("poster"):
+        img = (
+            f'<img src="https://image.tmdb.org/t/p/w154{escape(str(lk.get("poster")), quote=True)}" '
+            f'alt="{title}" loading="lazy">'
+        )
+    else:
+        img = _poster_html("", "Série" if lk_kind == "tv" else "Film")
+    note_pill = (
+        f'<span class="mc-note" data-tooltip="Note communauté TMDB (sur 10)">⭐ {note:.1f}</span>'
+        if note else ""
+    )
+    year_pill = (
+        f'<span class="mc-year" data-tooltip="Année de sortie">{year}</span>'
+        if year else ""
+    )
+    head = (
+        f'<div class="mc-head">{_type_chip("Série" if lk_kind == "tv" else "Film")}'
+        f"<strong>{title}</strong>"
+        f'<span style="display:inline-flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
+        f"{note_pill}{year_pill}</span></div>"
+    )
+    # Pastille d'état : MÊMES classes/priorités que les tuiles « Que
+    # regarder ? » (en cours > abandonnée > vu > liste > watchlist > hors).
+    state_chip = ""
+    if lk_id:
+        typed = f"{lk_kind}:{lk_id}"
+        if typed in prog_keys:
+            state_chip = '<span class="mc-chip chip-encours" data-tooltip="Série en cours de visionnage">▶️ En cours</span>'
+        elif typed in drop_keys:
+            state_chip = '<span class="mc-chip chip-dropped" data-tooltip="Série marquée abandonnée dans MDBList">🚫 Abandonnée</span>'
+        elif typed in watched:
+            state_chip = '<span class="mc-chip chip-vu" data-tooltip="Contenu déjà vu">✅ Vu</span>'
+        elif typed in list_names:
+            state_chip = (
+                f'<span class="mc-chip" data-tooltip="Se trouve dans ta liste {escape(str(list_names.get(typed) or ""))}">📂 {escape(str(list_names.get(typed) or "liste"))}</span>'
+            )
+        elif typed in listed:
+            state_chip = '<span class="mc-chip" data-tooltip="Se trouve dans ta Watchlist">📌 Watchlist</span>'
+        else:
+            state_chip = '<span class="mc-chip" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>'
+    small = f"<small>{state_chip}</small>" if state_chip else ""
+    if lk_id:
+        links = (
+            f'<a class="link-pill" href="https://www.themoviedb.org/{lk_kind}/{lk_id}" '
+            f'target="_blank" rel="noopener noreferrer" title="Voir sur TMDB (nouvel onglet)">TMDB</a>'
+        )
+    else:
+        links = (
+            f'<a class="link-pill" href="https://www.themoviedb.org/search?query={escape(quote(title_raw), quote=True)}" '
+            f'target="_blank" rel="noopener noreferrer" title="Rechercher sur TMDB (nouvel onglet)">TMDB</a>'
+        )
+    pct = max(0, min(100, int(round((note or 0) * 10))))
+    bar = (
+        f'<div class="progress-bar-container" style="--pct:{pct}%;" '
+        f'data-tooltip="Note communauté TMDB"><div class="progress-rest"></div></div>'
+    )
+    pct_col = ""
+    if note:
+        pct_col = (
+            f'<div class="media-list-pct" data-tooltip="Note communauté TMDB ({note:.1f}/10) — pas ton score personnel">'
+            f'{pct}<span class="sub">note TMDB /100</span></div>'
+        )
+    details = (
+        f'<details class="pills-details"><summary>💡 Pourquoi ce contenu ?</summary>'
+        f'<div class="alike-why-body">{why}</div></details>'
+    )
+    html = (
+        f'<div class="media-list-card poster-card alike-qr msl-click">{img}'
+        f'<div class="media-list-content" style="width:100%;">{head}{small}{links}{bar}{details}'
+        f"</div>{pct_col}</div>"
+    )
+    return html, (lk_kind if lk_id else "", lk_id)
+
+
 def _render_ia_alike(state_key: str, subject: str, hint: str = "",
                      accent: str = "#FFE100", accent_soft: str = "rgba(255,225,0,.32)",
                      accent_text: str = "#EAF6F3") -> None:
-    """🔄 « MÊME ESPRIT » (V173 — demande utilisateur : « l'IA me fait des
-    recommandations où je retrouve le même esprit, ex. The Office →
-    Parks & Recreation »). Chaque proposition porte un lien TMDB."""
-    def _body(shown: dict) -> str:
-        # V174 — chaque proposition en VRAIE TUILE (retour utilisateur) :
-        # poster cliquable → fiche locale (?msl_fiche), chips note/année,
-        # PASTILLE D'ÉTAT croisée avec tes données, pourquoi — le tout aux
-        # couleurs d'accent de la fiche.
-        try:
-            _lk_prog, _lk_drop = _watch_status_keys()
-            _lk_watched, _lk_listed, _lk_names = _seen_watchlist_listname_ids()
-        except Exception:
-            _lk_prog, _lk_drop = set(), set()
-            _lk_watched, _lk_listed, _lk_names = set(), set(), {}
-        parts = []
-        for pick in (shown.get("picks") or [])[:3]:
-            title_raw = str(pick.get("title") or "?")
-            kind_raw = str(pick.get("kind") or "Film")
-            year_raw = str(pick.get("year") or "")
-            why = escape(str(pick.get("why") or ""))
-            lk = {}
-            try:
-                lk = _alike_lookup(kind_raw, title_raw, year_raw) or {}
-            except Exception:
-                lk = {}
-            lk_id = int(lk.get("id") or 0)
-            lk_kind = lk.get("kind") or ("tv" if kind_raw.lower().startswith("s") else "movie")
-            if lk_id:
-                typed = f"{lk_kind}:{lk_id}"
-                if typed in _lk_prog:
-                    state = '<span class="alike-state encours">▶️ En cours</span>'
-                elif typed in _lk_drop:
-                    state = '<span class="alike-state dropped">🚫 Abandonnée</span>'
-                elif typed in _lk_watched:
-                    state = '<span class="alike-state vu">✅ Vu</span>'
-                elif typed in _lk_names:
-                    state = f'<span class="alike-state liste">📂 {escape(_lk_names.get(typed) or "liste")}</span>'
-                elif typed in _lk_listed:
-                    state = '<span class="alike-state liste">📌 Watchlist</span>'
-                else:
-                    state = '<span class="alike-state hors">🌐 Hors de tes listes</span>'
-            else:
-                state = ""
-            poster_html = ""
-            if lk_id and lk.get("poster"):
-                poster_html = (
-                    f'<a class="alike-poster" href="?msl_fiche={lk_kind}:{lk_id}" '
-                    f'title="Ouvrir la fiche de {escape(lk.get("title") or title_raw)} dans l’app">'
-                    f'<img src="https://image.tmdb.org/t/p/w154{escape(lk.get("poster"), quote=True)}" '
-                    f'alt="" loading="lazy"></a>'
-                )
-            elif lk_id:
-                poster_html = (
-                    f'<a class="alike-poster alike-noimg" href="?msl_fiche={lk_kind}:{lk_id}" '
-                    f'title="Ouvrir la fiche dans l’app">🎬</a>'
-                )
-            title_html = (
-                f'<a class="alike-title" href="?msl_fiche={lk_kind}:{lk_id}">{escape(lk.get("title") or title_raw)}</a>'
-                if lk_id else f'<span class="alike-title">{escape(title_raw)}</span>'
-            )
-            chips = []
-            if lk.get("note"):
-                try:
-                    chips.append(f'<span class="alike-chip">⭐ {float(lk["note"]):.1f}</span>')
-                except (TypeError, ValueError):
-                    pass
-            if lk.get("year") or year_raw:
-                chips.append(f'<span class="alike-chip">🗓️ {escape(str(lk.get("year") or year_raw))}</span>')
-            chips.append(f'<span class="alike-chip">{"📺" if lk_kind == "tv" else "🎬"} {escape("Série" if lk_kind == "tv" else "Film")}</span>')
-            if not lk_id:
-                search = quote(title_raw)
-                chips.append(
-                    f'<a class="alike-chip alike-tmb" href="https://www.themoviedb.org/search?query={escape(search, quote=True)}" '
-                    f'target="_blank" rel="noopener noreferrer">TMDB</a>'
-                )
-            parts.append(
-                f'<div class="alike-card">{poster_html}'
-                f'<div class="alike-body">'
-                f'<div class="alike-head">{title_html}{state}</div>'
-                f'<div class="alike-chips">{"".join(chips)}</div>'
-                f'<div class="alike-why">{why}</div>'
-                f"</div></div>"
-            )
-        css = (
-            "<style>"
-            ".alike-card{display:flex;gap:10px;align-items:flex-start;padding:.4rem .5rem;"
-            "border:1px solid rgba(255,255,255,.10);border-radius:12px;"
-            "background:rgba(255,255,255,.03);margin-bottom:.4rem;}"
-            ".alike-card:last-child{margin-bottom:0;}"
-            ".alike-poster{flex:0 0 52px;display:block;text-decoration:none;}"
-            ".alike-poster img{width:52px;border-radius:7px;display:block;"
-            "box-shadow:0 6px 16px rgba(0,0,0,.4);}"
-            ".alike-noimg{height:78px;display:flex;align-items:center;justify-content:center;"
-            "border:1px dashed rgba(255,255,255,.25);border-radius:7px;font-size:1.3rem;}"
-            ".alike-body{flex:1;min-width:0;}"
-            ".alike-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}"
-            ".alike-title{font-weight:800;font-size:.9rem;color:inherit;text-decoration:none;}"
-            ".alike-state{font-size:.64rem;font-weight:800;padding:.06rem .4rem;"
-            "border-radius:999px;border:1px solid;white-space:nowrap;}"
-            ".alike-state.vu{color:#7BE3B0;border-color:rgba(123,227,176,.45);background:rgba(123,227,176,.10);}"
-            ".alike-state.encours{color:#ffc069;border-color:rgba(255,192,105,.45);background:rgba(255,192,105,.10);}"
-            ".alike-state.dropped{color:#ff9aab;border-color:rgba(255,154,171,.45);background:rgba(255,154,171,.10);}"
-            ".alike-state.liste{color:#FFE100;border-color:rgba(255,225,0,.45);background:rgba(255,225,0,.08);}"
-            ".alike-state.hors{color:#9DC5BF;border-color:rgba(157,197,191,.40);background:rgba(157,197,191,.08);}"
-            ".alike-chips{display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.18rem;}"
-            ".alike-chip{font-size:.62rem;font-weight:700;padding:.08rem .42rem;"
-            "border-radius:999px;border:1px solid rgba(255,255,255,.16);"
-            "color:rgba(255,255,255,.85);text-decoration:none;}"
-            ".alike-tmb{border-color:rgba(255,255,255,.3);}"
-            ".alike-why{font-size:.78rem;opacity:.85;margin-top:.22rem;line-height:1.45;}"
-            "@media(max-width:640px){.alike-poster{flex-basis:42px;}"
-            ".alike-poster img{width:42px;}.alike-why{font-size:.74rem;}}"
-            "</style>"
+    """🔄 « MÊME ESPRIT » (V173 : « l'IA me fait des recommandations où je
+    retrouve le même esprit, ex. The Office → Parks & Recreation »).
+    V175 : chaque proposition est une VRAIE tuile « Que regarder ? » —
+    même structure, mêmes pastilles — aux couleurs d'ACCENT de la fiche,
+    et la tuile ENTIÈRE est cliquable (bouton transparent) : la fiche
+    s'ouvre DANS le dialog, sans rechargement ni nouvel onglet.
+    V175 éco : la réponse est mémorisée 30 jours (cache) ; le bouton
+    « D'autres suggestions » passe à la variante suivante."""
+    gemini_key = _gemini_api_key()
+    groq_key = _groq_api_key()
+    if not gemini_key and not groq_key:
+        return
+    channel = "alike"
+    session_key = f"ia_{channel}_{state_key}"
+    variant = int(st.session_state.get(f"ia_var_{channel}_{state_key}") or 0)
+    store_key = f"|{channel}|{state_key}|v{variant}"
+    _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint,
+                        channel=channel, variant=variant)
+    shown = st.session_state.get(session_key)
+    again = st.session_state.pop(f"{session_key}_again_clicked", False)
+    if not shown or again:
+        if again:
+            _IA_PREFETCH.pop(store_key, None)
+            _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint,
+                                channel=channel, variant=variant)
+        with st.spinner("✨ D'autres propositions…" if again else "✨ Les propositions arrivent…"):
+            data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint,
+                                            wait=22.0, channel=channel, variant=variant)
+        st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
+        shown = st.session_state.get(session_key)
+    if not shown or shown.get("error") or shown.get("skip"):
+        return
+    picks = [p for p in (shown.get("picks") or []) if isinstance(p, dict)][:3]
+    if not picks:
+        return
+    try:
+        _lk_prog, _lk_drop = _watch_status_keys()
+        _lk_watched, _lk_listed, _lk_names = _seen_watchlist_listname_ids()
+    except Exception:
+        _lk_prog, _lk_drop = set(), set()
+        _lk_watched, _lk_listed, _lk_names = set(), set(), {}
+    ar, ag, ab = _accent_rgb_parts(accent)
+    # Barre de tête du bloc (même habillage que les autres blocs IA).
+    st.markdown(_ia_coulisses_css(accent, accent_soft, accent_text), unsafe_allow_html=True)
+    spark = _ia_spark_svg(16, accent, "#FFFFFF")
+    st.markdown(
+        '<div class="ia-block ia-head-block">'
+        f'<div class="ia-head">{spark}<div>'
+        f'<div class="ia-title">MÊME ESPRIT</div>'
+        f'<div class="ia-sub">si cet esprit te plaît… · généré par IA · sans spoiler</div>'
+        "</div></div></div>",
+        unsafe_allow_html=True,
+    )
+    # Tuiles format « Que regarder ? » recolorées à l'accent de la fiche.
+    # (L'accent du dialog est déjà posé par accent_css pour la bordure
+    # gauche ; ici : fonds, chips, pastilles, barre, colonne note.)
+    css_alike = (
+        "<style>"
+        f".media-list-card.alike-qr{{background:rgba({ar},{ag},{ab},.13)!important;"
+        f"border:1px solid rgba({ar},{ag},{ab},.40)!important;}}"
+        f".media-list-card.alike-qr .mc-chip{{background:rgba({ar},{ag},{ab},.17);"
+        f"border:1px solid rgba({ar},{ag},{ab},.42);}}"
+        f".media-list-card.alike-qr .mc-year,.media-list-card.alike-qr .mc-note{{"
+        f"color:{accent_text};border:1px solid rgba({ar},{ag},{ab},.55);"
+        f"background:linear-gradient(135deg,rgba({ar},{ag},{ab},.18),rgba(0,0,0,.50));}}"
+        f".media-list-card.alike-qr .media-list-pct{{color:{accent_text};"
+        f"border-left:1px solid rgba({ar},{ag},{ab},.32);}}"
+        f".media-list-card.alike-qr .link-pill{{border:1px solid rgba({ar},{ag},{ab},.45);}}"
+        f".media-list-card.alike-qr .progress-bar-container::before{{"
+        f"background:rgb({ar},{ag},{ab});}}"
+        ".media-list-card.alike-qr:hover,"
+        'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .msl-click):has(+ div[data-testid="stElementContainer"] button[kind="secondary"]:hover) .media-list-card.alike-qr{'
+        f"background:rgba({ar},{ag},{ab},.22)!important;"
+        f"border-color:rgba({ar},{ag},{ab},.65)!important;"
+        f"box-shadow:0 8px 22px rgba({ar},{ag},{ab},.20);}}"
+        ".ia-head-block{padding-bottom:.5rem;}"
+        ".alike-why-body{font-size:.78rem;color:var(--am-text-muted);line-height:1.5;padding:.2rem 0 .1rem;}"
+        # Tuiles resserrées entre elles + pied « une autre » soudé sous la
+        # dernière tuile (compensation de l'écart de bloc de 16 px, même
+        # principe que V174 — ciblé : uniquement après une tuile alike).
+        'div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
+        ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr){'
+        "margin-top:-0.95rem !important;}"
+        'div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
+        ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor){'
+        "margin-top:-0.95rem !important;}"
+        "</style>"
+    )
+    st.markdown(css_alike, unsafe_allow_html=True)
+    for idx, pick in enumerate(picks):
+        tile_html, (lk_kind, lk_id) = _alike_tile_html(
+            pick, accent, accent_text, _lk_prog, _lk_drop, _lk_watched, _lk_listed, _lk_names
         )
-        return css + "".join(parts)
-    _ia_generic_render(state_key, subject, hint, "alike", accent, accent_soft, accent_text,
-                       "MÊME ESPRIT", "si cet esprit te plaît… · généré par IA · sans spoiler",
-                       "✨ Les propositions arrivent…", "✨ D'autres propositions…",
-                       "🔄 D'autres suggestions", _body)
+        with st.container():
+            st.markdown(tile_html, unsafe_allow_html=True)
+            if lk_id and st.button(
+                "🎬 Ouvrir la fiche",
+                key=f"alikenav_{state_key}_{idx}_{lk_kind}_{lk_id}",
+                use_container_width=True,
+                type="secondary",
+            ):
+                _open_fiche_in_dialog(lk_kind, lk_id)
+    # Pied « une autre », soudé à la dernière tuile (comme le pied des
+    # tuiles « Que regarder ? » avant la V175).
+    st.markdown(f'<div class="ia-again-anchor" style="--ia-accent:{accent};"></div>',
+                unsafe_allow_html=True)
+    if st.button("🔄 D'autres suggestions", key=f"{session_key}_again", use_container_width=True):
+        st.session_state[f"{session_key}_again_clicked"] = True
+        st.session_state[f"ia_var_{channel}_{state_key}"] = variant + 1
 
 
 def _render_ia_career(state_key: str, subject: str, hint: str = "",
