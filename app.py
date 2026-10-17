@@ -4098,6 +4098,8 @@ def _open_fiche_from_link(raw: str) -> None:
     if not tmdb_id or kind_raw not in ("movie", "tv"):
         return
     is_show = kind_raw == "tv"
+    st.session_state["_msl_fiche_link_mode"] = True
+    st.session_state["_msl_fiche_heartbeat"] = time.time()
     try:
         media_row = _history_fiche_row_for_link(tmdb_id, is_show)
     except Exception:
@@ -5164,6 +5166,14 @@ def _render_cinema_detail_body(row: dict) -> None:
     le poster est petit à gauche, TOUTES les infos sont à droite. Le
     texte doux (synopsis/casting) est en !important (V132).
     """
+    # V174 — fiche ouverte par LIEN (?msl_fiche) : heartbeat. Les reruns
+    # automatiques (restauration de session, self-heal)fermaient la fiche
+    # juste après son ouverture (retour utilisateur : « la fiche ne reste
+    # qu'une seconde puis se ferme car le dashboard s'actualise »). Le
+    # main ré-ouvre le dialog tant que ce heartbeat est frais ; à la
+    # fermeture de la fiche, il expire et le mode s'éteint tout seul.
+    if st.session_state.get("_msl_fiche_link_mode"):
+        st.session_state["_msl_fiche_heartbeat"] = time.time()
     item = row.get("item") or {}
     raw_title = _media_title(item)
     backdrop = str(item.get("backdrop") or "").strip()
@@ -6036,6 +6046,11 @@ def _render_cinema_detail_body(row: dict) -> None:
             )
         except Exception:
             pass
+        # V174 — heartbeat de FIN de body : le rendu des blocs IA (spinners)
+        # peut durer plusieurs secondes ; posé seulement au début, il était
+        # déjà périmé quand un rerun global arrivait après l'affichage.
+        if st.session_state.get("_msl_fiche_link_mode"):
+            st.session_state["_msl_fiche_heartbeat"] = time.time()
         # V173 — 🎭 L'ESPRIT : ambiance, bon moment, sensations.
         try:
             _render_ia_spirit(
@@ -10073,11 +10088,36 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     bouton « Une autre » (rendu dans un autre conteneur) en profite aussi."""
     return f"""
     <style>
-    /* V173 — blocs IA RAPPROCHÉS (retour utilisateur : « rapprocher un peu
-    l'info des coulisses et pourquoi ça compte ») : marges des conteneurs
-    markdown qui portent un bloc IA réduites au minimum. */
-    [data-testid="stDialog"] [data-testid="stMarkdownContainer"]:has(.ia-block) {{
-        margin-bottom: .15rem !important;
+    /* V173→V174 — blocs IA SERRÉS (retours utilisateur : « la tuile et son
+    bouton doivent être collés » + « écart trop grand entre les blocs ») :
+    marges des conteneurs markdown (bloc IA + ancre du bouton) ET du
+    conteneur du bouton « Une autre… » (secondary uniquement — le bouton
+    « Ajouter » du ruban, primary, vit dans l'expander) réduites à zéro.
+    S'applique aux fiches film ET acteur (même CSS). */
+    [data-testid="stDialog"] [data-testid="stMarkdownContainer"]:has(.ia-block),
+    [data-testid="stDialog"] [data-testid="stMarkdownContainer"]:has(.ia-again-anchor) {{
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+    }}
+    [data-testid="stDialog"] div[data-testid="stButton"]:has(> button[kind="secondary"]) {{
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+    }}
+    [data-testid="stDialog"] .ia-block {{ margin: 0 !important; }}
+    [data-testid="stDialog"] .ia-again-anchor {{ margin: 0 !important; }}
+    /* V174 — l'écart restant vient du GAP (1rem) du bloc vertical parent.
+    On le compense sur le WRAPPER du bouton « Une autre… » : sa structure
+    est caractéristique (wrapper > bloc > stElementContainer > stButton,
+    SANS colonne intermédiaire) — les boutons « Fiche » des cartes
+    personnes vivent dans des colonnes (stHorizontalBlock) et le bouton
+    « Ajouter » du ruban dans l'expander : aucun des deux ne matche ce
+    sélecteur → intacts. La marge négative haut le COLLE au bloc IA
+    au-dessus, la marge négative bas rapproche le bloc IA suivant. */
+    [data-testid="stDialog"] div[data-testid="stElementContainer"]:has(
+        > div[data-testid="stButton"] button[kind="secondary"]
+    ):not(div[data-testid="stColumn"] div[data-testid="stElementContainer"]) {{
+        margin-top: -0.95rem !important;
+        margin-bottom: -0.95rem !important;
     }}
     :root {{
         --ia-accent: {accent};
@@ -10370,6 +10410,35 @@ def _ia_generic_render(state_key: str, subject: str, hint: str, channel: str,
         st.session_state[f"{session_key}_again_clicked"] = True
 
 
+@st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours
+def _alike_lookup(kind_label: str, title: str, year: str) -> dict:
+    """Retrouve sur TMDB une proposition de « MÊME ESPRIT » (V174) :
+    id, poster, note, type — pour l'afficher en vraie tuile (poster
+    cliquable, pastille d'état). Dict vide si introuvable (la tuile
+    s'affiche alors sans poster, avec le lien de recherche TMDB)."""
+    api_key = _tmdb_api_key()
+    if not api_key or not str(title or "").strip():
+        return {}
+    try:
+        year_int = int(str(year)[:4]) if str(year or "").strip()[:4].isdigit() else None
+    except (TypeError, ValueError):
+        year_int = None
+    try:
+        found = _tmdb_search_media(kind_label, str(title).strip(), year_int, api_key) or {}
+    except Exception:
+        return {}
+    if not found.get("id"):
+        return {}
+    return {
+        "id": int(found["id"]),
+        "kind": "tv" if str(found.get("kind") or "").lower() in ("série", "serie", "tv") else "movie",
+        "note": found.get("note"),
+        "poster": found.get("poster") or "",
+        "title": found.get("title") or title,
+        "year": found.get("year") or year,
+    }
+
+
 def _render_ia_spirit(state_key: str, subject: str, hint: str = "",
                       accent: str = "#FFE100", accent_soft: str = "rgba(255,225,0,.32)",
                       accent_text: str = "#EAF6F3", title_label: str = "L'ESPRIT DU FILM") -> None:
@@ -10404,28 +10473,114 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
     recommandations où je retrouve le même esprit, ex. The Office →
     Parks & Recreation »). Chaque proposition porte un lien TMDB."""
     def _body(shown: dict) -> str:
+        # V174 — chaque proposition en VRAIE TUILE (retour utilisateur) :
+        # poster cliquable → fiche locale (?msl_fiche), chips note/année,
+        # PASTILLE D'ÉTAT croisée avec tes données, pourquoi — le tout aux
+        # couleurs d'accent de la fiche.
+        try:
+            _lk_prog, _lk_drop = _watch_status_keys()
+            _lk_watched, _lk_listed, _lk_names = _seen_watchlist_listname_ids()
+        except Exception:
+            _lk_prog, _lk_drop = set(), set()
+            _lk_watched, _lk_listed, _lk_names = set(), set(), {}
         parts = []
         for pick in (shown.get("picks") or [])[:3]:
-            title = escape(str(pick.get("title") or "?"))
-            kind = escape(str(pick.get("kind") or ""))
-            year = escape(str(pick.get("year") or ""))
+            title_raw = str(pick.get("title") or "?")
+            kind_raw = str(pick.get("kind") or "Film")
+            year_raw = str(pick.get("year") or "")
             why = escape(str(pick.get("why") or ""))
-            search = quote(str(pick.get("title") or ""))
-            meta = " · ".join(x for x in (kind, year) if x)
+            lk = {}
+            try:
+                lk = _alike_lookup(kind_raw, title_raw, year_raw) or {}
+            except Exception:
+                lk = {}
+            lk_id = int(lk.get("id") or 0)
+            lk_kind = lk.get("kind") or ("tv" if kind_raw.lower().startswith("s") else "movie")
+            if lk_id:
+                typed = f"{lk_kind}:{lk_id}"
+                if typed in _lk_prog:
+                    state = '<span class="alike-state encours">▶️ En cours</span>'
+                elif typed in _lk_drop:
+                    state = '<span class="alike-state dropped">🚫 Abandonnée</span>'
+                elif typed in _lk_watched:
+                    state = '<span class="alike-state vu">✅ Vu</span>'
+                elif typed in _lk_names:
+                    state = f'<span class="alike-state liste">📂 {escape(_lk_names.get(typed) or "liste")}</span>'
+                elif typed in _lk_listed:
+                    state = '<span class="alike-state liste">📌 Watchlist</span>'
+                else:
+                    state = '<span class="alike-state hors">🌐 Hors de tes listes</span>'
+            else:
+                state = ""
+            poster_html = ""
+            if lk_id and lk.get("poster"):
+                poster_html = (
+                    f'<a class="alike-poster" href="?msl_fiche={lk_kind}:{lk_id}" '
+                    f'title="Ouvrir la fiche de {escape(lk.get("title") or title_raw)} dans l’app">'
+                    f'<img src="https://image.tmdb.org/t/p/w154{escape(lk.get("poster"), quote=True)}" '
+                    f'alt="" loading="lazy"></a>'
+                )
+            elif lk_id:
+                poster_html = (
+                    f'<a class="alike-poster alike-noimg" href="?msl_fiche={lk_kind}:{lk_id}" '
+                    f'title="Ouvrir la fiche dans l’app">🎬</a>'
+                )
+            title_html = (
+                f'<a class="alike-title" href="?msl_fiche={lk_kind}:{lk_id}">{escape(lk.get("title") or title_raw)}</a>'
+                if lk_id else f'<span class="alike-title">{escape(title_raw)}</span>'
+            )
+            chips = []
+            if lk.get("note"):
+                try:
+                    chips.append(f'<span class="alike-chip">⭐ {float(lk["note"]):.1f}</span>')
+                except (TypeError, ValueError):
+                    pass
+            if lk.get("year") or year_raw:
+                chips.append(f'<span class="alike-chip">🗓️ {escape(str(lk.get("year") or year_raw))}</span>')
+            chips.append(f'<span class="alike-chip">{"📺" if lk_kind == "tv" else "🎬"} {escape("Série" if lk_kind == "tv" else "Film")}</span>')
+            if not lk_id:
+                search = quote(title_raw)
+                chips.append(
+                    f'<a class="alike-chip alike-tmb" href="https://www.themoviedb.org/search?query={escape(search, quote=True)}" '
+                    f'target="_blank" rel="noopener noreferrer">TMDB</a>'
+                )
             parts.append(
-                f'<div class="alike-pick">'
-                f'<div class="alike-t"><strong>{title}</strong>'
-                + (f' <span class="alike-m">({meta})</span>' if meta else "")
-                + f' <a class="link-pill alike-link" href="https://www.themoviedb.org/search?query={escape(search, quote=True)}" '
-                f'target="_blank" rel="noopener noreferrer" title="Chercher sur TMDB">TMDB</a></div>'
-                f'<div class="alike-why">{why}</div></div>'
+                f'<div class="alike-card">{poster_html}'
+                f'<div class="alike-body">'
+                f'<div class="alike-head">{title_html}{state}</div>'
+                f'<div class="alike-chips">{"".join(chips)}</div>'
+                f'<div class="alike-why">{why}</div>'
+                f"</div></div>"
             )
         css = (
-            "<style>.alike-pick{padding:.35rem 0;border-top:1px dashed "
-            "rgba(255,255,255,.12);}.alike-pick:first-child{border-top:none;}"
-            ".alike-t{font-size:.9rem;}.alike-m{opacity:.7;font-size:.78rem;}"
-            ".alike-why{font-size:.82rem;opacity:.9;margin-top:.1rem;}"
-            ".alike-link{font-size:.66rem;padding:.05rem .45rem;margin-left:.3rem;}"
+            "<style>"
+            ".alike-card{display:flex;gap:10px;align-items:flex-start;padding:.4rem .5rem;"
+            "border:1px solid rgba(255,255,255,.10);border-radius:12px;"
+            "background:rgba(255,255,255,.03);margin-bottom:.4rem;}"
+            ".alike-card:last-child{margin-bottom:0;}"
+            ".alike-poster{flex:0 0 52px;display:block;text-decoration:none;}"
+            ".alike-poster img{width:52px;border-radius:7px;display:block;"
+            "box-shadow:0 6px 16px rgba(0,0,0,.4);}"
+            ".alike-noimg{height:78px;display:flex;align-items:center;justify-content:center;"
+            "border:1px dashed rgba(255,255,255,.25);border-radius:7px;font-size:1.3rem;}"
+            ".alike-body{flex:1;min-width:0;}"
+            ".alike-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}"
+            ".alike-title{font-weight:800;font-size:.9rem;color:inherit;text-decoration:none;}"
+            ".alike-state{font-size:.64rem;font-weight:800;padding:.06rem .4rem;"
+            "border-radius:999px;border:1px solid;white-space:nowrap;}"
+            ".alike-state.vu{color:#7BE3B0;border-color:rgba(123,227,176,.45);background:rgba(123,227,176,.10);}"
+            ".alike-state.encours{color:#ffc069;border-color:rgba(255,192,105,.45);background:rgba(255,192,105,.10);}"
+            ".alike-state.dropped{color:#ff9aab;border-color:rgba(255,154,171,.45);background:rgba(255,154,171,.10);}"
+            ".alike-state.liste{color:#FFE100;border-color:rgba(255,225,0,.45);background:rgba(255,225,0,.08);}"
+            ".alike-state.hors{color:#9DC5BF;border-color:rgba(157,197,191,.40);background:rgba(157,197,191,.08);}"
+            ".alike-chips{display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.18rem;}"
+            ".alike-chip{font-size:.62rem;font-weight:700;padding:.08rem .42rem;"
+            "border-radius:999px;border:1px solid rgba(255,255,255,.16);"
+            "color:rgba(255,255,255,.85);text-decoration:none;}"
+            ".alike-tmb{border-color:rgba(255,255,255,.3);}"
+            ".alike-why{font-size:.78rem;opacity:.85;margin-top:.22rem;line-height:1.45;}"
+            "@media(max-width:640px){.alike-poster{flex-basis:42px;}"
+            ".alike-poster img{width:42px;}.alike-why{font-size:.74rem;}}"
             "</style>"
         )
         return css + "".join(parts)
@@ -15729,6 +15884,20 @@ if _fiche_link_raw and st.session_state.get("_msl_fiche_done") != _fiche_link_ra
         _open_fiche_from_link(_fiche_link_raw)
     except Exception:
         pass
+elif st.session_state.get("_msl_fiche_link_mode"):
+    # V174 — la fiche-lien reste ouverte à travers les reruns automatiques
+    # (retour utilisateur : elle se fermait dès que le dashboard
+    # s'actualisait). On la ré-ouvre tant que son heartbeat est frais
+    # (< 3 s) ; fermée par l'utilisateur, le heartbeat expire et le mode
+    # s'éteint au rerun suivant.
+    try:
+        _fresh = time.time() - float(st.session_state.get("_msl_fiche_heartbeat") or 0) < 4.0
+    except (TypeError, ValueError):
+        _fresh = False
+    if _fresh and st.session_state.get("_cinema_detail_row"):
+        _cinema_detail_dialog()
+    else:
+        st.session_state.pop("_msl_fiche_link_mode", None)
 page = navigation()
 header()
 if page == "🏠 Tableau de bord":

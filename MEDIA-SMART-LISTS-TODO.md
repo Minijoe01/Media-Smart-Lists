@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 16 octobre 2026 (nuit) · Dernière version déployée : V173.
+> Dernière mise à jour : 17 octobre 2026 · Dernière version déployée : V174.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1428,6 +1428,32 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       TITRE garde le lien TMDB externe.
 - [x] Banc : 16/16 + 2/2 (test lien fiche séparé : navigation réelle) +
       23/23 tests.
+
+### Fait en V174 (retours du 16/10 nuit — écarts, tuiles, persistance)
+- [x] 📏 ÉCARTS IA CORRIGÉS (retour : « chaque tuile est maintenant
+      séparée de son bouton Une autre anecdote… ils doivent être
+      collés » + « écart trop grand entre les blocs ») : cause racine =
+      le GAP (16 px) du bloc vertical Streamlit entre chaque élément.
+      Compensé par marges négatives ciblées sur le conteneur du bouton
+      « Une autre… » (fiche film ET fiche acteur). Mesuré : tuile ↔
+      bouton = 0,9 px (collés), les boutons « Fiche » des cartes
+      personnes protégés (structure à colonnes exclue du sélecteur).
+- [x] 🔄 MÊME ESPRIT en VRAIES TUILES (retour : « chaque élément proposé
+      en format tuile comme dans Que regarder, avec les mêmes pastilles ») :
+      recherche TMDB par titre (cache 30 j) → poster CLIQUABLE (fiche
+      locale), pastille d'état (▶️/🚫/📂/✅/📌/🌐 croisé avec tes
+      données), chips ⭐ note + 🗓️ année + type, et le pourquoi de l'IA.
+      Si introuvable sur TMDB → tuile sans poster + lien de recherche.
+- [x] 🎬 FICHE DEPUIS UNE FICHE — le VRAI BUG corrigé (retour : « la
+      fiche ne reste qu'une seconde puis se ferme car le dashboard
+      s'actualise ») : les reruns automatiques (restauration de session
+      au chargement) fermaient le dialog. Pattern HEARTBEAT : le main
+      ré-ouvre la fiche-lien tant qu'elle est vivante (battement posé au
+      début ET à la fin du rendu) ; fermée par toi, le mode expire en
+      ≤ 4 s et ne se ré-ouvre plus. Prouvé au banc : un rerun global
+      juste après l'ouverture ne ferme plus la fiche ; après fermeture
+      manuelle, un rerun ne la rouvre pas.
+- [x] Banc : 18/18 + 3/3 (persistance testée séparément) + 23/23 tests.
 
 ### PROCHAINES ÉTAPES (au choix de l'utilisateur)
 - [ ] (facultatif) Score moyen sur la fiche acteur · duo favori stats
