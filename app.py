@@ -1372,10 +1372,13 @@ st.markdown(
     }
     .ep-cell[data-tooltip], .score-badge[data-tooltip], .mc-note[data-tooltip], .mc-type[data-tooltip],
     .mc-year[data-tooltip], .media-list-pct[data-tooltip], .mc-inline-pct[data-tooltip],
-    .mc-chip[data-tooltip] {
+    .mc-chip[data-tooltip],
+    /* V181 — badges des bandeaux/filmographies : info-bulle « Vu le … » */
+    .sim-badge[data-tooltip] {
         position: relative; cursor: help;
     }
     .score-badge[data-tooltip]::after,
+    .sim-badge[data-tooltip]::after,
     .mc-note[data-tooltip]::after,
     .mc-type[data-tooltip]::after,
     .mc-year[data-tooltip]::after,
@@ -1413,6 +1416,7 @@ st.markdown(
     }
     .ep-cell[data-tooltip]:hover::after,
     .score-badge[data-tooltip]:hover::after,
+    .sim-badge[data-tooltip]:hover::after,
     .mc-note[data-tooltip]:hover::after,
     .mc-type[data-tooltip]:hover::after,
     .mc-year[data-tooltip]:hover::after,
@@ -6969,6 +6973,30 @@ def _actor_dialog_chrome_css() -> str:
         "z-index:2000!important;top:10px!important;right:10px!important;"
         "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
+        # V181 — EN-TÊTE DÉGRADÉ Aston (retour utilisateur : « un beau
+        # dégradé respectant mon thème serait bienvenu dans la fiche
+        # acteur ») : vert foncé → vert Aston, liseré discret, la photo
+        # et les infos vivent dedans (même structure, nouveau décor).
+        '[data-testid="stDialog"] .actor-head{'
+        "background:linear-gradient(120deg,rgba(0,82,75,.96) 0%,rgba(0,116,104,.86) 52%,rgba(0,163,146,.42) 100%)!important;"
+        "border:1px solid rgba(255,225,0,.16)!important;"
+        "border-radius:14px!important;"
+        "margin:.5rem .6rem .8rem!important;"
+        "box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 12px 34px rgba(0,0,0,.38)!important;}"
+        '[data-testid="stDialog"] .actor-name{font-size:1.45rem!important;letter-spacing:.01em;}'
+        '[data-testid="stDialog"] .actor-bio{margin:.1rem .8rem .55rem;}'
+        # V181 — les toggles « DEPUIS MON HISTOIRE » (radios horizontaux)
+        # en PILULES VERRE du thème : l'option active porte le liseré
+        # jaune Aston.
+        '[data-testid="stDialog"] div[role="radiogroup"]{margin:.05rem 0 .3rem;}'
+        '[data-testid="stDialog"] div[role="radiogroup"] label{'
+        "background:rgba(3,22,19,.55)!important;border:1px solid rgba(0,163,146,.35)!important;"
+        "border-radius:999px!important;padding:.14rem .68rem!important;margin:0 .22rem .28rem 0!important;"
+        "color:var(--am-text)!important;font-size:.78rem!important;font-weight:700!important;}"
+        '[data-testid="stDialog"] div[role="radiogroup"] label:has(input:checked){'
+        "background:linear-gradient(135deg,rgba(0,163,146,.38),rgba(0,82,75,.60))!important;"
+        "border-color:rgba(255,225,0,.55)!important;color:#fff!important;"
+        "box-shadow:0 0 12px rgba(0,163,146,.28)!important;}"
         "</style>"
     )
 
@@ -7068,6 +7096,87 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     # pas l'iframe → scroll conservé).
     _msl_fiche_scrolltop_component(f"person:{int(person_id or 0)}:{str(person_kind)}")
 
+    # V181 — DATES DE VISIONNAGE par contenu (clé typée movie:/tv:) :
+    # elles alimentent le tri du bloc « DEPUIS MON HISTOIRE », sa
+    # répartition par années et les info-bulles « Vu le … » des pastilles.
+    # Mêmes sources que la pastille d'état de la fiche film (sections
+    # watched : movies/shows + ÉPISODES via la série imbriquée « show »).
+    def _watched_dates_map() -> dict:
+        out: dict = {}
+        try:
+            _ds = _dataset()
+            _secs = _ds.get("sections") if isinstance(_ds.get("sections"), dict) else {}
+            _watched = _secs.get("watched") or {}
+        except Exception:
+            return out
+
+        def _grab_date(entry) -> object:
+            raw = None
+            if isinstance(entry, dict):
+                raw = entry.get("last_watched_at") or entry.get("watched_at")
+            media = _unwrap_media(entry) if entry is not None else None
+            if raw is None and isinstance(media, dict):
+                raw = media.get("last_watched_at") or media.get("watched_at")
+            if raw is None:
+                return None
+            try:
+                return raw if isinstance(raw, datetime) else datetime.fromisoformat(str(raw))
+            except (TypeError, ValueError):
+                return None
+
+        for _entry in ((_watched.get("movies") or [])):
+            _media = _unwrap_media(_entry)
+            try:
+                _tid = _media_tmdb_id_strict(_media) if isinstance(_media, dict) else None
+            except Exception:
+                _tid = None
+            _d = _grab_date(_entry)
+            if _tid and _d is not None:
+                out.setdefault(f"movie:{int(_tid)}", []).append(_d)
+        for _entry in ((_watched.get("shows") or [])):
+            _media = _unwrap_media(_entry)
+            try:
+                _tid = _media_tmdb_id_strict(_media) if isinstance(_media, dict) else None
+            except Exception:
+                _tid = None
+            _d = _grab_date(_entry)
+            if _tid and _d is not None:
+                out.setdefault(f"tv:{int(_tid)}", []).append(_d)
+        for _entry in ((_watched.get("episodes") or [])):
+            # une entrée ÉPISODE porte l'id de l'ÉPISODE : la date va à
+            # la SÉRIE imbriquée « show » (même règle que la fiche film).
+            if not isinstance(_entry, dict):
+                continue
+            _show = _entry.get("show")
+            _media = _unwrap_media(_show) if isinstance(_show, dict) else None
+            try:
+                _tid = _media_tmdb_id_strict(_media) if isinstance(_media, dict) else None
+            except Exception:
+                _tid = None
+            _d = _grab_date(_entry)
+            if _tid and _d is not None:
+                out.setdefault(f"tv:{int(_tid)}", []).append(_d)
+        for _k in out:
+            out[_k] = sorted(out[_k])
+        return out
+
+    _hist_dates = _watched_dates_map()
+
+    def _vu_tooltip(credit: dict) -> str:
+        """Info-bulle de la pastille Vu : « Vu le … » ou, pour les
+        rewatchs, « Vu N fois · 1er le … · dernier le … »."""
+        try:
+            _typed = _typed_media_key(credit["kind"], credit["id"])
+        except Exception:
+            return ""
+        _ds = _hist_dates.get(_typed) or []
+        if not _ds:
+            return ""
+        if len(_ds) == 1:
+            return f"Vu le {_ds[0].strftime('%d/%m/%Y')}"
+        return (f"Vu {len(_ds)} fois · 1er le {_ds[0].strftime('%d/%m/%Y')}"
+                f" · dernier le {_ds[-1].strftime('%d/%m/%Y')}")
+
     def _bucket(credit: dict) -> str | None:
         # V150 — clé typée : un film et une série peuvent partager le même
         # id TMDB (Days of Thunder / Supercopter = 2119) → jamais de badge
@@ -7101,7 +7210,11 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         elif badge == "abandonnee":
             badge_html = '<span class="sim-badge abandonnee">🚫 Abandonnée</span>'
         elif badge == "vu":
-            badge_html = '<span class="sim-badge vu">✅ Vu</span>'
+            _tip = _vu_tooltip(credit)
+            badge_html = (
+                f'<span class="sim-badge vu" data-tooltip="{escape(_tip, quote=True)}">✅ Vu</span>'
+                if _tip else '<span class="sim-badge vu">✅ Vu</span>'
+            )
         elif badge == "liste":
             where = list_names.get(credit["id"])
             badge_html = (
@@ -7167,12 +7280,39 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         f'<a class="link-pill" href="https://www.themoviedb.org/person/{person_id}"'
         f' target="_blank" rel="noopener noreferrer" title="Fiche TMDB">Fiche TMDB</a>'
     )
+    # V181 — ÂGE / DÉCÈS (retour utilisateur : « j'aimerais connaître son
+    # âge, savoir quand il est décédé et l'âge qu'il avait à son décès »).
+    born = str(person.get("birthday") or "").strip()
+    died = str(person.get("deathday") or "").strip()
+    age_txt = ""
+    try:
+        if born:
+            _b = datetime.fromisoformat(born).date()
+            if died:
+                _d = datetime.fromisoformat(died).date()
+                _yrs = _d.year - _b.year - ((_d.month, _d.day) < (_b.month, _b.day))
+                age_txt = (f"🎂 né le {_format_date(born)} · ✝️ décédé le {_format_date(died)}"
+                           f" à <strong style=\"color:var(--am-yellow);\">{_yrs} ans</strong>")
+            else:
+                _t = datetime.now().date()
+                _yrs = _t.year - _b.year - ((_t.month, _t.day) < (_b.month, _b.day))
+                age_txt = f"🎂 né le {_format_date(born)} · <strong style=\"color:var(--am-yellow);\">{_yrs} ans</strong>"
+    except (TypeError, ValueError):
+        age_txt = ""
+    place_txt = ""
+    _pob = str(person.get("place_of_birth") or "").strip()
+    if _pob:
+        place_txt = f" · 📍 {escape(_pob)}"
+    _age_line = ""
+    if age_txt or place_txt:
+        _age_line = f'<p class="actor-meta" style="margin-top:.22rem;">{age_txt}{place_txt}</p>'
     st.markdown(_actor_dialog_chrome_css(), unsafe_allow_html=True)
     st.markdown(
         f'<div class="actor-head">{head_photo}<div style="min-width:0;">'
         f'<p class="actor-name">{escape(str(person["name"]))}</p>'
         f'<p class="actor-meta">{escape(dept)} · {total_career} titre(s) · '
         f'<strong style="color:var(--am-yellow);">{total_seen} déjà dans ton historique</strong>{_avg_txt}</p>'
+        f"{_age_line}"
         f'<div style="margin-top:.35rem;">{tmdb_link}</div>'
         f"</div></div>",
         unsafe_allow_html=True,
@@ -7217,6 +7357,67 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                         return_actor={"person_id": person_id, "person_kind": person_kind},
                     )
 
+    # ══════════════════════════════════════════════════════════════
+    # V181 — 📜 DEPUIS MON HISTOIRE : toggles de facette et de type,
+    # tri par date de vision DÉCROISSANTE, contenus RÉPARTIS PAR ANNÉES
+    # de visionnage (retour utilisateur — inspiration Trakt / Cinopsys :
+    # « De votre historique », Films / Séries / Tout, en tant qu'acteur /
+    # réalisateur). Remplace les anciens bandeaux « Films/Séries vus ».
+    # ══════════════════════════════════════════════════════════════
+    def _credit_last_watched(credit: dict):
+        try:
+            _typed = _typed_media_key(credit["kind"], credit["id"])
+        except Exception:
+            return None
+        _ds = _hist_dates.get(_typed) or []
+        return _ds[-1] if _ds else None
+
+    _vu_by_facet: dict = {}
+    for _f_name in ("acteur", "realisateur"):
+        _f_map = facets.get(_f_name) or {}
+        _vu_by_facet[_f_name] = [c for c in _f_map.values() if _bucket(c) == "vu"]
+    _hist_total = sum(len(v) for v in _vu_by_facet.values())
+    if _hist_total:
+        st.markdown(
+            f'<p class="actor-section-title">📜 Depuis mon historique '
+            f'<span class="actor-count">{_hist_total}</span></p>',
+            unsafe_allow_html=True,
+        )
+        # V181 — les « toggles » sont des RADIOS HORIZONTAUX : la valeur
+        # d'un radio est disponible DÈS LE DÉBUT du run déclenché par le
+        # clic → le filtre s'applique instantanément, sans st.rerun()
+        # (un rerun global FERMERAIT la fiche : le main ne rouvre que la
+        # fiche film en mode heartbeat — prouvé au banc).
+        _f_avail = [f for f in ("acteur", "realisateur") if _vu_by_facet.get(f)]
+        _facet_sel = _f_avail[0] if _f_avail else "acteur"
+        if len(_f_avail) > 1:
+            _fr_key = f"actor_hist_facet_radio_{person_id}"
+            if st.session_state.get(_fr_key) not in _f_avail:
+                st.session_state.pop(_fr_key, None)
+            _facet_sel = st.radio(
+                "Facette", _f_avail,
+                format_func=lambda f: "🎭 En tant qu'acteur" if f == "acteur" else "🎬 En tant que réalisateur",
+                horizontal=True, key=_fr_key, label_visibility="collapsed",
+            )
+        _type_sel = st.radio(
+            "Type", ["films", "series", "tout"],
+            format_func=lambda t: {"films": "🎬 Films", "series": "📺 Séries", "tout": "🗂️ Tout"}[t],
+            horizontal=True, key=f"actor_hist_type_radio_{person_id}", label_visibility="collapsed",
+        )
+        _pool = list(_vu_by_facet.get(_facet_sel) or [])
+        if _type_sel == "films":
+            _pool = [c for c in _pool if c["kind"] == "Film"]
+        elif _type_sel == "series":
+            _pool = [c for c in _pool if c["kind"] == "Série"]
+        _pool.sort(key=lambda c: (_credit_last_watched(c) or datetime.min), reverse=True)
+        _by_year: dict = {}
+        for c in _pool:
+            _lw = _credit_last_watched(c)
+            _yr = str(_lw.year) if _lw else "Sans date"
+            _by_year.setdefault(_yr, []).append(c)
+        for _yr in sorted(_by_year, reverse=True):
+            _section(f"📅 {_yr}", _by_year[_yr], key_prefix=f"hist{_facet_sel}{_type_sel}{_yr}")
+
     any_seen_any_listed = False
     # Le séparateur de facette n'est utile que si les DEUX facettes existent
     # (Scorsese réalisateur ET acteur) — sinon il ferait doublon.
@@ -7242,8 +7443,9 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         listed_series = [c for c in series.values() if _bucket(c) in ("liste", "encours", "abandonnee")]
         if vus_films or vus_series or listed_films or listed_series:
             any_seen_any_listed = True
-        _section(f"🎬 Films vus avec {role_word}", sorted(vus_films, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-vf")
-        _section(f"📺 Séries vues avec {role_word}", sorted(vus_series, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-vs")
+        # V181 — les bandeaux « Films/Séries VUS » sont remplacés par le
+        # bloc « 📜 DEPUIS MON HISTOIRE » (toggles + années) ci-dessus.
+        # Seules les sections « dans tes listes » restent par facette.
         _section("📌 Films dans tes listes", sorted(listed_films, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-lf")
         _section("📌 Séries dans tes listes", sorted(listed_series, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-ls")
 
@@ -11284,6 +11486,34 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
         f'<div class="progress-bar-container" style="--pct:{pct}%;" '
         f'data-tooltip="Note communauté TMDB"><div class="progress-rest"></div></div>'
     )
+    # V181 — pastille ⚡ FRICTION comme les tuiles « Que regarder ? »
+    # (retour utilisateur) : MÊME formule que le moteur de reco (durée
+    # courte / peu d'épisodes = facile à commencer). Pas de score
+    # personnel ici : une suggestion IA n'est pas encore dans tes
+    # données — la note TMDB et la friction sont les repères.
+    friction_val = None
+    try:
+        if lk_kind == "tv":
+            _n_ep = int(lk.get("episodes") or 0)
+            _c = _n_ep or 50
+            friction_val = (100 if _c <= 8 else 90 if _c <= 20 else 75 if _c <= 40
+                            else 55 if _c <= 80 else 40 if _c <= 150 else 25)
+        elif lk.get("runtime"):
+            _d = int(lk["runtime"]) or 120
+            friction_val = (100 if _d <= 100 else 90 if _d <= 120 else 75 if _d <= 140
+                            else 60 if _d <= 160 else 45 if _d <= 190 else 30)
+    except (TypeError, ValueError):
+        friction_val = None
+    friction_pill = (
+        f'<span class="score-badge" data-tooltip="Facilité de lancement '
+        f'(durée courte, peu d\u2019épisodes). Plus le score est élevé, plus '
+        f'c\u2019est facile à commencer.">⚡ Friction {friction_val}/100</span>'
+        if friction_val is not None else ""
+    )
+    fric_row = (
+        f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">{friction_pill}</div>'
+        if friction_pill else ""
+    )
     # V180 — la COLONNE /100 est DE RETOUR (retour utilisateur : «
     # j'aimais bien la colonne /100 ») : la pastille ⭐ de la tête (avec
     # info-bulle TMDB) ET la colonne /100 cohabitent — sur GSM la colonne
@@ -11301,7 +11531,7 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
     )
     html = (
         f'<div class="media-list-card poster-card alike-qr msl-click">{img}'
-        f'<div class="media-list-content" style="width:100%;">{head}{small}{links}{bar}{details}'
+        f'<div class="media-list-content" style="width:100%;">{head}{small}{links}{fric_row}{bar}{details}'
         f"</div>{pct_col}</div>"
     )
     return html, (lk_kind if lk_id else "", lk_id)
@@ -11438,7 +11668,7 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             'div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.alike-qr)'
             ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
             ' + div[data-testid="stElementContainer"]{'
-            "margin-top:-5.2px !important;margin-bottom:0 !important;}"
+            "margin-top:-5.2px !important;margin-bottom:-0.12rem !important;}"
             'div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.alike-qr)'
             ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
             ' + div[data-testid="stElementContainer"] button[kind="secondary"],'
@@ -11446,7 +11676,13 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
             ' + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]{'
             "margin-left:-10.2px !important;margin-right:-4.2px !important;"
-            "width:calc(100% + 16.8px) !important;}"
+            "width:calc(100% + 16.8px) !important;"
+            # V181 — FIN de la DOUBLE COUCHE de liseré (retour : « il y a
+            # comme une double couche au niveau du liseré devant le bouton »)
+            # : le CADRE porte déjà son liseré accent 4 px — le bouton garde
+            # la même bordure fine que ses autres côtés, comme les boutons
+            # « Une autre… » des autres sections n'en montrent qu'une.
+            "border-left:1px solid var(--ia-accent-soft) !important;}"
             "</style>"
         )
         st.markdown(css_alike, unsafe_allow_html=True)
@@ -11659,23 +11895,37 @@ def _tmdb_search_media(kind: str, query: str, year: int | None, key: str) -> dic
     if len(query) < 2:
         return {}
     endpoint = "tv" if str(kind).lower() in ("série", "serie", "tv") else "movie"
-    params = {"api_key": key, "language": "fr-FR", "query": query, "page": 1}
+    # V181 — RETRY SANS L'ANNÉE (retour utilisateur : « certains films ne
+    # remontent pas en tuile ni en poster » — ex. The Middle, dont la
+    # fiche TMDB existe bien : tv/1422) : l'IA propose parfois une année
+    # erronée, et un filtre first_air_date_year/year erroné renvoie ZÉRO
+    # résultat. Si la recherche AVEC année ne trouve rien, on RESSAYE SANS
+    # l'année : mieux vaut la vraie tuile (poster, fiche, note) avec
+    # l'année réelle TMDB qu'une tuile décharnée sans fiche.
+    base_params = {"api_key": key, "language": "fr-FR", "query": query, "page": 1}
+    attempts: list[dict] = []
     if year:
-        params["year" if endpoint == "movie" else "first_air_date_year"] = int(year)
-    try:
-        response = requests.get(
-            f"https://api.themoviedb.org/3/search/{endpoint}",
-            params=params,
-            timeout=10,
-        )
-    except requests.RequestException:
-        return {}
-    if response.status_code != 200:
-        return {}
-    try:
-        results = response.json().get("results") or []
-    except ValueError:
-        return {}
+        _yfilter = {"year" if endpoint == "movie" else "first_air_date_year": int(year)}
+        attempts.append({**base_params, **_yfilter})
+    attempts.append(dict(base_params))
+    results: list = []
+    for params in attempts:
+        try:
+            response = requests.get(
+                f"https://api.themoviedb.org/3/search/{endpoint}",
+                params=params,
+                timeout=10,
+            )
+        except requests.RequestException:
+            return {}
+        if response.status_code != 200:
+            return {}
+        try:
+            results = response.json().get("results") or []
+        except ValueError:
+            return {}
+        if results:
+            break
     for entry in results:
         if not isinstance(entry, dict) or not entry.get("id"):
             continue
