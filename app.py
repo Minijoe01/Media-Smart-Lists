@@ -655,6 +655,18 @@ st.markdown(
     .mc-chip.chip-encours { background: rgba(255, 158, 44, .13) !important; border: 1px solid rgba(255, 158, 44, .52) !important; color: #ffc069 !important; }
     .mc-chip.chip-dropped { background: rgba(255, 107, 129, .13) !important; border: 1px solid rgba(255, 107, 129, .50) !important; color: #ff9aab !important; }
     .mc-chip.chip-vu { background: rgba(0, 163, 146, .14) !important; border: 1px solid rgba(0, 163, 146, .55) !important; color: #7ce0d4 !important; }
+    /* V179 — CODE COULEUR COMPLET, PARTOUT (retour utilisateur : « garder
+       le code couleur vu / dans mes listes / hors de mes listes / en
+       cours / abandonnée dans chaque pastille, partout où c'est
+       possible ») : JAUNE = dans mes listes (comme .sim-badge.liste),
+       BLEU = hors de tes listes (comme .sim-badge.hors / .mc-outside). */
+    .mc-chip.chip-liste { background: rgba(255, 225, 0, .10) !important; border: 1px solid rgba(255, 225, 0, .50) !important; color: var(--am-yellow) !important; }
+    .mc-chip.chip-hors { background: linear-gradient(135deg, rgba(45, 156, 219, .30), rgba(0, 0, 0, .55)) !important; border: 1px solid rgba(45, 156, 219, .65) !important; color: #fff !important; }
+    /* V179 — états EN COURS (orange) et ABANDONNÉE (rouge) pour les badges
+       des bandeaux Similaires / Saga / filmographies acteur : avant, ces
+       contenus y passaient pour « hors de tes listes ». */
+    .sim-badge.encours { background: rgba(255, 158, 44, .13); border: 1px solid rgba(255, 158, 44, .52); color: #ffc069; }
+    .sim-badge.abandonnee { background: rgba(255, 107, 129, .13); border: 1px solid rgba(255, 107, 129, .50); color: #ff9aab; }
     /* V131.3 — LAYOUT ADAPTATIF : PC = poster à gauche + infos à droite.
        GSM = poster CENTRÉ et GRAND en haut, infos en dessous. */
     .cinema-layout {
@@ -1185,7 +1197,9 @@ st.markdown(
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"],
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stLayoutWrapper"] button[kind="secondary"] {
         border-radius: 0 0 13px 13px !important;
     }
 
@@ -2183,12 +2197,21 @@ st.markdown(
     }
     .cinema-strip-head { padding: 0 .95rem; }
     .cinema-strip-head > p { margin-left: calc(14% + 14px) !important; margin-right: 0 !important; }
+    /* V179 — BANDE-ANNONCE PLEINE LARGEUR : son bloc PROPRE, SANS le
+       spacer d'alignement (14 % + 14 px) — l'iframe vidéo fait 100 % de
+       large, le spacer la faisait DÉBORDER à droite (retour utilisateur :
+       « elles sortent de l'écran »). Elle commence à gauche, alignée sur
+       le poster, et occupe toute la largeur de la fiche ; le titre reste
+       au-dessus, aligné sur la vidéo (même départ → aucun effet de bug). */
+    .cinema-trailer { padding: 0 .95rem; }
+    .cinema-trailer > * { margin-left: 0 !important; }
     .cinema-tail > * { margin-left: calc(14% + 14px) !important; }
     .msl-hist-wrap > * { margin-left: calc(14% + 14px); }
     .msl-hist-wrap > p.cinema-section-title { margin-left: calc(14% + 14px) !important; }
     @media (max-width: 640px) {
         div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click)::before { display: none; }
         .cinema-strip-head > p,
+        .cinema-trailer > *,
         .cinema-tail > *,
         .msl-hist-wrap > *,
         .msl-hist-wrap > p.cinema-section-title { margin-left: 0 !important; }
@@ -4427,12 +4450,18 @@ def _open_fiche_in_dialog(kind: str, tmdb_id: int, return_actor: dict | None = N
         st.session_state.pop(f"ia_coulisses_{_ik}_{_tid}", None)
         st.session_state[f"ia_nonce_{_ik}_{_tid}"] = time.time()
     st.session_state["_cinema_detail_row"] = media_row
-    # V177 — FICHE SUIVANTE EN HAUT : depuis l'intérieur du dialog, seul
-    # un rerun de FRAGMENT est possible (le global est neutralisé par
-    # Streamlit) — et un rerun de fragment conserve la position de
-    # défilement. La parade : un rendu VIDE intermédiaire (le navigateur
-    # ramène le scroll à zéro par clampage), puis la fiche complète.
-    st.session_state["_msl_fiche_blank"] = True
+    # V179 — FICHE SUIVANTE EN HAUT, VRAIE SOLUTION : le mécanisme V177
+    # (rendu vide intermédiaire) n'a JAMAIS atteint le navigateur — le
+    # st.rerun() lancé dans le MÊME run annule son delta (prouvé au
+    # micro-banc V179). Désormais c'est le COMPOSANT INVISIBLE en tête
+    # de fiche qui remet le dialog en haut : son iframe recharge son
+    # script à chaque changement de srcdoc (kind:id + ce nonce) et pose
+    # scrollTop = 0 sur le dialog. Le nonce garantit le rechargement
+    # même si on rouvre la même fiche depuis une autre.
+    try:
+        st.session_state["_msl_fiche_nav_nonce"] = int(st.session_state.get("_msl_fiche_nav_nonce") or 0) + 1
+    except (TypeError, ValueError):
+        st.session_state["_msl_fiche_nav_nonce"] = 1
     # V176 — la fiche reste protégée par le mode heartbeat (V174) contre
     # les reruns automatiques.
     st.session_state["_msl_fiche_link_mode"] = True
@@ -5428,7 +5457,7 @@ def _typed_media_key(kind_label: Any, tmdb_id: Any) -> str:
 
 
 def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: str = "movie",
-              clickable: bool = False) -> str:
+              clickable: bool = False, prog_keys: set | None = None, drop_keys: set | None = None) -> str:
     """Mini-carte « Similaires / Saga » : affiche + titre + année + badge
     (✅ Vu · 📂 nom de ta liste · 📌 Watchlist · 🌐 Hors de tes listes).
     V173 : le poster ouvrait la fiche via un lien ?msl_fiche — mais
@@ -5454,7 +5483,15 @@ def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: st
     # V150 — clé TYPO-PRÉFIXÉE (movie/tv) : un film et une série peuvent
     # partager le même id TMDB (Days of Thunder & Supercopter = 2119 !).
     typed_id = f"{kind}:{entry_id}" if entry_id else ""
-    if typed_id and typed_id in watched:
+    # V179 — CODE COULEUR COMPLET : les bandeaux Similaires / Saga /
+    # filmographies connaissent AUSSI les états en cours (orange) et
+    # abandonnée (rouge) — avant, une série en cours y passait pour
+    # « hors de tes listes » (retour utilisateur : code couleur partout).
+    if typed_id and typed_id in (prog_keys or set()):
+        badge = '<span class="sim-badge encours">▶️ En cours</span>'
+    elif typed_id and typed_id in (drop_keys or set()):
+        badge = '<span class="sim-badge abandonnee">🚫 Abandonnée</span>'
+    elif typed_id and typed_id in watched:
         badge = '<span class="sim-badge vu">✅ Vu</span>'
     elif typed_id and typed_id in list_names:
         badge = f'<span class="sim-badge liste">📂 {escape(list_names[typed_id])}</span>'
@@ -5490,7 +5527,8 @@ def _sim_card(entry: dict, watched: set, listed: set, list_names: dict, kind: st
 
 
 def _render_sim_strip(entries: list, watched: set, listed: set, list_names: dict,
-                     kind: str, title_html: str, key_prefix: str = "sim") -> None:
+                     kind: str, title_html: str, key_prefix: str = "sim",
+                     prog_keys: set | None = None, drop_keys: set | None = None) -> None:
     """V176 — SIMILAIRES / SAGA : RETOUR AU BANDEAU DÉFILANT (retour
     utilisateur : « j'adorais la disposition de la fiche, la possibilité de
     scroller vers la droite ») — tous les posters côte à côte, même écart
@@ -5509,7 +5547,8 @@ def _render_sim_strip(entries: list, watched: set, listed: set, list_names: dict
             continue
         with col:
                 st.markdown(
-                    _sim_card(entry, watched, listed, list_names, kind=kind, clickable=True),
+                    _sim_card(entry, watched, listed, list_names, kind=kind, clickable=True,
+                              prog_keys=prog_keys, drop_keys=drop_keys),
                     unsafe_allow_html=True,
                 )
                 try:
@@ -5523,6 +5562,42 @@ def _render_sim_strip(entries: list, watched: set, listed: set, list_names: dict
                     type="secondary",
                 ):
                     _open_fiche_in_dialog(kind, _sid)
+
+
+def _msl_fiche_scrolltop_component(marker: str) -> None:
+    """V179 — FICHE SUIVANTE EN HAUT (vraie solution — retour utilisateur
+    V178 : « cela garde la position de l'ancienne fiche film lors de
+    l'ouverture d'une nouvelle fiche film »).
+
+    Un rendu vide côté serveur (V177) ne marchait pas : son delta était
+    annulé par le st.rerun() du même run. Ici tout se joue CÔTÉ
+    NAVIGATEUR : un composant HTML INVISIBLE (height=0) rendu en TÊTE de
+    fiche. Son iframe recharge son script À CHAQUE changement de srcdoc
+    (le marqueur kind:id:nonce ci-dessous) : le script remonte tous les
+    ancêtres jusqu'au DIALOG INCLUS et pose scrollTop = 0 — c'est bien
+    LUI le scrolleur (position:fixed, overflow-y:auto — mesuré au banc
+    V179). La page DERRIÈRE (stMain) n'est pas dans la chaîne remontée :
+    elle garde sa position. Sur un rerun de la MÊME fiche (bouton « Une
+    autre… », heartbeat), le srcdoc est INCHANGÉ → l'iframe ne recharge
+    pas → le scroll est conservé (prouvé au micro-banc : marqueur
+    identique, position intacte)."""
+    try:
+        import streamlit.components.v1 as _msl_components
+        _msl_components.html(
+            "<script>(function(){try{"
+            "var el=window.frameElement;"
+            "var dlg=el.closest('[data-testid=\"stDialog\"]');"
+            "if(!dlg){return;}"
+            "var node=el,n=0;"
+            "while(node&&node!==dlg.parentElement&&n<40){"
+            "node.scrollTop=0;node=node.parentElement;n+=1;}"
+            "dlg.setAttribute('data-msl-scrolltop-run',String(Date.now()));"
+            "}catch(e){}})();"
+            "</script><!-- msl-fiche-scrolltop " + str(marker) + " -->",
+            height=0,
+        )
+    except Exception:
+        pass
 
 
 def _render_cinema_detail_body(row: dict) -> None:
@@ -5552,6 +5627,16 @@ def _render_cinema_detail_body(row: dict) -> None:
         tmdb_id = int(ids.get("tmdb") or 0) or None
     except (TypeError, ValueError):
         tmdb_id = None
+    # V179 — FICHE SUIVANTE EN HAUT : composant invisible en TÊTE de
+    # fiche (le PREMIER élément rendu) — son iframe se recharge dès que
+    # le marqueur change (kind:id:nonce) et remet le dialog en haut.
+    try:
+        _msl_nav_nonce = int(st.session_state.get("_msl_fiche_nav_nonce") or 0)
+    except (TypeError, ValueError):
+        _msl_nav_nonce = 0
+    _msl_fiche_scrolltop_component(
+        f"{'tv' if row.get('type') in ('Série', 'Épisode') else 'movie'}:{tmdb_id or 0}:{_msl_nav_nonce}"
+    )
     api_key = _tmdb_api_key()
 
     fr_payload = {}
@@ -5763,6 +5848,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         # bandeaux saga/similaires) perdaient l'accent : une règle globale
         # `p, li, label {{ color: var(--am-text) !important }}` écrase même
         # les styles inline. Ces sélecteurs ciblés + !important gagnent.
+        f".cinema-trailer .cinema-section-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
         f".cinema-tail .cinema-section-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
         f"p.cinema-strip-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
         f".msl-hist-wrap .cinema-section-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
@@ -6261,11 +6347,17 @@ def _render_cinema_detail_body(row: dict) -> None:
             )
     # V175 — états croisés UNE seule fois pour les deux grilles.
     _grid_watched, _grid_listed, _grid_names = set(), set(), {}
+    _grid_prog, _grid_drop = set(), set()
     if saga_entries or sim_entries:
         try:
             _grid_watched, _grid_listed, _grid_names = _seen_watchlist_listname_ids()
         except Exception:
             pass
+        # V179 — états en cours / abandonnées sur les badges des grilles.
+        try:
+            _grid_prog, _grid_drop = _watch_status_keys()
+        except Exception:
+            _grid_prog, _grid_drop = set(), set()
 
     # V136 — bande-annonce (iframe YouTube, lazy) — après la distribution
     trailer_html = ""
@@ -6374,14 +6466,26 @@ def _render_cinema_detail_body(row: dict) -> None:
     )
     # V175 — grilles Similaires / Saga cliquables (fiche dans le dialog).
     try:
-        _render_sim_strip(saga_entries, _grid_watched, _grid_listed, _grid_names, "movie", saga_title_html, key_prefix="saga")
-        _render_sim_strip(sim_entries, _grid_watched, _grid_listed, _grid_names, reco_kind, sim_title_html, key_prefix="sim")
+        _render_sim_strip(saga_entries, _grid_watched, _grid_listed, _grid_names, "movie", saga_title_html, key_prefix="saga",
+                          prog_keys=_grid_prog, drop_keys=_grid_drop)
+        _render_sim_strip(sim_entries, _grid_watched, _grid_listed, _grid_names, reco_kind, sim_title_html, key_prefix="sim",
+                          prog_keys=_grid_prog, drop_keys=_grid_drop)
     except Exception:
         pass
-    if trailer_html or providers_html or links_html:
+    # V179 — BANDE-ANNONCE PLEINE LARGEUR (retour utilisateur : « les
+    # bandes annonces semblent plus grandes qu'en V174, elles sortent de
+    # l'écran ») : le pied V177 appliquait le spacer 14 % + 14 px à TOUS
+    # ses enfants alors que l'iframe vidéo fait 100 % de large → débordé
+    # à droite. La bande-annonce (titre + vidéo) vit dans SON PROPRE bloc
+    # sans spacer : elle commence à gauche, alignée sur le poster, et
+    # occupe toute la largeur de la fiche. Plateformes et liens restent
+    # dans le pied aligné sur la colonne d'infos.
+    if trailer_html:
+        st.markdown(f'<div class="cinema-trailer">{trailer_html}</div>', unsafe_allow_html=True)
+    if providers_html or links_html:
         st.markdown(
             f'<div class="cinema-tail" style="padding:0 .95rem;">'
-            f"{trailer_html}{providers_html}{links_html}</div>",
+            f"{providers_html}{links_html}</div>",
             unsafe_allow_html=True,
         )
 
@@ -6810,26 +6914,14 @@ def _msl_on_cinema_dismiss(*_args) -> None:
 def _cinema_detail_dialog(gen: int = 0) -> None:
     """Fenêtre modale : fiche cinéma du contenu choisi (V124).
 
-    V177 — FICHE SUIVANTE EN HAUT : un clic dans la fiche (Similaires,
-    Saga, MÊME ESPRIT, filmographie) ne peut déclencher qu'un rerun de
-    FRAGMENT — le scroll du dialog serait conservé (prouvé au banc : le
-    compteur de runs du harnais ne bougeait même pas). La parade : le
-    drapeau `_msl_fiche_blank` fait dessiner un contenu MINUSCULE un
-    instant — le navigateur RAMÈNE le défilement à zéro par clampage
-    (contenu plus court que la position) — puis le rerun suivant dessine
-    la fiche complète, EN HAUT."""
-    if st.session_state.pop("_msl_fiche_blank", None):
-        st.markdown('<div style="height:2px;"></div>', unsafe_allow_html=True)
-        # Laisser le rendu vide ATTEINDRE le navigateur (le défilement se
-        # clamp à zéro — prouvé au micro-dialog), puis rerun GLOBAL : le
-        # main rouvre la fiche via le mode heartbeat, complète, EN HAUT.
-        # (st.rerun(scope="fragment") est illégal ici : l'appel initial du
-        # dialog vient du main, pas d'un rerun de fragment — exception
-        # vue au banc.)
-        time.sleep(0.2)
-        st.session_state["_msl_fiche_heartbeat"] = time.time()
-        st.rerun()
-        return
+    V179 — FICHE SUIVANTE EN HAUT : le rendu vide V177 a été RETIRÉ (son
+    delta était annulé par le st.rerun() du même run — il n'atteignait
+    jamais le navigateur, la fiche gardait l'ancienne position, retour
+    utilisateur V178). La vraie parade est CÔTÉ NAVIGATEUR : un composant
+    HTML invisible en tête de fiche (cf. _msl_fiche_scrolltop_component)
+    recharge son script à chaque NOUVELLE fiche et remet le dialog en
+    haut. Sur un rerun de la MÊME fiche (bouton « Une autre… »), son
+    contenu est inchangé : le scroll est conservé."""
     _render_cinema_detail_body(st.session_state.get("_cinema_detail_row") or {})
 
 
@@ -6944,12 +7036,28 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
 
     # ── croisement avec TES données ──
     watched_ids, listed_ids, list_names = _seen_watchlist_listname_ids()
+    # V179 — états EN COURS / ABANDONNÉE sur la filmographie (code
+    # couleur complet : orange en cours, rouge abandonnée — avant, ces
+    # contenus passaient pour « hors de tes listes »).
+    try:
+        prog_ids, drop_ids = _watch_status_keys()
+    except Exception:
+        prog_ids, drop_ids = set(), set()
+    # V179 — FICHE EN HAUT à chaque changement de personne : composant
+    # invisible (même mécanisme que la fiche film — le marqueur contient
+    # l'id de la personne ; les reruns de la MÊME fiche ne rechargent
+    # pas l'iframe → scroll conservé).
+    _msl_fiche_scrolltop_component(f"person:{int(person_id or 0)}:{str(person_kind)}")
 
     def _bucket(credit: dict) -> str | None:
         # V150 — clé typée : un film et une série peuvent partager le même
         # id TMDB (Days of Thunder / Supercopter = 2119) → jamais de badge
         # croisé entre un film de tes listes et une série de la filmo.
         typed = _typed_media_key(credit["kind"], credit["id"])
+        if typed in prog_ids:
+            return "encours"
+        if typed in drop_ids:
+            return "abandonnee"
         if typed in watched_ids:
             return "vu"
         if typed in list_names or typed in listed_ids:
@@ -6969,7 +7077,11 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             )
         else:
             img = '<span class="sim-noimg">🎬</span>'
-        if badge == "vu":
+        if badge == "encours":
+            badge_html = '<span class="sim-badge encours">▶️ En cours</span>'
+        elif badge == "abandonnee":
+            badge_html = '<span class="sim-badge abandonnee">🚫 Abandonnée</span>'
+        elif badge == "vu":
             badge_html = '<span class="sim-badge vu">✅ Vu</span>'
         elif badge == "liste":
             where = list_names.get(credit["id"])
@@ -7104,8 +7216,11 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         series = {cid: c for cid, c in facet_map.items() if c["kind"] == "Série"}
         vus_films = [c for c in films.values() if _bucket(c) == "vu"]
         vus_series = [c for c in series.values() if _bucket(c) == "vu"]
-        listed_films = [c for c in films.values() if _bucket(c) == "liste"]
-        listed_series = [c for c in series.values() if _bucket(c) == "liste"]
+        # V179 — « dans tes listes » inclut les EN COURS et ABANDONNÉES
+        # (elles sont bien dans TES données MDBList) : elles restent
+        # visibles dans la filmo, avec LEUR badge de couleur.
+        listed_films = [c for c in films.values() if _bucket(c) in ("liste", "encours", "abandonnee")]
+        listed_series = [c for c in series.values() if _bucket(c) in ("liste", "encours", "abandonnee")]
         if vus_films or vus_series or listed_films or listed_series:
             any_seen_any_listed = True
         _section(f"🎬 Films vus avec {role_word}", sorted(vus_films, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-vf")
@@ -7242,7 +7357,11 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
         metadata.append('<span class="mc-chip chip-dropped" data-tooltip="Série marquée abandonnée dans MDBList">🚫 Abandonnée</span>')
     elif not row.get("_outside"):
         source_name = str(row.get("source") or "MDBList")
-        metadata.append(_raw_chip(f"📂 {source_name}", "Provenance : la liste ou la source où se trouve ce contenu"))
+        # V179 — pastille « dans mes listes » en JAUNE (code couleur
+        # complet partout — retour utilisateur).
+        metadata.append(
+            f'<span class="mc-chip chip-liste" data-tooltip="Provenance : la liste ou la source où se trouve ce contenu">📂 {escape(source_name)}</span>'
+        )
     elif _in_watched:
         metadata.append('<span class="mc-chip chip-vu" data-tooltip="Contenu déjà vu — proposé car il correspond à ta recherche">✅ Vu</span>')
     else:
@@ -10664,7 +10783,12 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {{
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"],
+    /* V179 — même habillage pour le bouton « D'autres suggestions », qui
+       vit maintenant dans un st.container (comme les tuiles) : son bouton
+       est DESCENDANT du wrapper suivant l'ancre, plus son frère. */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stLayoutWrapper"] button[kind="secondary"] {{
         background: rgba(3, 22, 19, .52) !important;
         border: 1px solid var(--ia-accent-soft) !important;
         border-top: 1px solid var(--ia-accent-soft) !important;
@@ -10684,7 +10808,9 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"] p,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p {{
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stLayoutWrapper"] button[kind="secondary"] p {{
         color: var(--ia-text) !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .70rem !important;
@@ -10696,7 +10822,9 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover {{
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stLayoutWrapper"] button[kind="secondary"]:hover {{
         background: var(--ia-accent-soft) !important;
         border-color: var(--ia-accent) !important;
         border-left-color: var(--ia-accent) !important;
@@ -10706,7 +10834,9 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"]:hover p,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover p {{
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover p,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
+        + div[data-testid="stLayoutWrapper"] button[kind="secondary"]:hover p {{
         color: #FFFFFF !important;
     }}
     </style>
@@ -11064,8 +11194,12 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
         )
     else:
         img = _poster_html("", "Série" if lk_kind == "tv" else "Film")
+    # V179 — la note TMDB vit dans la PASTILLE ⭐ (même format que les
+    # tuiles « Que regarder ? », retour utilisateur) et l'info-bulle
+    # précise bien qu'il s'agit de la note COMMUNAUTÉ TMDB (sur 10) —
+    # jamais de confusion avec ton score personnel.
     note_pill = (
-        f'<span class="mc-note" data-tooltip="Note communauté TMDB (sur 10)">⭐ {note:.1f}</span>'
+        f'<span class="mc-note" data-tooltip="Note communauté TMDB (sur 10) — pas ton score personnel">⭐ {note:.1f}</span>'
         if note else ""
     )
     year_pill = (
@@ -11104,12 +11238,12 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
             state_chip = '<span class="mc-chip chip-vu" data-tooltip="Contenu déjà vu">✅ Vu</span>'
         elif typed in list_names:
             state_chip = (
-                f'<span class="mc-chip" data-tooltip="Se trouve dans ta liste {escape(str(list_names.get(typed) or ""))}">📂 {escape(str(list_names.get(typed) or "liste"))}</span>'
+                f'<span class="mc-chip chip-liste" data-tooltip="Se trouve dans ta liste {escape(str(list_names.get(typed) or ""))}">📂 {escape(str(list_names.get(typed) or "liste"))}</span>'
             )
         elif typed in listed:
-            state_chip = '<span class="mc-chip" data-tooltip="Se trouve dans ta Watchlist">📌 Watchlist</span>'
+            state_chip = '<span class="mc-chip chip-liste" data-tooltip="Se trouve dans ta Watchlist">📌 Watchlist</span>'
         else:
-            state_chip = '<span class="mc-chip" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>'
+            state_chip = '<span class="mc-chip chip-hors" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>'
     # V176 — chips COMPLÈTES comme les tuiles « Que regarder ? » :
     # genres, studios, acteurs, réalisateur, saga (info-bulle = liste).
     meta_chips = []
@@ -11142,12 +11276,9 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
         f'<div class="progress-bar-container" style="--pct:{pct}%;" '
         f'data-tooltip="Note communauté TMDB"><div class="progress-rest"></div></div>'
     )
-    pct_col = ""
-    if note:
-        pct_col = (
-            f'<div class="media-list-pct" data-tooltip="Note communauté TMDB ({note:.1f}/10) — pas ton score personnel">'
-            f'{pct}<span class="sub">note TMDB /100</span></div>'
-        )
+    # V179 — plus de COLONNE /100 à droite (retour utilisateur : la note
+    # vit dans la pastille ⭐ de la tête de tuile, comme « Que regarder ? »
+    # sur GSM) ; la barre ci-dessous la visualise toujours.
     details = (
         f'<details class="pills-details"><summary>💡 Pourquoi ce contenu ?</summary>'
         f'<div class="alike-why-body">{why}</div></details>'
@@ -11155,7 +11286,7 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
     html = (
         f'<div class="media-list-card poster-card alike-qr msl-click">{img}'
         f'<div class="media-list-content" style="width:100%;">{head}{small}{links}{bar}{details}'
-        f"</div>{pct_col}</div>"
+        f"</div></div>"
     )
     return html, (lk_kind if lk_id else "", lk_id)
 
@@ -11233,8 +11364,6 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             f".media-list-card.alike-qr .mc-year,.media-list-card.alike-qr .mc-note{{"
             f"color:{accent_text};border:1px solid rgba({ar},{ag},{ab},.55);"
             f"background:linear-gradient(135deg,rgba({ar},{ag},{ab},.18),rgba(0,0,0,.50));}}"
-            f".media-list-card.alike-qr .media-list-pct{{color:{accent_text};"
-            f"border-left:1px solid rgba({ar},{ag},{ab},.32);}}"
             f".media-list-card.alike-qr .link-pill{{border:1px solid rgba({ar},{ag},{ab},.45);}}"
             f".media-list-card.alike-qr .progress-bar-container::before{{"
             f"background:rgb({ar},{ag},{ab});}}"
@@ -11276,19 +11405,23 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             'div[data-testid="stLayoutWrapper"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
             ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor){'
             "margin-top:-0.95rem !important;}"
-            # V177 — le bouton « D'autres suggestions » ferme l'encart sur
-            # toute sa largeur (retour : « n'est pas aligné avec l'encart,
-            # il est lié bizarrement à la dernière tuile »).
-            # V178 — PORTÉE LIMITÉE à la section MÊME ESPRIT (le wrapper
-            # qui contient les tuiles alike) : cette marge s'appliquait à
-            # TOUS les boutons « Une autre… » (coulisses, pourquoi, esprit,
-            # parcours) qui se retrouvaient décalés de 7 px vers la gauche
-            # (retour utilisateur V177 : « le bouton commence x pixels trop
-            # tôt, comme s'il commençait sur la fiche »).
-            'div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div[data-testid="stMarkdown"] .ia-head-block)'
-            ' > div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
-            ' + div[data-testid="stElementContainer"]:has(button[kind="secondary"]){'
-            "margin-left:-.45rem !important;margin-right:-.45rem !important;}"
+            # V179 — le bouton « D'autres suggestions » vit dans SON PROPRE
+            # st.container, EXACTEMENT comme les tuiles : même wrapper, même
+            # largeur, même alignement — PAR CONSTRUCTION (retour V178 :
+            # « trop haut et trop court en longueur » : les marges -0.45rem
+            # décalaient le bouton de 7 px à GAUCHE des tuiles sans
+            # l'élargir, et il mordait la dernière tuile de 5 px). On ne
+            # gère plus que l'écart vertical : le bouton vient « fermer » le
+            # cadre juste sous la dernière tuile.
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stLayoutWrapper"]:has(> div[data-testid="stVerticalBlock"] button[kind="secondary"]){'
+            "margin-top:0.4rem !important;}"
+            # …et le conteneur INTERNE du bouton ne doit plus recevoir la
+            # marge -0.95rem générique des boutons « Une autre… » (c'est le
+            # wrapper qui règle l'écart, ci-dessus).
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stLayoutWrapper"] div[data-testid="stElementContainer"]{'
+            "margin-top:0 !important;margin-bottom:0 !important;}"
             "</style>"
         )
         st.markdown(css_alike, unsafe_allow_html=True)
@@ -11308,9 +11441,13 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
         # Pied « une autre », soudé à la dernière tuile — il ferme le cadre.
         st.markdown(f'<div class="ia-again-anchor" style="--ia-accent:{accent};"></div>',
                     unsafe_allow_html=True)
-        if st.button("🔄 D'autres suggestions", key=f"{session_key}_again", use_container_width=True):
-            st.session_state[f"{session_key}_again_clicked"] = True
-            st.session_state[f"ia_var_{channel}_{state_key}"] = variant + 1
+        # V179 — le bouton vit dans SON PROPRE st.container (comme les
+        # tuiles au-dessus) : même wrapper → même largeur et même
+        # alignement qu'elles, par construction.
+        with st.container():
+            if st.button("🔄 D'autres suggestions", key=f"{session_key}_again", use_container_width=True):
+                st.session_state[f"{session_key}_again_clicked"] = True
+                st.session_state[f"ia_var_{channel}_{state_key}"] = variant + 1
 
 
 def _render_ia_career(state_key: str, subject: str, hint: str = "",
