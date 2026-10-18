@@ -6440,7 +6440,10 @@ def _render_cinema_detail_body(row: dict) -> None:
         '[data-testid="stDialog"] h2{display:none!important;}'
         # Corps du dialog : padding à zéro → la bannière va BORD À BORD
         # et commence dès le haut de la boîte.
-        '[data-testid="stDialog"] section>div{padding:0 0 10px!important;}'
+        # V182 — bas de fiche RESSERRÉ (retour : « un tout petit espace
+        # vide entre D'autres suggestions et la fin de la fiche ») : le
+        # bouton referme le cadre, 2 px suffisent.
+        '[data-testid="stDialog"] section>div{padding:0 0 2px!important;}'
         # Croix de fermeture : V133 — elle était PEINTE SOUS LA BANNIÈRE
         # (occlusion constatée dans Chromium). V134 : z-index élevé (elle
         # flotte sur la bannière) + repositionnée près du coin + pastille
@@ -6963,7 +6966,11 @@ def _actor_dialog_chrome_css() -> str:
         "<style>"
         '[data-testid="stDialog"]{background:rgba(1,8,7,.62)!important;}'
         '[data-testid="stDialog"]>div{'
-        "background:linear-gradient(180deg,rgb(6,34,30) 0%,rgb(6,34,30) 55%,rgb(3,22,19) 100%)!important;"
+        # V182 — FOND AUX COULEURS ASTON (retour : « le fond de la fiche
+        # semble neutre, je vois mes couleurs uniquement dans l'en-tête »)
+        # : vert Aston profond en haut, fondu vers le sombre — toute la
+        # fiche vit dans le thème.
+        "background:linear-gradient(180deg,rgb(0,82,75) 0%,rgb(3,34,30) 42%,rgb(3,22,19) 100%)!important;"
         "border:1px solid rgba(0,163,146,.30)!important;"
         "box-shadow:0 26px 90px rgba(0,0,0,.60)!important;"
         "overflow:hidden!important;}"
@@ -7192,7 +7199,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             return "liste"
         return None
 
-    def _card(credit: dict, badge: str | None) -> str:
+    def _card(credit: dict, badge: str | None, vu_year: str = "") -> str:
         """V176 — carte filmographie au format « Similaires » (retour
         utilisateur : poster, nom du contenu, année, pastille — ET le nom
         du personnage joué). La carte est un BOUTON TRANSPARENT : le clic
@@ -7210,9 +7217,15 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         elif badge == "abandonnee":
             badge_html = '<span class="sim-badge abandonnee">🚫 Abandonnée</span>'
         elif badge == "vu":
+            # V182 — TITLE NATIF en plus du data-tooltip (retour : « j'ai
+            # un ? qui apparait, ça ne marche pas ») : la bulle CSS est
+            # ROGNÉE par le bandeau défilant (overflow-x:auto rogne aussi
+            # en Y — la même cause que la heatmap, cf. le fix V150) ; le
+            # title natif du navigateur, lui, ne peut PAS être rogné.
             _tip = _vu_tooltip(credit)
             badge_html = (
-                f'<span class="sim-badge vu" data-tooltip="{escape(_tip, quote=True)}">✅ Vu</span>'
+                f'<span class="sim-badge vu" data-tooltip="{escape(_tip, quote=True)}"'
+                f' title="{escape(_tip, quote=True)}">✅ Vu</span>'
                 if _tip else '<span class="sim-badge vu">✅ Vu</span>'
             )
         elif badge == "liste":
@@ -7228,11 +7241,17 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     # ne portent PAS le spacer 14 % de la fiche film (retour : « les films
     # vus etc. commencent à gauche ») — le spacer est exclu des bandeaux
     # qui contiennent des cartes act-filmo.
+        # V182 — « 📅 vu en YYYY » visible sur les cartes de la frise
+        # historique (l'année de visionnage, pas celle de sortie).
+        _vu_year_html = (
+            f'<div class="d" style="color:rgba(255,225,0,.88);font-size:.62rem;font-weight:800;">📅 vu en {escape(vu_year)}</div>'
+            if vu_year else ""
+        )
         return (
             f'<div class="sim-card msl-click act-filmo">{img}'
             f'<div class="t">{name}</div>'
             f'<div class="c">{role}</div>'
-            f'<div class="d">{credit["year"] or ""}</div>{badge_html}</div>'
+            f'<div class="d">{credit["year"] or ""}</div>{badge_html}{_vu_year_html}</div>'
         )
 
     # Union des contenus des DEUX facettes (pour le compteur d'en-tête et
@@ -7322,7 +7341,8 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         shown = bio if len(bio) <= 480 else bio[:bio.find(" ", 440) if bio.find(" ", 440) > 0 else 440] + "…"
         st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
 
-    def _section(title: str, rows: list, empty_skip: bool = True, key_prefix: str = "s") -> None:
+    def _section(title: str, rows: list, empty_skip: bool = True, key_prefix: str = "s",
+                 vu_years: dict | None = None) -> None:
         """V176 — BANDEAU DÉFILANT de posters cliquables (comme
         Similaires/Saga des fiches film) : tout est visible d'un coup et
         on fait défiler vers la droite. Chaque carte ouvre la fiche du
@@ -7341,7 +7361,8 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             if col is None:
                 continue
             with col:
-                st.markdown(_card(c, _bucket(c)), unsafe_allow_html=True)
+                st.markdown(_card(c, _bucket(c), vu_year=(vu_years or {}).get(c["id"], "")),
+                            unsafe_allow_html=True)
                 try:
                     _cid = int(c["id"] or 0)
                 except (TypeError, ValueError):
@@ -7364,74 +7385,81 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     # « De votre historique », Films / Séries / Tout, en tant qu'acteur /
     # réalisateur). Remplace les anciens bandeaux « Films/Séries vus ».
     # ══════════════════════════════════════════════════════════════
-    def _credit_last_watched(credit: dict):
+    def _credit_first_watched(credit: dict):
         try:
             _typed = _typed_media_key(credit["kind"], credit["id"])
         except Exception:
             return None
         _ds = _hist_dates.get(_typed) or []
-        return _ds[-1] if _ds else None
+        return _ds[0] if _ds else None
 
     _vu_by_facet: dict = {}
     for _f_name in ("acteur", "realisateur"):
         _f_map = facets.get(_f_name) or {}
         _vu_by_facet[_f_name] = [c for c in _f_map.values() if _bucket(c) == "vu"]
-    _hist_total = sum(len(v) for v in _vu_by_facet.values())
-    if _hist_total:
-        st.markdown(
-            f'<p class="actor-section-title">📜 Depuis mon historique '
-            f'<span class="actor-count">{_hist_total}</span></p>',
-            unsafe_allow_html=True,
+
+    # V182 — RADIOS GLOBAUX (retour : « films dans tes listes apparait à
+    # la fois si je coche film, série ou tout — ce n'est pas logique ») :
+    # les filtres s'appliquent à TOUTE la fiche — historique, « dans tes
+    # listes » et « À découvrir ». Toujours des radios horizontaux : la
+    # valeur est disponible dès le début du run → filtre instantané, sans
+    # rerun global (qui FERMERAIT la fiche).
+    _f_avail = [f for f in ("acteur", "realisateur") if (facets.get(f) or {})]
+    _facet_sel = _f_avail[0] if _f_avail else "acteur"
+    if len(_f_avail) > 1:
+        _fr_key = f"actor_hist_facet_radio_{person_id}"
+        if st.session_state.get(_fr_key) not in _f_avail:
+            st.session_state.pop(_fr_key, None)
+        _facet_sel = st.radio(
+            "Facette", _f_avail,
+            format_func=lambda f: "🎭 En tant qu'acteur" if f == "acteur" else "🎬 En tant que réalisateur",
+            horizontal=True, key=_fr_key, label_visibility="collapsed",
         )
-        # V181 — les « toggles » sont des RADIOS HORIZONTAUX : la valeur
-        # d'un radio est disponible DÈS LE DÉBUT du run déclenché par le
-        # clic → le filtre s'applique instantanément, sans st.rerun()
-        # (un rerun global FERMERAIT la fiche : le main ne rouvre que la
-        # fiche film en mode heartbeat — prouvé au banc).
-        _f_avail = [f for f in ("acteur", "realisateur") if _vu_by_facet.get(f)]
-        _facet_sel = _f_avail[0] if _f_avail else "acteur"
-        if len(_f_avail) > 1:
-            _fr_key = f"actor_hist_facet_radio_{person_id}"
-            if st.session_state.get(_fr_key) not in _f_avail:
-                st.session_state.pop(_fr_key, None)
-            _facet_sel = st.radio(
-                "Facette", _f_avail,
-                format_func=lambda f: "🎭 En tant qu'acteur" if f == "acteur" else "🎬 En tant que réalisateur",
-                horizontal=True, key=_fr_key, label_visibility="collapsed",
-            )
-        _type_sel = st.radio(
-            "Type", ["films", "series", "tout"],
-            format_func=lambda t: {"films": "🎬 Films", "series": "📺 Séries", "tout": "🗂️ Tout"}[t],
-            horizontal=True, key=f"actor_hist_type_radio_{person_id}", label_visibility="collapsed",
-        )
-        _pool = list(_vu_by_facet.get(_facet_sel) or [])
-        if _type_sel == "films":
-            _pool = [c for c in _pool if c["kind"] == "Film"]
-        elif _type_sel == "series":
-            _pool = [c for c in _pool if c["kind"] == "Série"]
-        _pool.sort(key=lambda c: (_credit_last_watched(c) or datetime.min), reverse=True)
-        _by_year: dict = {}
-        for c in _pool:
-            _lw = _credit_last_watched(c)
-            _yr = str(_lw.year) if _lw else "Sans date"
-            _by_year.setdefault(_yr, []).append(c)
-        for _yr in sorted(_by_year, reverse=True):
-            _section(f"📅 {_yr}", _by_year[_yr], key_prefix=f"hist{_facet_sel}{_type_sel}{_yr}")
+    _type_sel = st.radio(
+        "Type", ["films", "series", "tout"],
+        format_func=lambda t: {"films": "🎬 Films", "series": "📺 Séries", "tout": "🗂️ Tout"}[t],
+        horizontal=True, key=f"actor_hist_type_radio_{person_id}", label_visibility="collapsed",
+    )
+
+    # V182 — HISTORIQUE sur UNE SEULE LIGNE (retour : « 1 année = 1 ligne
+    # me rallonge la fiche d'autant ») : frise chronologique CROISSANTE —
+    # premier visionnage à gauche, dernières découvertes à droite, la saga
+    # garde son ordre (retour : « si je regarde BTTF1 le 25/12/25 puis
+    # BTTF2 le 01/01/26, mon ordre serait inversé »). Chaque carte indique
+    # son année de visionnage.
+    _pool = list(_vu_by_facet.get(_facet_sel) or [])
+    if _type_sel == "films":
+        _pool = [c for c in _pool if c["kind"] == "Film"]
+    elif _type_sel == "series":
+        _pool = [c for c in _pool if c["kind"] == "Série"]
+
+    def _hist_sort_key(c: dict):
+        _d = _credit_first_watched(c)
+        return (0, _d) if _d is not None else (1, datetime.min)
+
+    _pool.sort(key=_hist_sort_key)
+    _vu_years: dict = {}
+    for c in _pool:
+        _d = _credit_first_watched(c)
+        if _d is not None:
+            _vu_years[c["id"]] = str(_d.year)
+    _section(
+        "📜 Depuis mon historique", _pool,
+        key_prefix=f"hist{_facet_sel}{_type_sel}", vu_years=_vu_years,
+    )
 
     any_seen_any_listed = False
-    # Le séparateur de facette n'est utile que si les DEUX facettes existent
-    # (Scorsese réalisateur ET acteur) — sinon il ferait doublon.
-    multi_facets = sum(1 for f in facet_order if facets.get(f)) > 1
+    # V182 — LES FILTRES S'APPLIQUENT ICI AUSSI : seule la FACETTE
+    # sélectionnée est montrée, et le TYPE (films/séries/tout) filtre les
+    # sections « dans tes listes » comme le reste de la fiche (retour :
+    # « films dans tes listes apparait même si je coche série »).
     for facet_name in facet_order:
+        if facet_name != _facet_sel:
+            continue
         facet_map = facets.get(facet_name) or {}
         if not facet_map:
             continue
         _label, role_word, facet_tag = facet_labels[facet_name]
-        if multi_facets:
-            st.markdown(
-                f'<p class="actor-facet-tag">{facet_tag}</p>',
-                unsafe_allow_html=True,
-            )
         films = {cid: c for cid, c in facet_map.items() if c["kind"] == "Film"}
         series = {cid: c for cid, c in facet_map.items() if c["kind"] == "Série"}
         vus_films = [c for c in films.values() if _bucket(c) == "vu"]
@@ -7443,17 +7471,20 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         listed_series = [c for c in series.values() if _bucket(c) in ("liste", "encours", "abandonnee")]
         if vus_films or vus_series or listed_films or listed_series:
             any_seen_any_listed = True
-        # V181 — les bandeaux « Films/Séries VUS » sont remplacés par le
-        # bloc « 📜 DEPUIS MON HISTOIRE » (toggles + années) ci-dessus.
-        # Seules les sections « dans tes listes » restent par facette.
-        _section("📌 Films dans tes listes", sorted(listed_films, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-lf")
-        _section("📌 Séries dans tes listes", sorted(listed_series, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-ls")
+        if _type_sel in ("films", "tout"):
+            _section("📌 Films dans tes listes", sorted(listed_films, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-lf")
+        if _type_sel in ("series", "tout"):
+            _section("📌 Séries dans tes listes", sorted(listed_series, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-ls")
 
-    decouvrir = sorted(
-        (c for c in all_credits.values() if _bucket(c) is None),
-        key=lambda c: c["date"], reverse=True,
-    )[:12]
-    _section("🌐 À découvrir", decouvrir, key_prefix="dec")
+    # V182 — « À découvrir » suit AUSSI les filtres (facette + type).
+    _dec_map = facets.get(_facet_sel) or {}
+    decouvrir = [c for c in _dec_map.values() if _bucket(c) is None]
+    if _type_sel == "films":
+        decouvrir = [c for c in decouvrir if c["kind"] == "Film"]
+    elif _type_sel == "series":
+        decouvrir = [c for c in decouvrir if c["kind"] == "Série"]
+    decouvrir = sorted(decouvrir, key=lambda c: c["date"], reverse=True)[:12]
+    _section("🌐 À découvrir", decouvrir, key_prefix=f"dec{_facet_sel}{_type_sel}")
     if not any_seen_any_listed:
         role_word = "ce réalisateur" if is_director else "cet acteur"
         st.markdown(
@@ -11486,34 +11517,9 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
         f'<div class="progress-bar-container" style="--pct:{pct}%;" '
         f'data-tooltip="Note communauté TMDB"><div class="progress-rest"></div></div>'
     )
-    # V181 — pastille ⚡ FRICTION comme les tuiles « Que regarder ? »
-    # (retour utilisateur) : MÊME formule que le moteur de reco (durée
-    # courte / peu d'épisodes = facile à commencer). Pas de score
-    # personnel ici : une suggestion IA n'est pas encore dans tes
-    # données — la note TMDB et la friction sont les repères.
-    friction_val = None
-    try:
-        if lk_kind == "tv":
-            _n_ep = int(lk.get("episodes") or 0)
-            _c = _n_ep or 50
-            friction_val = (100 if _c <= 8 else 90 if _c <= 20 else 75 if _c <= 40
-                            else 55 if _c <= 80 else 40 if _c <= 150 else 25)
-        elif lk.get("runtime"):
-            _d = int(lk["runtime"]) or 120
-            friction_val = (100 if _d <= 100 else 90 if _d <= 120 else 75 if _d <= 140
-                            else 60 if _d <= 160 else 45 if _d <= 190 else 30)
-    except (TypeError, ValueError):
-        friction_val = None
-    friction_pill = (
-        f'<span class="score-badge" data-tooltip="Facilité de lancement '
-        f'(durée courte, peu d\u2019épisodes). Plus le score est élevé, plus '
-        f'c\u2019est facile à commencer.">⚡ Friction {friction_val}/100</span>'
-        if friction_val is not None else ""
-    )
-    fric_row = (
-        f'<div style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;">{friction_pill}</div>'
-        if friction_pill else ""
-    )
+    # V182 — la pastille ⚡ FRICTION est RETIRÉE de ces tuiles (retour
+    # utilisateur : « n'apporte rien d'intéressant et prend de l'espace à
+    # l'écran pour rien »).
     # V180 — la COLONNE /100 est DE RETOUR (retour utilisateur : «
     # j'aimais bien la colonne /100 ») : la pastille ⭐ de la tête (avec
     # info-bulle TMDB) ET la colonne /100 cohabitent — sur GSM la colonne
@@ -11531,7 +11537,7 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
     )
     html = (
         f'<div class="media-list-card poster-card alike-qr msl-click">{img}'
-        f'<div class="media-list-content" style="width:100%;">{head}{small}{links}{fric_row}{bar}{details}'
+        f'<div class="media-list-content" style="width:100%;">{head}{small}{links}{bar}{details}'
         f"</div>{pct_col}</div>"
     )
     return html, (lk_kind if lk_id else "", lk_id)
@@ -11677,12 +11683,15 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             ' + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]{'
             "margin-left:-10.2px !important;margin-right:-4.2px !important;"
             "width:calc(100% + 16.8px) !important;"
-            # V181 — FIN de la DOUBLE COUCHE de liseré (retour : « il y a
-            # comme une double couche au niveau du liseré devant le bouton »)
-            # : le CADRE porte déjà son liseré accent 4 px — le bouton garde
-            # la même bordure fine que ses autres côtés, comme les boutons
-            # « Une autre… » des autres sections n'en montrent qu'une.
-            "border-left:1px solid var(--ia-accent-soft) !important;}"
+            # V181 — FIN de la DOUBLE COUCHE de liseré.
+            # V182 — FOND et BORDURE TRANSPARENTS AU REPOS (retour : « le
+            # bouton est plus sombre que les autres, persuadé qu'il y a un
+            # autre contenu en dessous ») : le VERRE du bouton se
+            # superposait au VERRE du cadre → double couche sombre. Le
+            # cadre est le décor : au repos le bouton ne peint RIEN ; au
+            # survol, les règles :hover des boutons « Une autre… »
+            # reprennent la main (« parfait » selon le retour).
+            "background:transparent !important;border-color:transparent !important;}"
             "</style>"
         )
         st.markdown(css_alike, unsafe_allow_html=True)
