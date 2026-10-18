@@ -970,10 +970,13 @@ def alike_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -
         "- AUCUN SPOILER : ni sur l'œuvre de départ, ni sur les propositions ;\n"
         "- chaque proposition : titre EXACT, type (Film ou Série), année, et "
         "POURQUOI cet esprit se retrouve (1 phrase) ;\n"
+        "- V183 — donne AUSSI le titre ORIGINAL de chaque proposition "
+        "(anglais le plus souvent) : la recherche TMDB indexe surtout les "
+        "titres originaux, un titre français seul est parfois introuvable ;\n"
         "- si tu n'as pas d'équivalents clairs, choisis skip ;\n"
         "- tout en français.\n"
         'Réponds STRICTEMENT en JSON : {"skip": false, "picks": [{"title": '
-        '"…", "kind": "Série", "year": "2009", "why": "…"}, …]}'
+        '"…", "original": "…", "kind": "Série", "year": "2009", "why": "…"}, …]}'
     )
     text = ia_complete(gemini_key, groq_key, prompt, 1.0, 1100, "meme-esprit")
     if not text.strip():
@@ -994,6 +997,10 @@ def alike_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -
             continue
         picks.append({
             "title": title,
+            # V183 — titre ORIGINAL (retour : les titres français ne sont
+            # pas toujours dans l'index TMDB) : vide si l'IA ne le donne
+            # pas (les réponses en cache n'en ont pas).
+            "original": str(p.get("original") or "").strip(),
             "kind": "Série" if "série" in str(p.get("kind") or "").lower() or "serie" in str(p.get("kind") or "").lower() else "Film",
             "year": str(p.get("year") or "").strip()[:4],
             "why": why,

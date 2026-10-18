@@ -1247,6 +1247,15 @@ st.markdown(
                    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
                    overflow: hidden; min-height: 2.3em; max-width: 100%; }
     .sim-card .d { font-size: .63rem; color: var(--am-text-muted); margin-top: 1px; min-height: 1em; }
+    /* V183 — FRISE HISTORIQUE : un SEGMENT coloré sous les contenus de
+       chaque année de visionnage + l'année en GRAS, UNE SEULE fois (au
+       début du segment). Les segments des cartes consécutives se
+       touchent → une barre continue par année. */
+    .sim-card .tl-bar { width: 76px; height: 5px; border-radius: 3px; margin-top: .32rem;
+                        background: linear-gradient(90deg, rgba(255,225,0,.95), rgba(0,163,146,.85));
+                        box-shadow: 0 0 8px rgba(255,225,0,.18); }
+    .sim-card .tl-year { font-size: .82rem; font-weight: 900; color: var(--am-yellow);
+                         margin-top: .12rem; letter-spacing: .05em; }
     .sim-badge {
         display: inline-block; margin-top: auto; font-size: .58rem; font-weight: 800;
         border-radius: 999px; padding: .1rem .4rem; max-width: 84px; overflow: hidden;
@@ -1373,9 +1382,16 @@ st.markdown(
     .ep-cell[data-tooltip], .score-badge[data-tooltip], .mc-note[data-tooltip], .mc-type[data-tooltip],
     .mc-year[data-tooltip], .media-list-pct[data-tooltip], .mc-inline-pct[data-tooltip],
     .mc-chip[data-tooltip],
-    /* V181 — badges des bandeaux/filmographies : info-bulle « Vu le … » */
+    /* V181 — badges des bandeaux/filmographies : info-bulle « Vu le … ».
+       V183 — FIX (retour : « j'ai toujours le ?, la date dans une autre
+       info-bulle 1 seconde plus tard ») : le badge a overflow:hidden
+       (ellipsis des longs noms de listes) → sa PROPRE bulle ::after,
+       dessinée AU-DESSUS de lui, était entièrement ROGNÉE. Prouvé au
+       banc : pixels de la zone = fond de fiche, computed opacity 1.
+       Les badges à info-bulle portent un texte court → l'ellipsis ne
+       leur sert à rien : overflow VISIBLE pour eux seuls. */
     .sim-badge[data-tooltip] {
-        position: relative; cursor: help;
+        position: relative; cursor: help; overflow: visible;
     }
     .score-badge[data-tooltip]::after,
     .sim-badge[data-tooltip]::after,
@@ -6966,11 +6982,16 @@ def _actor_dialog_chrome_css() -> str:
         "<style>"
         '[data-testid="stDialog"]{background:rgba(1,8,7,.62)!important;}'
         '[data-testid="stDialog"]>div{'
-        # V182 — FOND AUX COULEURS ASTON (retour : « le fond de la fiche
-        # semble neutre, je vois mes couleurs uniquement dans l'en-tête »)
-        # : vert Aston profond en haut, fondu vers le sombre — toute la
-        # fiche vit dans le thème.
-        "background:linear-gradient(180deg,rgb(0,82,75) 0%,rgb(3,34,30) 42%,rgb(3,22,19) 100%)!important;"
+        # V182 — FOND AUX COULEURS ASTON. V183 — EXTENTS FIXES EN PIXELS
+        # (retour : « quand je joue avec les radiobox, la fiche grandit
+        # ou rapetisse, impact sur mon dégradé — effet clignotant ») :
+        # des arrêts en POURCENTAGES re-peignent tout le dégradé à chaque
+        # changement de hauteur ; des arrêts en PIXELS gardent le haut de
+        # la fiche IDENTIQUE quelle que soit la hauteur — seul le bas
+        # (couleur unie) s'allonge, invisible. + un halo radial vert en
+        # tête de fiche (esthétique).
+        "background:radial-gradient(120% 520px at 50% -120px,rgba(0,163,146,.28),rgba(0,163,146,0) 70%),"
+        "linear-gradient(180deg,rgb(0,82,75) 0px,rgb(3,34,30) 320px,rgb(3,22,19) 760px)!important;"
         "border:1px solid rgba(0,163,146,.30)!important;"
         "box-shadow:0 26px 90px rgba(0,0,0,.60)!important;"
         "overflow:hidden!important;}"
@@ -7199,7 +7220,8 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             return "liste"
         return None
 
-    def _card(credit: dict, badge: str | None, vu_year: str = "") -> str:
+    def _card(credit: dict, badge: str | None, vu_year: str = "",
+              timeline: dict | None = None) -> str:
         """V176 — carte filmographie au format « Similaires » (retour
         utilisateur : poster, nom du contenu, année, pastille — ET le nom
         du personnage joué). La carte est un BOUTON TRANSPARENT : le clic
@@ -7217,15 +7239,13 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         elif badge == "abandonnee":
             badge_html = '<span class="sim-badge abandonnee">🚫 Abandonnée</span>'
         elif badge == "vu":
-            # V182 — TITLE NATIF en plus du data-tooltip (retour : « j'ai
-            # un ? qui apparait, ça ne marche pas ») : la bulle CSS est
-            # ROGNÉE par le bandeau défilant (overflow-x:auto rogne aussi
-            # en Y — la même cause que la heatmap, cf. le fix V150) ; le
-            # title natif du navigateur, lui, ne peut PAS être rogné.
+            # V183 — la bulle STYLÉE s'affiche désormais instantanément
+            # (le rognage venait du overflow:hidden du badge lui-même,
+            # pas du bandeau) : plus de title natif — fini la double
+            # info-bulle décalée d'une seconde.
             _tip = _vu_tooltip(credit)
             badge_html = (
-                f'<span class="sim-badge vu" data-tooltip="{escape(_tip, quote=True)}"'
-                f' title="{escape(_tip, quote=True)}">✅ Vu</span>'
+                f'<span class="sim-badge vu" data-tooltip="{escape(_tip, quote=True)}">✅ Vu</span>'
                 if _tip else '<span class="sim-badge vu">✅ Vu</span>'
             )
         elif badge == "liste":
@@ -7241,17 +7261,21 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     # ne portent PAS le spacer 14 % de la fiche film (retour : « les films
     # vus etc. commencent à gauche ») — le spacer est exclu des bandeaux
     # qui contiennent des cartes act-filmo.
-        # V182 — « 📅 vu en YYYY » visible sur les cartes de la frise
-        # historique (l'année de visionnage, pas celle de sortie).
-        _vu_year_html = (
-            f'<div class="d" style="color:rgba(255,225,0,.88);font-size:.62rem;font-weight:800;">📅 vu en {escape(vu_year)}</div>'
-            if vu_year else ""
-        )
+        # V183 — FRISE : un SEGMENT sous chaque carte de la frise (les
+        # segments consécutifs forment la barre de l'année) + l'année en
+        # GRAS, une seule fois, au début de son segment (retour : « plutôt
+        # que de répéter les années sous chaque contenu »). Les cartes
+        # hors frise (listes, à découvrir) ne portent rien.
+        _tl_html = ""
+        if timeline:
+            _tl_html = '<div class="tl-bar"></div>'
+            if timeline.get("first"):
+                _tl_html += f'<div class="tl-year">{escape(str(timeline.get("year") or ""))}</div>'
         return (
             f'<div class="sim-card msl-click act-filmo">{img}'
             f'<div class="t">{name}</div>'
             f'<div class="c">{role}</div>'
-            f'<div class="d">{credit["year"] or ""}</div>{badge_html}{_vu_year_html}</div>'
+            f'<div class="d">{credit["year"] or ""}</div>{badge_html}{_tl_html}</div>'
         )
 
     # Union des contenus des DEUX facettes (pour le compteur d'en-tête et
@@ -7342,7 +7366,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
 
     def _section(title: str, rows: list, empty_skip: bool = True, key_prefix: str = "s",
-                 vu_years: dict | None = None) -> None:
+                 vu_years: dict | None = None, timeline: dict | None = None) -> None:
         """V176 — BANDEAU DÉFILANT de posters cliquables (comme
         Similaires/Saga des fiches film) : tout est visible d'un coup et
         on fait défiler vers la droite. Chaque carte ouvre la fiche du
@@ -7361,7 +7385,8 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             if col is None:
                 continue
             with col:
-                st.markdown(_card(c, _bucket(c), vu_year=(vu_years or {}).get(c["id"], "")),
+                st.markdown(_card(c, _bucket(c), vu_year=(vu_years or {}).get(c["id"], ""),
+                                  timeline=(timeline or {}).get(c["id"])),
                             unsafe_allow_html=True)
                 try:
                     _cid = int(c["id"] or 0)
@@ -7415,11 +7440,21 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             format_func=lambda f: "🎭 En tant qu'acteur" if f == "acteur" else "🎬 En tant que réalisateur",
             horizontal=True, key=_fr_key, label_visibility="collapsed",
         )
-    _type_sel = st.radio(
-        "Type", ["films", "series", "tout"],
-        format_func=lambda t: {"films": "🎬 Films", "series": "📺 Séries", "tout": "🗂️ Tout"}[t],
-        horizontal=True, key=f"actor_hist_type_radio_{person_id}", label_visibility="collapsed",
-    )
+    _tcol, _scol = st.columns([3, 2], gap="small")
+    with _tcol:
+        _type_sel = st.radio(
+            "Type", ["films", "series", "tout"],
+            format_func=lambda t: {"films": "🎬 Films", "series": "📺 Séries", "tout": "🗂️ Tout"}[t],
+            horizontal=True, key=f"actor_hist_type_radio_{person_id}", label_visibility="collapsed",
+        )
+    with _scol:
+        # V183 — TRI (retour : « mettre un autre bouton radio pour
+        # indiquer tri par date croissant ou décroissant »).
+        _sort_sel = st.radio(
+            "Tri", ["croissant", "decroissant"],
+            format_func=lambda s: "⬆️ Croissant" if s == "croissant" else "⬇️ Décroissant",
+            horizontal=True, key=f"actor_hist_sort_radio_{person_id}", label_visibility="collapsed",
+        )
 
     # V182 — HISTORIQUE sur UNE SEULE LIGNE (retour : « 1 année = 1 ligne
     # me rallonge la fiche d'autant ») : frise chronologique CROISSANTE —
@@ -7437,15 +7472,21 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         _d = _credit_first_watched(c)
         return (0, _d) if _d is not None else (1, datetime.min)
 
-    _pool.sort(key=_hist_sort_key)
-    _vu_years: dict = {}
+    _pool.sort(key=_hist_sort_key, reverse=(_sort_sel == "decroissant"))
+    # V183 — TIMELINE par année de visionnage : l'année en GRAS au début
+    # de son segment (une seule fois), un segment sous chaque carte.
+    _timeline: dict = {}
+    _seen_years: set = set()
     for c in _pool:
         _d = _credit_first_watched(c)
-        if _d is not None:
-            _vu_years[c["id"]] = str(_d.year)
+        if _d is None:
+            continue
+        _yr = str(_d.year)
+        _timeline[c["id"]] = {"year": _yr, "first": _yr not in _seen_years}
+        _seen_years.add(_yr)
     _section(
         "📜 Depuis mon historique", _pool,
-        key_prefix=f"hist{_facet_sel}{_type_sel}", vu_years=_vu_years,
+        key_prefix=f"hist{_facet_sel}{_type_sel}{_sort_sel}", timeline=_timeline,
     )
 
     any_seen_any_listed = False
@@ -11292,11 +11333,21 @@ def _ia_generic_render(state_key: str, subject: str, hint: str, channel: str,
 
 
 @st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours
-def _alike_lookup(kind_label: str, title: str, year: str) -> dict:
+def _alike_lookup(kind_label: str, title: str, year: str, original: str = "") -> dict:
     """Retrouve sur TMDB une proposition de « MÊME ESPRIT » (V174) :
     id, poster, note, type — pour l'afficher en vraie tuile (poster
     cliquable, pastille d'état). Dict vide si introuvable (la tuile
-    s'affiche alors sans poster, avec le lien de recherche TMDB)."""
+    s'affiche alors sans poster, avec le lien de recherche TMDB).
+
+    V183 — TITRE ORIGINAL D'ABORD (retour utilisateur : « le principal
+    problème des contenus non trouvés est que le film est recherché en
+    version française ») : l'index de recherche TMDB connaît surtout les
+    titres ORIGINAUX — une proposition française comme « Les 12 Travaux
+    d'Hercule » peut n'exister dans AUCUN index, alors que le titre
+    original remonte immédiatement. L'IA fournit désormais le titre
+    original : on l'essaie EN PREMIER, puis le titre français. Le
+    résultat revient toujours avec le titre et le poster FRANÇAIS
+    (language=fr-FR de la recherche)."""
     api_key = _tmdb_api_key()
     if not api_key or not str(title or "").strip():
         return {}
@@ -11304,10 +11355,18 @@ def _alike_lookup(kind_label: str, title: str, year: str) -> dict:
         year_int = int(str(year)[:4]) if str(year or "").strip()[:4].isdigit() else None
     except (TypeError, ValueError):
         year_int = None
-    try:
-        found = _tmdb_search_media(kind_label, str(title).strip(), year_int, api_key) or {}
-    except Exception:
-        return {}
+    found = {}
+    _queries = []
+    for _q in (str(original or "").strip(), str(title).strip()):
+        if _q and _q not in _queries:
+            _queries.append(_q)
+    for _q in _queries:
+        try:
+            found = _tmdb_search_media(kind_label, _q, year_int, api_key) or {}
+        except Exception:
+            found = {}
+        if found.get("id"):
+            break
     if not found.get("id"):
         return {}
     info = {
@@ -11415,7 +11474,8 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
     why = escape(str(pick.get("why") or ""))
     lk = {}
     try:
-        lk = _alike_lookup(kind_raw, title_raw, year_raw) or {}
+        lk = _alike_lookup(kind_raw, title_raw, year_raw,
+                           str(pick.get("original") or "").strip()) or {}
     except Exception:
         lk = {}
     lk_id = int(lk.get("id") or 0)
@@ -11684,14 +11744,16 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             "margin-left:-10.2px !important;margin-right:-4.2px !important;"
             "width:calc(100% + 16.8px) !important;"
             # V181 — FIN de la DOUBLE COUCHE de liseré.
-            # V182 — FOND et BORDURE TRANSPARENTS AU REPOS (retour : « le
-            # bouton est plus sombre que les autres, persuadé qu'il y a un
-            # autre contenu en dessous ») : le VERRE du bouton se
-            # superposait au VERRE du cadre → double couche sombre. Le
-            # cadre est le décor : au repos le bouton ne peint RIEN ; au
-            # survol, les règles :hover des boutons « Une autre… »
-            # reprennent la main (« parfait » selon le retour).
-            "background:transparent !important;border-color:transparent !important;}"
+            # V182 — fond/bordure transparents (le verre du bouton se
+            # superposait au verre du cadre = double couche sombre).
+            # V183 — DÉLIMITÉ SANS ASSOMBRIR (retour : « il n'y a pas de
+            # bouton délimité, sauf en surbrillance ») : un voile BLANC
+            # très léger (pas de verre sombre empilé) + un filet discret
+            # en haut qui le sépare de la dernière tuile. Le cadre reste
+            # le décor ; au survol, les règles :hover reprennent la main.
+            "background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.015)) !important;"
+            "border-color:rgba(255,255,255,.09) !important;"
+            "border-top:1px solid rgba(255,255,255,.16) !important;}"
             "</style>"
         )
         st.markdown(css_alike, unsafe_allow_html=True)
