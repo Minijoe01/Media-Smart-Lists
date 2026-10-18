@@ -2117,15 +2117,66 @@ st.markdown(
         position: relative;
         z-index: 8;
     }
-    /* V176 — BANDEAU DÉFILANT (retour utilisateur : « j'adorais la
+    /* V177 — TUILES PERSONNES CLIQUABLES : rayon complet (le pied bouton
+       n'existe plus visuellement) + soulèvement du BLOC ENTIERS comme les
+       autres tuiles (la carte seule ne bouge plus : les clics restent
+       alignés — leçon V175c). */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card) .people-card.msl-click {
+        border-radius: 13px !important;
+        transform: none !important;
+    }
+    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .people-card.msl-click):has(*:hover) {
+        transition: transform .16s ease;
+        transform: translateY(-2px);
+    }
+    /* V175 — BANDEAU DÉFILANT (retour utilisateur : « j'adorais la
        disposition… la possibilité de scroller vers la droite ») : la rangée
        de colonnes devient scrollable, colonnes à largeur FIXE (84 px, comme
        les mini-cartes d'origine) — posters côte à côte, même écart qu'avant,
        ET chaque carte reste un bouton transparent. */
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click) {
         overflow-x: auto;
-        padding: .45rem .1rem .35rem;
+        /* V177 — alignement : les cartes commencent à .95rem du bord, comme
+        le poster et les titres Synopsis/Distribution (retour utilisateur :
+        « alignés par rapport au poster et aux autres titres »). */
+        padding: .45rem .95rem .35rem;
         scrollbar-width: thin;
+    }
+    /* V177 — ALIGNEMENT EXACT (retour : « alignés par rapport au poster et
+       aux titres Pourquoi ce score/Synopsis/Distribution ») : les sections
+       pleine largeur reproduisent la colonne d'infos du haut — un spacer
+       invisible de 14 % + 14 px (mêmes bases que .cinema-poster), calculé
+       dans une boîte de même largeur → alignement au pixel. GSM : tout
+       revient au bord (layout empilé). */
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click)::before {
+        content: "";
+        flex: 0 0 14%;
+        min-width: 90px;
+        /* -2px : absorbe l'écart flex entre le spacer et la 1re colonne
+        (16 px mesurés) pour que la 1re carte s'aligne sur les titres. */
+        margin-right: -2px;
+    }
+    .cinema-strip-head { padding: 0 .95rem; }
+    .cinema-strip-head > p { margin-left: calc(14% + 14px) !important; margin-right: 0 !important; }
+    .cinema-tail > * { margin-left: calc(14% + 14px) !important; }
+    .msl-hist-wrap > * { margin-left: calc(14% + 14px); }
+    .msl-hist-wrap > p.cinema-section-title { margin-left: calc(14% + 14px) !important; }
+    @media (max-width: 640px) {
+        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click)::before { display: none; }
+        .cinema-strip-head > p,
+        .cinema-tail > *,
+        .msl-hist-wrap > *,
+        .msl-hist-wrap > p.cinema-section-title { margin-left: 0 !important; }
+    }
+    /* V177 — PASTILLES NON TRONQUÉES : dans les dialogs, Streamlit pose
+    margin-bottom:-16px sur les conteneurs markdown → le conteneur d'une
+    carte mesurait 16 px de MOINS que la carte → le badge du bas débordait
+    et la section suivante (positionnée) le recouvrait (« pastilles
+    tronquées au milieu »). On annule cette marge pour les cartes. */
+    [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(.sim-card),
+    [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(.media-list-card.msl-click),
+    [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(.people-card.msl-click) {
+        margin-bottom: 0 !important;
     }
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click) > div[data-testid="stColumn"] {
         flex: 0 0 auto !important;
@@ -3474,8 +3525,12 @@ def _tmdb_company_url(company_id: Any) -> str:
     return f"https://www.themoviedb.org/company/{company_id}" if company_id else ""
 
 
-def _render_people_cards(people: list[dict], limit: int = 8, fallback_emoji: str = "🎭") -> str:
-    """Cartes acteurs/réalisateurs (photo + lien TMDB), compactes et alignées sur le thème."""
+def _render_people_cards(people: list[dict], limit: int = 8, fallback_emoji: str = "🎭",
+                         clickable: bool = False) -> str:
+    """Cartes acteurs/réalisateurs (photo + lien TMDB), compactes et alignées
+    sur le thème. V177 : clickable=True ajoute la classe msl-click — la
+    carte entière devient un bouton transparent (le bouton « Fiche »
+    visible disparaît, retour utilisateur)."""
     if not people:
         return ""
     cards = []
@@ -3504,7 +3559,7 @@ def _render_people_cards(people: list[dict], limit: int = 8, fallback_emoji: str
         else:
             sub = "Ouvre la fiche pour le détail"
         cards.append(
-            f'<div class="people-card" style="display:flex;align-items:center;gap:.5rem;background:rgba(8,55,50,.62);'
+            f'<div class="people-card{(" msl-click") if clickable else ""}" style="display:flex;align-items:center;gap:.5rem;background:rgba(8,55,50,.62);'
             f'border:1px solid rgba(0,163,146,.35);border-left:4px solid var(--am-yellow);'
             f'border-radius:13px 13px 0 0;padding:.4rem .5rem;">'
             f'{img}<div style="min-width:0;flex:1;"><div style="font-weight:700;font-size:.8rem;'
@@ -3532,8 +3587,10 @@ def _render_people_cards_clickable(
     cols = st.columns(columns)
     for i, person in enumerate(people):
         with cols[i % columns]:
+            # V177 — TUILE ENTIÈREMENT CLIQUABLE (calque transparent) : le
+            # bouton « Fiche » visible disparaît (retour utilisateur).
             st.markdown(
-                _render_people_cards([person], limit=1, fallback_emoji=fallback_emoji),
+                _render_people_cards([person], limit=1, fallback_emoji=fallback_emoji, clickable=True),
                 unsafe_allow_html=True,
             )
             person_id = person.get("id")
@@ -4339,16 +4396,24 @@ def _open_fiche_in_dialog(kind: str, tmdb_id: int, return_actor: dict | None = N
         st.session_state.pop(f"ia_coulisses_{_ik}_{_tid}", None)
         st.session_state[f"ia_nonce_{_ik}_{_tid}"] = time.time()
     st.session_state["_cinema_detail_row"] = media_row
-    # V176 — ré-ouverture par le main : dialog NEUF = scroll EN HAUT,
-    # protégé par le mode heartbeat (V174) contre les reruns automatiques.
+    # V177 — FICHE SUIVANTE EN HAUT : depuis l'intérieur du dialog, seul
+    # un rerun de FRAGMENT est possible (le global est neutralisé par
+    # Streamlit) — et un rerun de fragment conserve la position de
+    # défilement. La parade : un rendu VIDE intermédiaire (le navigateur
+    # ramène le scroll à zéro par clampage), puis la fiche complète.
+    st.session_state["_msl_fiche_blank"] = True
+    # V176 — la fiche reste protégée par le mode heartbeat (V174) contre
+    # les reruns automatiques.
     st.session_state["_msl_fiche_link_mode"] = True
     st.session_state["_msl_fiche_heartbeat"] = time.time()
-    st.session_state["_msl_fiche_nav_pending"] = True
     if return_actor:
         st.session_state["_msl_return_to_actor"] = {
             "person_id": int(return_actor.get("person_id") or 0),
             "person_kind": str(return_actor.get("person_kind") or "acteur"),
         }
+    # rerun GLOBAL (prouvé au micro-dialog) : ferme le dialog courant —
+    # y compris la fiche ACTEUR quand on vient de la filmographie — et le
+    # main rouvre la fiche demandée (avec le rendu vide → scroll en haut).
     st.rerun()
 
 
@@ -5405,7 +5470,7 @@ def _render_sim_strip(entries: list, watched: set, listed: set, list_names: dict
     s'écrasent jamais, PC comme GSM."""
     if not entries:
         return
-    st.markdown(title_html, unsafe_allow_html=True)
+    st.markdown(f'<div class="cinema-strip-head">{title_html}</div>', unsafe_allow_html=True)
     entries = entries[:12]
     cols = st.columns(len(entries), gap="small")
     for col, entry in zip(cols, entries):
@@ -5663,6 +5728,13 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"background:rgba({ar},{ag},{ab},.20)!important;"
         f"border-color:rgba({ar},{ag},{ab},.65)!important;}}"
         f".cinema-info .cinema-section-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
+        # V177 — les titres HORS cinema-info (bande-annonce, où le regarder,
+        # bandeaux saga/similaires) perdaient l'accent : une règle globale
+        # `p, li, label {{ color: var(--am-text) !important }}` écrase même
+        # les styles inline. Ces sélecteurs ciblés + !important gagnent.
+        f".cinema-tail .cinema-section-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
+        f"p.cinema-strip-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
+        f".msl-hist-wrap .cinema-section-title{{color:rgb({a2r},{a2g},{a2b})!important;}}"
         f".cinema-info .cast-face{{border-color:rgba({ar},{ag},{ab},.55)!important;}}"
         f".cinema-info .cinema-synopsis{{color:rgb({a2r},{a2g},{a2b})!important;}}"
         f".cinema-info .cinema-casting{{color:rgb({a3_rgb[0]},{a3_rgb[1]},{a3_rgb[2]})!important;}}"
@@ -6133,7 +6205,7 @@ def _render_cinema_detail_body(row: dict) -> None:
             saga_entries = parts
             saga_name = escape(str(collection_payload.get("name") or "Saga"))
             saga_title_html = (
-                f'<p class="cinema-section-title" style="color:rgb({a2r},{a2g},{a2b});">La saga · {saga_name}</p>'
+                f'<p class="cinema-section-title cinema-strip-title" style="color:rgb({a2r},{a2g},{a2b}) !important;">La saga · {saga_name}</p>'
             )
 
     # V139 — SIMILAIRES : recommandations TMDB croisées avec ton historique
@@ -6154,7 +6226,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         if len(reco_results) >= 3:
             sim_entries = reco_results
             sim_title_html = (
-                f'<p class="cinema-section-title" style="color:rgb({a2r},{a2g},{a2b});">Similaires</p>'
+                f'<p class="cinema-section-title cinema-strip-title" style="color:rgb({a2r},{a2g},{a2b}) !important;">Similaires</p>'
             )
     # V175 — états croisés UNE seule fois pour les deux grilles.
     _grid_watched, _grid_listed, _grid_names = set(), set(), {}
@@ -6676,12 +6748,17 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
         f".msl-hist-smeta{{font-size:.72rem;}}}}"
         "</style>"
     )
+    # V177 — aligné sur le poster/.95rem comme les autres titres (retour
+    # utilisateur) + accent protégé par !important (la règle globale
+    # p,li,label écrasait l'inline).
     st.markdown(
         css_hist
-        + f'<p class="cinema-section-title" style="color:rgb({a2r},{a2g},{a2b});'
+        + f'<div class="msl-hist-wrap" style="padding:0 .95rem;">'
+        + f'<p class="cinema-section-title" style="color:rgb({a2r},{a2g},{a2b}) !important;'
         f'margin-top:.9rem;">📜 TON HISTOIRE</p>'
         + f'<div class="msl-hist-card">{head}</div>'
-        + seasons_html,
+        + seasons_html
+        + '</div>',
         unsafe_allow_html=True,
     )
 
@@ -6699,8 +6776,29 @@ def _msl_on_cinema_dismiss(*_args) -> None:
 
 
 @st.dialog(" ", width="large", on_dismiss=_msl_on_cinema_dismiss)
-def _cinema_detail_dialog() -> None:
-    """Fenêtre modale : fiche cinéma du contenu choisi (V124)."""
+def _cinema_detail_dialog(gen: int = 0) -> None:
+    """Fenêtre modale : fiche cinéma du contenu choisi (V124).
+
+    V177 — FICHE SUIVANTE EN HAUT : un clic dans la fiche (Similaires,
+    Saga, MÊME ESPRIT, filmographie) ne peut déclencher qu'un rerun de
+    FRAGMENT — le scroll du dialog serait conservé (prouvé au banc : le
+    compteur de runs du harnais ne bougeait même pas). La parade : le
+    drapeau `_msl_fiche_blank` fait dessiner un contenu MINUSCULE un
+    instant — le navigateur RAMÈNE le défilement à zéro par clampage
+    (contenu plus court que la position) — puis le rerun suivant dessine
+    la fiche complète, EN HAUT."""
+    if st.session_state.pop("_msl_fiche_blank", None):
+        st.markdown('<div style="height:2px;"></div>', unsafe_allow_html=True)
+        # Laisser le rendu vide ATTEINDRE le navigateur (le défilement se
+        # clamp à zéro — prouvé au micro-dialog), puis rerun GLOBAL : le
+        # main rouvre la fiche via le mode heartbeat, complète, EN HAUT.
+        # (st.rerun(scope="fragment") est illégal ici : l'appel initial du
+        # dialog vient du main, pas d'un rerun de fragment — exception
+        # vue au banc.)
+        time.sleep(0.2)
+        st.session_state["_msl_fiche_heartbeat"] = time.time()
+        st.rerun()
+        return
     _render_cinema_detail_body(st.session_state.get("_cinema_detail_row") or {})
 
 
@@ -7046,7 +7144,7 @@ def _open_cinema_detail(row: dict) -> None:
         # V152 — nonce : info NOUVELLE à chaque ouverture (le précalcul en
         # arrière-plan repart de zéro, il n'y a PAS d'attente à l'écran).
         st.session_state[f"ia_nonce_{_ia_key}"] = time.time()
-    _cinema_detail_dialog()
+    _cinema_detail_dialog(int(st.session_state.get("_msl_fiche_gen") or 0))
 
 
 def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix: str = "cin_",
@@ -10990,7 +11088,9 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
         meta_chips.append(_meta_chip("🎬", lk["directors"], "Réal.", "Réalisateur"))
     if lk.get("collection"):
         meta_chips.append(_raw_chip(f"🔗 {lk['collection']}", f"La saga : {lk['collection']}"))
-    _small_parts = [p for p in [state_chip] + meta_chips if p]
+    # V177 — même ordre que les tuiles « Que regarder ? » : genres,
+    # studios, acteurs, réal, saga… puis la pastille d'ÉTAT en dernier.
+    _small_parts = [p for p in meta_chips + [state_chip] if p]
     small = f"<small>{' · '.join(_small_parts)}</small>" if _small_parts else ""
     if lk_id:
         links = (
@@ -11111,27 +11211,42 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             # V176 — dans le CADRE UNI, la tête n'a plus de bordure propre.
             ".ia-head-block{border:none !important;background:transparent !important;"
             "backdrop-filter:none !important;-webkit-backdrop-filter:none !important;"
-            "padding:.25rem .35rem .1rem !important;margin:0 !important;}"
+            "padding:.2rem .35rem 0 !important;margin:0 !important;}"
             ".alike-why-body{font-size:.78rem;color:var(--am-text-muted);line-height:1.5;padding:.2rem 0 .1rem;}"
-            # V176 — le CADRE UNI : le bloc du container porte bordure et
-            # fond « bloc IA » ; tête, tuiles et bouton sont dedans.
-            'div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stLayoutWrapper"] .alike-qr){'
+            # V177 — BUG MAJEUR CORRIGÉ (retour utilisateur : « des liserés
+            # accent partout, même devant la fiche ; le liseré arrive à
+            # gauche pour englober toute la fiche ; l'intégration de la
+            # bannière est cassée ») : l'ANCIEN sélecteur matchait AUSSI le
+            # bloc qui contient TOUTE la fiche (le dialog enveloppe son
+            # contenu dans stLayoutWrapper > stVerticalBlock, et ce bloc a
+            # pour enfant direct le wrapper de la section). Prouvé au banc :
+            # un bloc de 3676 px portait la bordure 4 px + le fond. Le
+            # nouveau sélecteur exige la TÊTE du bloc en enfant DIRECT —
+            # unique à la section MÊME ESPRIT.
+            'div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .ia-head-block):has(> div[data-testid="stLayoutWrapper"] .alike-qr){'
             f"border:1px solid {accent_soft};border-left:4px solid {accent};border-radius:13px;"
-            "background:rgba(3,22,19,.52);padding:.35rem .45rem .12rem;}"
-            # glue : la 1re tuile remonte sous la tête (compense le gap
-            # 16 px — le voisin suivant de la tête est le WRAPPER de tuile)
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-head-block)'
-            ' + div[data-testid="stLayoutWrapper"]:has(.alike-qr){'
+            "background:rgba(3,22,19,.52);padding:.15rem .45rem .12rem;}"
+            # V177 — glissades : les tuiles vivent dans des WRAPPERS
+            # (stLayoutWrapper), pas des stElementContainer — les anciennes
+            # règles ne matchaient JAMAIS (d'où les gros écarts).
+            # tête → 1re tuile (margin-bottom sur la tête : simple et sûr —
+            # le sélecteur frère ne matchait pas toujours)
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-head-block){'
+            "margin-bottom:-1.05rem !important;}"
+            # tuile → tuile
+            'div[data-testid="stLayoutWrapper"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
+            ' + div[data-testid="stLayoutWrapper"]:has(> div[data-testid="stVerticalBlock"] .alike-qr){'
             "margin-top:-0.95rem !important;}"
-            # Tuiles resserrées entre elles + pied « une autre » soudé sous la
-            # dernière tuile (compensation de l'écart de bloc de 16 px, même
-            # principe que V174 — ciblé : uniquement après une tuile alike).
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
-            ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr){'
-            "margin-top:-0.95rem !important;}"
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
+            # dernière tuile → ancre du bouton
+            'div[data-testid="stLayoutWrapper"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
             ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor){'
             "margin-top:-0.95rem !important;}"
+            # V177 — le bouton « D'autres suggestions » ferme l'encart sur
+            # toute sa largeur (retour : « n'est pas aligné avec l'encart,
+            # il est lié bizarrement à la dernière tuile »).
+            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stElementContainer"]:has(button[kind="secondary"]){'
+            "margin-left:-.45rem !important;margin-right:-.45rem !important;}"
             "</style>"
         )
         st.markdown(css_alike, unsafe_allow_html=True)
@@ -16462,22 +16577,15 @@ if _fiche_link_raw and st.session_state.get("_msl_fiche_done") != _fiche_link_ra
         pass
 elif st.session_state.get("_msl_fiche_link_mode"):
     # V174 — la fiche-lien reste ouverte à travers les reruns automatiques
-    # (retour utilisateur : elle se fermait dès que le dashboard
-    # s'actualisait). On la ré-ouvre tant que son heartbeat est frais
-    # (< 4 s) ; fermée par l'utilisateur, le heartbeat expire et le mode
-    # s'éteint au rerun suivant.
-    # V176 — la navigation DANS une fiche (Similaires / Saga / MÊME ESPRIT /
-    # filmographie acteur) passe par ICI : le main ouvre un dialog NEUF qui
-    # démarre EN HAUT de la fenêtre (un rerun de fragment gardait la
-    # position de défilement de la fiche précédente).
+    # (heartbeat < 4 s) ; fermée par l'utilisateur (on_dismiss), le mode
+    # s'éteint et — si la fiche venait d'une filmographie — la fiche
+    # acteur ROUVRE immédiatement.
     try:
-        _fresh = time.time() - float(st.session_state.get("_msl_fiche_heartbeat") or 0) < 4.0
+        _fresh = time.time() - float(st.session_state.get("_msl_fiche_heartbeat") or 0) < 6.0
     except (TypeError, ValueError):
         _fresh = False
-    _nav_pending = st.session_state.pop("_msl_fiche_nav_pending", None)
-    _dismissed = st.session_state.pop("_msl_fiche_dismissed", None)
-    if not _dismissed and (_fresh or _nav_pending) and st.session_state.get("_cinema_detail_row"):
-        _cinema_detail_dialog()
+    if not _dismissed and _fresh and st.session_state.get("_cinema_detail_row"):
+        _cinema_detail_dialog(int(st.session_state.get("_msl_fiche_gen") or 0))
     else:
         st.session_state.pop("_msl_fiche_link_mode", None)
         # V176 — fermeture PAR L'UTILISATEUR (callback on_dismiss) d'une
