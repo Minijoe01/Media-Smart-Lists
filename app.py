@@ -2125,7 +2125,10 @@ st.markdown(
         border-radius: 13px !important;
         transform: none !important;
     }
-    div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .people-card.msl-click):has(*:hover) {
+    /* V178 — le soulèvement porte sur le BLOC PAIRE (le st.container de
+    la carte), jamais sur la colonne : deux personnes empilées ne se
+    lèvent plus ensemble (retour V177). */
+    div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] .people-card.msl-click):has(*:hover) {
         transition: transform .16s ease;
         transform: translateY(-2px);
     }
@@ -2136,11 +2139,30 @@ st.markdown(
        ET chaque carte reste un bouton transparent. */
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click) {
         overflow-x: auto;
+        /* V178 — UNE SEULE LIGNE (retour : « tous les contenus apparaissent
+        avec un retour à la ligne, la fiche devient très longue — je veux 1
+        seule ligne à scroller vers la droite, comme avant ») : Streamlit
+        met flex-wrap:wrap par défaut sur ses rangées → nowrap forcé. Les
+        colonnes restent à 84 px fixes, le débordement défile. */
+        flex-wrap: nowrap !important;
         /* V177 — alignement : les cartes commencent à .95rem du bord, comme
         le poster et les titres Synopsis/Distribution (retour utilisateur :
         « alignés par rapport au poster et aux autres titres »). */
         padding: .45rem .95rem .35rem;
-        scrollbar-width: thin;
+        /* V178 — pas d'ascenseur visible (retour : « pas besoin de montrer
+        qu'il y a un scroll possible, c'est intuitif »). */
+        scrollbar-width: none;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click)::-webkit-scrollbar {
+        display: none;
+    }
+    /* V178 — fiche ACTEUR : ses bandeaux (act-filmo) commencent À GAUCHE,
+    alignés sur les titres de section — PAS de padding .95rem ni de spacer
+    (retour : « les films vus etc. commencent à gauche, contrairement à la
+    fiche film »). */
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .act-filmo) {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
     }
     /* V177 — ALIGNEMENT EXACT (retour : « alignés par rapport au poster et
        aux titres Pourquoi ce score/Synopsis/Distribution ») : les sections
@@ -2148,7 +2170,10 @@ st.markdown(
        invisible de 14 % + 14 px (mêmes bases que .cinema-poster), calculé
        dans une boîte de même largeur → alignement au pixel. GSM : tout
        revient au bord (layout empilé). */
-    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click)::before {
+    /* V178 — :not(:has(.act-filmo)) : le spacer ne s'applique qu'aux
+    bandeaux de la FICHE FILM (Similaires/Saga) — pas à la filmographie
+    de la fiche acteur, qui commence à gauche (retour utilisateur). */
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click):not(:has(.act-filmo))::before {
         content: "";
         flex: 0 0 14%;
         min-width: 90px;
@@ -3587,19 +3612,25 @@ def _render_people_cards_clickable(
     cols = st.columns(columns)
     for i, person in enumerate(people):
         with cols[i % columns]:
+            # V178 — CHAQUE paire carte+bouton dans son PROPRE st.container
+            # (retour V177 : quand une colonne porte 2 personnes empilées,
+            # le calque couvrait la colonne ENTIÈRE — le clic ouvrait
+            # toujours la fiche de celle du dessous, et le survol soulevait
+            # les deux). Le conteneur isole le calque à SA carte.
             # V177 — TUILE ENTIÈREMENT CLIQUABLE (calque transparent) : le
             # bouton « Fiche » visible disparaît (retour utilisateur).
-            st.markdown(
-                _render_people_cards([person], limit=1, fallback_emoji=fallback_emoji, clickable=True),
-                unsafe_allow_html=True,
-            )
-            person_id = person.get("id")
-            if person_id:
-                if st.button(button_label, key=f"{key_prefix}_{person_id}{key_salt}", use_container_width=True, type="secondary"):
-                    # V152 : info des coulisses NOUVELLE à chaque ouverture.
-                    st.session_state.pop(f"ia_coulisses_person_{int(person_id)}", None)
-                    st.session_state[f"ia_nonce_person_{int(person_id)}"] = time.time()
-                    _actor_detail_dialog(int(person_id), person_kind)
+            with st.container():
+                st.markdown(
+                    _render_people_cards([person], limit=1, fallback_emoji=fallback_emoji, clickable=True),
+                    unsafe_allow_html=True,
+                )
+                person_id = person.get("id")
+                if person_id:
+                    if st.button(button_label, key=f"{key_prefix}_{person_id}{key_salt}", use_container_width=True, type="secondary"):
+                        # V152 : info des coulisses NOUVELLE à chaque ouverture.
+                        st.session_state.pop(f"ia_coulisses_person_{int(person_id)}", None)
+                        st.session_state[f"ia_nonce_person_{int(person_id)}"] = time.time()
+                        _actor_detail_dialog(int(person_id), person_kind)
 
 
 def _render_studio_chips(studios: list[dict], limit: int = 10) -> str:
@@ -6949,8 +6980,12 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         else:
             badge_html = '<span class="sim-badge hors">🌐 À découvrir</span>'
         role = escape(str(credit.get("role") or "").strip())
+    # V178 — classe marqueur act-filmo : les bandeaux de la fiche ACTEUR
+    # ne portent PAS le spacer 14 % de la fiche film (retour : « les films
+    # vus etc. commencent à gauche ») — le spacer est exclu des bandeaux
+    # qui contiennent des cartes act-filmo.
         return (
-            f'<div class="sim-card msl-click">{img}'
+            f'<div class="sim-card msl-click act-filmo">{img}'
             f'<div class="t">{name}</div>'
             f'<div class="c">{role}</div>'
             f'<div class="d">{credit["year"] or ""}</div>{badge_html}</div>'
@@ -11244,7 +11279,14 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             # V177 — le bouton « D'autres suggestions » ferme l'encart sur
             # toute sa largeur (retour : « n'est pas aligné avec l'encart,
             # il est lié bizarrement à la dernière tuile »).
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            # V178 — PORTÉE LIMITÉE à la section MÊME ESPRIT (le wrapper
+            # qui contient les tuiles alike) : cette marge s'appliquait à
+            # TOUS les boutons « Une autre… » (coulisses, pourquoi, esprit,
+            # parcours) qui se retrouvaient décalés de 7 px vers la gauche
+            # (retour utilisateur V177 : « le bouton commence x pixels trop
+            # tôt, comme s'il commençait sur la fiche »).
+            'div[data-testid="stVerticalBlock"]:has(> div[data-testid="stElementContainer"] div[data-testid="stMarkdown"] .ia-head-block)'
+            ' > div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
             ' + div[data-testid="stElementContainer"]:has(button[kind="secondary"]){'
             "margin-left:-.45rem !important;margin-right:-.45rem !important;}"
             "</style>"
@@ -16584,6 +16626,11 @@ elif st.session_state.get("_msl_fiche_link_mode"):
         _fresh = time.time() - float(st.session_state.get("_msl_fiche_heartbeat") or 0) < 6.0
     except (TypeError, ValueError):
         _fresh = False
+    # V178 — FIX NameError vu en production (retour utilisateur) : la
+    # variable _dismissed était UTILISÉE ici sans jamais être définie —
+    # le harnais de banc ne teste pas le main de l'app, le banc ne pouvait
+    # pas le voir. Toute navigation vers une autre fiche plantait.
+    _dismissed = st.session_state.pop("_msl_fiche_dismissed", None)
     if not _dismissed and _fresh and st.session_state.get("_cinema_detail_row"):
         _cinema_detail_dialog(int(st.session_state.get("_msl_fiche_gen") or 0))
     else:
