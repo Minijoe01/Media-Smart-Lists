@@ -1197,9 +1197,7 @@ st.markdown(
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"],
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stLayoutWrapper"] button[kind="secondary"] {
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {
         border-radius: 0 0 13px 13px !important;
     }
 
@@ -2205,9 +2203,28 @@ st.markdown(
        au-dessus, aligné sur la vidéo (même départ → aucun effet de bug). */
     .cinema-trailer { padding: 0 .95rem; }
     .cinema-trailer > * { margin-left: 0 !important; }
+    /* V180 — COMPOSANT SCROLL-TOP HORS FLUX : le composant invisible en
+       tête de fiche (V179) laissait 2 × 16 px de gap flex autour de son
+       conteneur → une bande de couleur entre le haut de la fiche et la
+       bannière (retour utilisateur : « quelques pixels, je préfère la
+       bannière intégrée parfaitement, comme avant »). Hors flux, il
+       n'occupe AUCUN pixel ; l'iframe exécute toujours son script. */
+    [data-testid="stDialog"] div[data-testid="stElementContainer"]:has(> iframe[data-testid="stIFrame"]) {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 1px !important;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
     .cinema-tail > * { margin-left: calc(14% + 14px) !important; }
-    .msl-hist-wrap > * { margin-left: calc(14% + 14px); }
-    .msl-hist-wrap > p.cinema-section-title { margin-left: calc(14% + 14px) !important; }
+    /* V180 — TON HISTOIRE commence À GAUCHE (retour utilisateur : « je
+       veux le mettre tout à gauche, je veux vraiment éviter le zigzag »)
+       — aligné sur le poster, la bande-annonce et les blocs IA. */
+    .msl-hist-wrap > * { margin-left: 0; }
+    .msl-hist-wrap > p.cinema-section-title { margin-left: 0 !important; }
     @media (max-width: 640px) {
         div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click)::before { display: none; }
         .cinema-strip-head > p,
@@ -6474,20 +6491,22 @@ def _render_cinema_detail_body(row: dict) -> None:
         pass
     # V179 — BANDE-ANNONCE PLEINE LARGEUR (retour utilisateur : « les
     # bandes annonces semblent plus grandes qu'en V174, elles sortent de
-    # l'écran ») : le pied V177 appliquait le spacer 14 % + 14 px à TOUS
-    # ses enfants alors que l'iframe vidéo fait 100 % de large → débordé
-    # à droite. La bande-annonce (titre + vidéo) vit dans SON PROPRE bloc
-    # sans spacer : elle commence à gauche, alignée sur le poster, et
-    # occupe toute la largeur de la fiche. Plateformes et liens restent
-    # dans le pied aligné sur la colonne d'infos.
-    if trailer_html:
-        st.markdown(f'<div class="cinema-trailer">{trailer_html}</div>', unsafe_allow_html=True)
+    # l'écran ») : la bande-annonce (titre + vidéo) vit dans SON PROPRE
+    # bloc sans spacer : elle commence à gauche, alignée sur le poster,
+    # et occupe toute la largeur de la fiche.
+    # V180 — « OÙ LE REGARDER » PASSE AU-DESSUS (retour utilisateur : la
+    # bande-annonce pleine largeur suivie du pied aligné faisait un
+    # « zigzag ») : tout ce qui est ALIGNÉ d'abord (Similaires, Saga,
+    # Où le regarder, liens), puis la bande-annonce PLEINE LARGEUR, puis
+    # TON HISTOIRE et les blocs IA, eux aussi à gauche.
     if providers_html or links_html:
         st.markdown(
             f'<div class="cinema-tail" style="padding:0 .95rem;">'
             f"{providers_html}{links_html}</div>",
             unsafe_allow_html=True,
         )
+    if trailer_html:
+        st.markdown(f'<div class="cinema-trailer">{trailer_html}</div>', unsafe_allow_html=True)
 
     # de la fiche (demande utilisateur), re-tirable au bouton. Aucun appel
     # sans clé Gemini.
@@ -10783,12 +10802,7 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"],
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"],
-    /* V179 — même habillage pour le bouton « D'autres suggestions », qui
-       vit maintenant dans un st.container (comme les tuiles) : son bouton
-       est DESCENDANT du wrapper suivant l'ancre, plus son frère. */
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stLayoutWrapper"] button[kind="secondary"] {{
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] {{
         background: rgba(3, 22, 19, .52) !important;
         border: 1px solid var(--ia-accent-soft) !important;
         border-top: 1px solid var(--ia-accent-soft) !important;
@@ -10808,9 +10822,7 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"] p,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p,
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stLayoutWrapper"] button[kind="secondary"] p {{
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"] p {{
         color: var(--ia-text) !important;
         font-family: 'ManropeMSL', 'DejaVu Sans', sans-serif !important;
         font-size: .70rem !important;
@@ -10822,9 +10834,7 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover,
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stLayoutWrapper"] button[kind="secondary"]:hover {{
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover {{
         background: var(--ia-accent-soft) !important;
         border-color: var(--ia-accent) !important;
         border-left-color: var(--ia-accent) !important;
@@ -10834,9 +10844,7 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
         + div[data-testid="stElementContainer"] button[kind="secondary"]:hover p,
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover p,
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)
-        + div[data-testid="stLayoutWrapper"] button[kind="secondary"]:hover p {{
+        + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover p {{
         color: #FFFFFF !important;
     }}
     </style>
@@ -11276,9 +11284,17 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
         f'<div class="progress-bar-container" style="--pct:{pct}%;" '
         f'data-tooltip="Note communauté TMDB"><div class="progress-rest"></div></div>'
     )
-    # V179 — plus de COLONNE /100 à droite (retour utilisateur : la note
-    # vit dans la pastille ⭐ de la tête de tuile, comme « Que regarder ? »
-    # sur GSM) ; la barre ci-dessous la visualise toujours.
+    # V180 — la COLONNE /100 est DE RETOUR (retour utilisateur : «
+    # j'aimais bien la colonne /100 ») : la pastille ⭐ de la tête (avec
+    # info-bulle TMDB) ET la colonne /100 cohabitent — sur GSM la colonne
+    # s'efface (règle du skin), la pastille prend le relais, exactement
+    # comme les tuiles « Que regarder ? ».
+    pct_col = ""
+    if note:
+        pct_col = (
+            f'<div class="media-list-pct" data-tooltip="Note communauté TMDB ({note:.1f}/10) — pas ton score personnel">'
+            f'{pct}<span class="sub">note TMDB /100</span></div>'
+        )
     details = (
         f'<details class="pills-details"><summary>💡 Pourquoi ce contenu ?</summary>'
         f'<div class="alike-why-body">{why}</div></details>'
@@ -11286,7 +11302,7 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
     html = (
         f'<div class="media-list-card poster-card alike-qr msl-click">{img}'
         f'<div class="media-list-content" style="width:100%;">{head}{small}{links}{bar}{details}'
-        f"</div></div>"
+        f"</div>{pct_col}</div>"
     )
     return html, (lk_kind if lk_id else "", lk_id)
 
@@ -11364,6 +11380,8 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             f".media-list-card.alike-qr .mc-year,.media-list-card.alike-qr .mc-note{{"
             f"color:{accent_text};border:1px solid rgba({ar},{ag},{ab},.55);"
             f"background:linear-gradient(135deg,rgba({ar},{ag},{ab},.18),rgba(0,0,0,.50));}}"
+            f".media-list-card.alike-qr .media-list-pct{{color:{accent_text};"
+            f"border-left:1px solid rgba({ar},{ag},{ab},.32);}}"
             f".media-list-card.alike-qr .link-pill{{border:1px solid rgba({ar},{ag},{ab},.45);}}"
             f".media-list-card.alike-qr .progress-bar-container::before{{"
             f"background:rgb({ar},{ag},{ab});}}"
@@ -11405,23 +11423,30 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             'div[data-testid="stLayoutWrapper"]:has(> div[data-testid="stVerticalBlock"] .alike-qr)'
             ' + div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor){'
             "margin-top:-0.95rem !important;}"
-            # V179 — le bouton « D'autres suggestions » vit dans SON PROPRE
-            # st.container, EXACTEMENT comme les tuiles : même wrapper, même
-            # largeur, même alignement — PAR CONSTRUCTION (retour V178 :
-            # « trop haut et trop court en longueur » : les marges -0.45rem
-            # décalaient le bouton de 7 px à GAUCHE des tuiles sans
-            # l'élargir, et il mordait la dernière tuile de 5 px). On ne
-            # gère plus que l'écart vertical : le bouton vient « fermer » le
-            # cadre juste sous la dernière tuile.
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
-            ' + div[data-testid="stLayoutWrapper"]:has(> div[data-testid="stVerticalBlock"] button[kind="secondary"]){'
-            "margin-top:0.4rem !important;}"
-            # …et le conteneur INTERNE du bouton ne doit plus recevoir la
-            # marge -0.95rem générique des boutons « Une autre… » (c'est le
-            # wrapper qui règle l'écart, ci-dessus).
-            'div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
-            ' + div[data-testid="stLayoutWrapper"] div[data-testid="stElementContainer"]{'
-            "margin-top:0 !important;margin-bottom:0 !important;}"
+            # V180 — le bouton REFERME LE CADRE MÊME ESPRIT (retour V179 :
+            # « il prend la taille de la tuile alors qu'il faudrait la
+            # taille du BLOC ; il devrait être accolé à la FIN du bloc »).
+            # Bouton NU : son conteneur reste dans le flux du cadre (léger
+            # écart sous la dernière tuile, padding bas du cadre conservé),
+            # et le BOUTON lui-même s'étend jusqu'aux bords INTÉRIEURS du
+            # cadre (padding .45rem = 7.2 px de chaque côté). Le sélecteur
+            # est SCOPÉ au CADRE : les TUILES (wrappers .alike-qr) doivent
+            # PRÉCÉDER (~) l'ancre parmi les enfants du MÊME bloc — ça
+            # n'existe que dans le cadre MÊME ESPRIT (dans le bloc de
+            # toute la fiche, les ancres des autres sections viennent
+            # AVANT le cadre → aucun match, leurs boutons restent intacts).
+            'div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.alike-qr)'
+            ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stElementContainer"]{'
+            "margin-top:-5.2px !important;margin-bottom:0 !important;}"
+            'div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.alike-qr)'
+            ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stElementContainer"] button[kind="secondary"],'
+            'div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.alike-qr)'
+            ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]{'
+            "margin-left:-10.2px !important;margin-right:-4.2px !important;"
+            "width:calc(100% + 16.8px) !important;}"
             "</style>"
         )
         st.markdown(css_alike, unsafe_allow_html=True)
@@ -11441,13 +11466,12 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
         # Pied « une autre », soudé à la dernière tuile — il ferme le cadre.
         st.markdown(f'<div class="ia-again-anchor" style="--ia-accent:{accent};"></div>',
                     unsafe_allow_html=True)
-        # V179 — le bouton vit dans SON PROPRE st.container (comme les
-        # tuiles au-dessus) : même wrapper → même largeur et même
-        # alignement qu'elles, par construction.
-        with st.container():
-            if st.button("🔄 D'autres suggestions", key=f"{session_key}_again", use_container_width=True):
-                st.session_state[f"{session_key}_again_clicked"] = True
-                st.session_state[f"ia_var_{channel}_{state_key}"] = variant + 1
+        # V180 — bouton NU (sans conteneur) : ce n'est plus la tuile qu'il
+        # doit aligner mais le CADRE qu'il doit REFERMER — les règles
+        # css_alike l'élargissent jusqu'aux bords intérieurs du bloc.
+        if st.button("🔄 D'autres suggestions", key=f"{session_key}_again", use_container_width=True):
+            st.session_state[f"{session_key}_again_clicked"] = True
+            st.session_state[f"ia_var_{channel}_{state_key}"] = variant + 1
 
 
 def _render_ia_career(state_key: str, subject: str, hint: str = "",
