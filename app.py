@@ -1247,15 +1247,30 @@ st.markdown(
                    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
                    overflow: hidden; min-height: 2.3em; max-width: 100%; }
     .sim-card .d { font-size: .63rem; color: var(--am-text-muted); margin-top: 1px; min-height: 1em; }
-    /* V183 — FRISE HISTORIQUE : un SEGMENT coloré sous les contenus de
-       chaque année de visionnage + l'année en GRAS, UNE SEULE fois (au
-       début du segment). Les segments des cartes consécutives se
-       touchent → une barre continue par année. */
-    .sim-card .tl-bar { width: 76px; height: 5px; border-radius: 3px; margin-top: .32rem;
-                        background: linear-gradient(90deg, rgba(255,225,0,.95), rgba(0,163,146,.85));
-                        box-shadow: 0 0 8px rgba(255,225,0,.18); }
-    .sim-card .tl-year { font-size: .82rem; font-weight: 900; color: var(--am-yellow);
-                         margin-top: .12rem; letter-spacing: .05em; }
+    /* V184 — RAIL CONTINU de la frise historique (retour : « je veux
+       voir un segment continu qui court en dessous et le long des
+       contenus, avec des traits qui indiquent le début et la fin d'une
+       année, l'année centrée sur son segment, plus neutre »). Une PIÈCE
+       par colonne (elle défile AVEC les cartes) : la ligne se prolonge
+       de 5 px dans chaque interstice → rail continu ; traits verticaux
+       aux bornes de chaque année ; année centrée sur la colonne du
+       milieu, en style neutre. FINI le trait jaune-vert sous chaque
+       poster (retour : « de trop, ça fait tache »). */
+    .tl-piece { position: relative; height: 24px; width: 84px; margin: 0 auto; }
+    .tl-piece .tl-line { position: absolute; left: -5px; right: -5px; top: 7px; height: 2px;
+                         background: rgba(157,197,191,.38); border-radius: 1px; }
+    .tl-piece .tl-tickL { position: absolute; left: 0; top: 2px; height: 12px; width: 2px;
+                          background: rgba(157,197,191,.62); border-radius: 1px; }
+    .tl-piece .tl-tickR { position: absolute; right: 0; top: 2px; height: 12px; width: 2px;
+                          background: rgba(157,197,191,.62); border-radius: 1px; }
+    .tl-piece .tl-lab { position: absolute; left: 50%; transform: translateX(-50%); top: 11px;
+                        font-size: .66rem; font-weight: 600; color: var(--am-text-muted);
+                        letter-spacing: .06em; white-space: nowrap; }
+    /* la pièce se colle sous sa carte (le conteneur markdown compense
+       l'écart par défaut entre éléments de colonne) */
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .tl-piece) {
+        margin-top: -10px !important; min-height: 0 !important;
+    }
     .sim-badge {
         display: inline-block; margin-top: auto; font-size: .58rem; font-weight: 800;
         border-radius: 999px; padding: .1rem .4rem; max-width: 84px; overflow: hidden;
@@ -1381,17 +1396,29 @@ st.markdown(
     }
     .ep-cell[data-tooltip], .score-badge[data-tooltip], .mc-note[data-tooltip], .mc-type[data-tooltip],
     .mc-year[data-tooltip], .media-list-pct[data-tooltip], .mc-inline-pct[data-tooltip],
-    .mc-chip[data-tooltip],
-    /* V181 — badges des bandeaux/filmographies : info-bulle « Vu le … ».
-       V183 — FIX (retour : « j'ai toujours le ?, la date dans une autre
-       info-bulle 1 seconde plus tard ») : le badge a overflow:hidden
-       (ellipsis des longs noms de listes) → sa PROPRE bulle ::after,
-       dessinée AU-DESSUS de lui, était entièrement ROGNÉE. Prouvé au
-       banc : pixels de la zone = fond de fiche, computed opacity 1.
-       Les badges à info-bulle portent un texte court → l'ellipsis ne
-       leur sert à rien : overflow VISIBLE pour eux seuls. */
+    .mc-chip[data-tooltip] {
+        position: relative; cursor: help;
+    }
+    /* V181/V183 — badges des bandeaux/filmographies : info-bulle
+       « Vu le … ». V183 : overflow VISIBLE (le badge rognait SA PROPRE
+       bulle). V184 (retours) : PAS de curseur « ? » (cursor:default),
+       bulle OPAQUE (on voyait la pastille à travers), et ancrage au
+       BORD pour les 1ers/derniers contenus du bandeau — la solution
+       heatmap : l'info-bulle part du bord de la colonne vers
+       l'intérieur au lieu d'être centrée et rognée. */
     .sim-badge[data-tooltip] {
-        position: relative; cursor: help; overflow: visible;
+        position: relative; overflow: visible; cursor: default;
+    }
+    /* span. : bat la règle partagée (même spécificité mais placée
+       avant elle dans la cascade) → fond VRAIMENT opaque. */
+    span.sim-badge[data-tooltip]::after {
+        background: rgb(7,19,17);
+    }
+    div[data-testid="stColumn"]:first-child .sim-badge[data-tooltip]::after {
+        left: 0; transform: translateY(4px);
+    }
+    div[data-testid="stColumn"]:last-child .sim-badge[data-tooltip]::after {
+        left: auto; right: 0; transform: translateY(4px);
     }
     .score-badge[data-tooltip]::after,
     .sim-badge[data-tooltip]::after,
@@ -6991,7 +7018,11 @@ def _actor_dialog_chrome_css() -> str:
         # (couleur unie) s'allonge, invisible. + un halo radial vert en
         # tête de fiche (esthétique).
         "background:radial-gradient(120% 520px at 50% -120px,rgba(0,163,146,.28),rgba(0,163,146,0) 70%),"
-        "linear-gradient(180deg,rgb(0,82,75) 0px,rgb(3,34,30) 320px,rgb(3,22,19) 760px)!important;"
+        # V184 — fondu BEAUCOUP PLUS LENT (retour : « tu passes très vite
+        # du vert au noir, le bas de la fiche est totalement noir ») : le
+        # vert Aston s'étire sur plus de 2000 px avant de rejoindre le
+        # sombre. Toujours des arrêts EN PIXELS → aucun clignotement.
+        "linear-gradient(180deg,rgb(0,82,75) 0px,rgb(1,56,50) 420px,rgb(2,40,36) 1150px,rgb(3,28,25) 2200px)!important;"
         "border:1px solid rgba(0,163,146,.30)!important;"
         "box-shadow:0 26px 90px rgba(0,0,0,.60)!important;"
         "overflow:hidden!important;}"
@@ -7220,8 +7251,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             return "liste"
         return None
 
-    def _card(credit: dict, badge: str | None, vu_year: str = "",
-              timeline: dict | None = None) -> str:
+    def _card(credit: dict, badge: str | None) -> str:
         """V176 — carte filmographie au format « Similaires » (retour
         utilisateur : poster, nom du contenu, année, pastille — ET le nom
         du personnage joué). La carte est un BOUTON TRANSPARENT : le clic
@@ -7261,21 +7291,13 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     # ne portent PAS le spacer 14 % de la fiche film (retour : « les films
     # vus etc. commencent à gauche ») — le spacer est exclu des bandeaux
     # qui contiennent des cartes act-filmo.
-        # V183 — FRISE : un SEGMENT sous chaque carte de la frise (les
-        # segments consécutifs forment la barre de l'année) + l'année en
-        # GRAS, une seule fois, au début de son segment (retour : « plutôt
-        # que de répéter les années sous chaque contenu »). Les cartes
-        # hors frise (listes, à découvrir) ne portent rien.
-        _tl_html = ""
-        if timeline:
-            _tl_html = '<div class="tl-bar"></div>'
-            if timeline.get("first"):
-                _tl_html += f'<div class="tl-year">{escape(str(timeline.get("year") or ""))}</div>'
+        # V184 — la carte ne porte plus rien : l'année de visionnage vit
+        # dans le RAIL continu rendu sous la rangée (cf. _section/rail).
         return (
             f'<div class="sim-card msl-click act-filmo">{img}'
             f'<div class="t">{name}</div>'
             f'<div class="c">{role}</div>'
-            f'<div class="d">{credit["year"] or ""}</div>{badge_html}{_tl_html}</div>'
+            f'<div class="d">{credit["year"] or ""}</div>{badge_html}</div>'
         )
 
     # Union des contenus des DEUX facettes (pour le compteur d'en-tête et
@@ -7366,7 +7388,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
 
     def _section(title: str, rows: list, empty_skip: bool = True, key_prefix: str = "s",
-                 vu_years: dict | None = None, timeline: dict | None = None) -> None:
+                 rail: dict | None = None) -> None:
         """V176 — BANDEAU DÉFILANT de posters cliquables (comme
         Similaires/Saga des fiches film) : tout est visible d'un coup et
         on fait défiler vers la droite. Chaque carte ouvre la fiche du
@@ -7385,9 +7407,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             if col is None:
                 continue
             with col:
-                st.markdown(_card(c, _bucket(c), vu_year=(vu_years or {}).get(c["id"], ""),
-                                  timeline=(timeline or {}).get(c["id"])),
-                            unsafe_allow_html=True)
+                st.markdown(_card(c, _bucket(c)), unsafe_allow_html=True)
                 try:
                     _cid = int(c["id"] or 0)
                 except (TypeError, ValueError):
@@ -7402,6 +7422,22 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                         "tv" if c["kind"] == "Série" else "movie", _cid,
                         return_actor={"person_id": person_id, "person_kind": person_kind},
                     )
+                # V184 — PIÈCE DE RAIL sous cette carte : la ligne (prolongée
+                # dans les interstices → rail continu), les traits aux
+                # bornes de l'année, l'année centrée sur la colonne du
+                # milieu. Rendu DANS la colonne → défile avec les cartes.
+                _piece = (rail or {}).get(c["id"])
+                if _piece:
+                    _p_html = '<div class="tl-piece">'
+                    if _piece.get("tick_left"):
+                        _p_html += '<span class="tl-tickL"></span>'
+                    _p_html += '<span class="tl-line"></span>'
+                    if _piece.get("tick_right"):
+                        _p_html += '<span class="tl-tickR"></span>'
+                    if _piece.get("label"):
+                        _p_html += f'<span class="tl-lab">{escape(str(_piece["label"]))}</span>'
+                    _p_html += "</div>"
+                    st.markdown(_p_html, unsafe_allow_html=True)
 
     # ══════════════════════════════════════════════════════════════
     # V181 — 📜 DEPUIS MON HISTOIRE : toggles de facette et de type,
@@ -7473,20 +7509,29 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         return (0, _d) if _d is not None else (1, datetime.min)
 
     _pool.sort(key=_hist_sort_key, reverse=(_sort_sel == "decroissant"))
-    # V183 — TIMELINE par année de visionnage : l'année en GRAS au début
-    # de son segment (une seule fois), un segment sous chaque carte.
-    _timeline: dict = {}
-    _seen_years: set = set()
+    # V184 — RAIL : groupes d'années CONSÉCUTIFS (dans l'ordre de la
+    # frise) ; traits aux bornes de chaque groupe ; année sur la colonne
+    # du MILIEU du groupe (centrée sur son segment).
+    _groups: list = []
     for c in _pool:
         _d = _credit_first_watched(c)
-        if _d is None:
-            continue
-        _yr = str(_d.year)
-        _timeline[c["id"]] = {"year": _yr, "first": _yr not in _seen_years}
-        _seen_years.add(_yr)
+        _yr = str(_d.year) if _d else "—"
+        if _groups and _groups[-1][0] == _yr:
+            _groups[-1][1].append(c)
+        else:
+            _groups.append((_yr, [c]))
+    _rail: dict = {}
+    for _yr, _cs in _groups:
+        _mid = len(_cs) // 2 if len(_cs) % 2 == 1 else (len(_cs) // 2) - 1
+        for i, c in enumerate(_cs):
+            _rail[c["id"]] = {
+                "tick_left": i == 0,
+                "tick_right": i == len(_cs) - 1,
+                "label": _yr if i == _mid else "",
+            }
     _section(
         "📜 Depuis mon historique", _pool,
-        key_prefix=f"hist{_facet_sel}{_type_sel}{_sort_sel}", timeline=_timeline,
+        key_prefix=f"hist{_facet_sel}{_type_sel}{_sort_sel}", rail=_rail,
     )
 
     any_seen_any_listed = False
@@ -11754,6 +11799,29 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             "background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.015)) !important;"
             "border-color:rgba(255,255,255,.09) !important;"
             "border-top:1px solid rgba(255,255,255,.16) !important;}"
+            # V184 — AU SURVOL, les MÊMES couleurs que les autres boutons
+            # « Une autre… » (retour : « la couleur n'est pas la même,
+            # pourquoi ne pas copier-coller un autre bouton ? ») : ma
+            # règle de repos, plus SPÉCIFIQUE que leurs règles :hover,
+            # écrasait leur fond de survol — on copie donc leurs
+            # déclarations exactes, portées par un sélecteur tout aussi
+            # spécifique.
+            'div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.alike-qr)'
+            ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stElementContainer"] button[kind="secondary"]:hover,'
+            'div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.alike-qr)'
+            ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover{'
+            "background:var(--ia-accent-soft) !important;border-color:var(--ia-accent) !important;"
+            "border-left-color:var(--ia-accent) !important;color:#FFFFFF !important;"
+            "box-shadow:0 0 16px var(--ia-accent-soft), inset 0 0 12px rgba(255, 255, 255, .06) !important;}"
+            'div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.alike-qr)'
+            ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stElementContainer"] button[kind="secondary"]:hover p,'
+            'div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"]:has(.alike-qr)'
+            ' ~ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .ia-again-anchor)'
+            ' + div[data-testid="stElementContainer"] [data-testid="stBaseButton-secondary"]:hover p{'
+            "color:#FFFFFF !important;}"
             "</style>"
         )
         st.markdown(css_alike, unsafe_allow_html=True)
