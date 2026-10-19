@@ -737,6 +737,29 @@ st.markdown(
         width: 78px;
         text-align: center;
     }
+    /* V185 — BANDEAU CASTING CLIQUABLE : mêmes règles que les bandeaux
+       Similaires (une seule ligne qui défile, ascenseur masqué, colonnes
+       fixes 78 px, alignement sur la colonne d'infos), + soulèvement de
+       la carte au survol. */
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click) {
+        overflow-x: auto;
+        flex-wrap: nowrap !important;
+        padding: .45rem .95rem .35rem;
+        scrollbar-width: none;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click)::-webkit-scrollbar {
+        display: none;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click) > div[data-testid="stColumn"] {
+        flex: 0 0 auto !important;
+        width: 78px !important; min-width: 78px !important; max-width: 78px !important;
+    }
+    div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click)::before {
+        content: ""; flex: 0 0 14%; min-width: 90px; margin-right: -2px;
+    }
+    .cast-card { transition: transform .16s ease; }
+    .cast-card:hover { transform: translateY(-3px); }
+    .cast-card:hover .cast-face { border-color: rgba(255, 225, 0, .55); }
     .cast-face {
         width: 64px;
         height: 64px;
@@ -1247,29 +1270,22 @@ st.markdown(
                    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
                    overflow: hidden; min-height: 2.3em; max-width: 100%; }
     .sim-card .d { font-size: .63rem; color: var(--am-text-muted); margin-top: 1px; min-height: 1em; }
-    /* V184 — RAIL CONTINU de la frise historique (retour : « je veux
-       voir un segment continu qui court en dessous et le long des
-       contenus, avec des traits qui indiquent le début et la fin d'une
-       année, l'année centrée sur son segment, plus neutre »). Une PIÈCE
-       par colonne (elle défile AVEC les cartes) : la ligne se prolonge
-       de 5 px dans chaque interstice → rail continu ; traits verticaux
-       aux bornes de chaque année ; année centrée sur la colonne du
-       milieu, en style neutre. FINI le trait jaune-vert sous chaque
-       poster (retour : « de trop, ça fait tache »). */
-    .tl-piece { position: relative; height: 24px; width: 84px; margin: 0 auto; }
-    .tl-piece .tl-line { position: absolute; left: -5px; right: -5px; top: 7px; height: 2px;
-                         background: rgba(157,197,191,.38); border-radius: 1px; }
-    .tl-piece .tl-tickL { position: absolute; left: 0; top: 2px; height: 12px; width: 2px;
-                          background: rgba(157,197,191,.62); border-radius: 1px; }
-    .tl-piece .tl-tickR { position: absolute; right: 0; top: 2px; height: 12px; width: 2px;
-                          background: rgba(157,197,191,.62); border-radius: 1px; }
-    .tl-piece .tl-lab { position: absolute; left: 50%; transform: translateX(-50%); top: 11px;
-                        font-size: .66rem; font-weight: 600; color: var(--am-text-muted);
-                        letter-spacing: .06em; white-space: nowrap; }
-    /* la pièce se colle sous sa carte (le conteneur markdown compense
-       l'écart par défaut entre éléments de colonne) */
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .tl-piece) {
-        margin-top: -10px !important; min-height: 0 !important;
+    /* V185 — MARQUEURS D'ANNÉE de la frise (retour V184 : « l'année est
+       cachée par la rubrique plus basse, pas centrée, le segment se
+       lève au survol du poster ») : FINI le rail sous les cartes. Chaque
+       groupe d'année est PRÉCÉDÉ d'une colonne MARQUEUR — un TRAIT
+       VERTICAL pleine hauteur (la borne de l'année) et l'année centrée
+       dedans, à mi-hauteur des posters. Colonne SÉPARÉE des cartes :
+       jamais levée au survol (pas de msl-click), jamais recouverte, et
+       elle défile AVEC le bandeau. */
+    .tl-mark { display: flex; align-items: center; justify-content: center;
+               height: 100%; min-height: 188px; position: relative; }
+    .tl-mark::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px;
+                       width: 2px; background: rgba(157,197,191,.45); border-radius: 1px; }
+    .tl-mark-year { font-size: .76rem; font-weight: 700; color: var(--am-text-muted);
+                    letter-spacing: .05em; white-space: nowrap; }
+    [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(.tl-mark) {
+        margin: 0 !important;
     }
     .sim-badge {
         display: inline-block; margin-top: auto; font-size: .58rem; font-weight: 800;
@@ -1409,10 +1425,12 @@ st.markdown(
     .sim-badge[data-tooltip] {
         position: relative; overflow: visible; cursor: default;
     }
-    /* span. : bat la règle partagée (même spécificité mais placée
-       avant elle dans la cascade) → fond VRAIMENT opaque. */
+    /* V185 — fond OPAQUE BLINDÉ (retour : « le fond est complètement
+       transparent, teste l'info-bulle ») : !important pour qu'AUCUNE
+       règle ne puisse le ravaler, + une ombre qui détache la bulle. */
     span.sim-badge[data-tooltip]::after {
-        background: rgb(7,19,17);
+        background: rgb(10,26,23) !important;
+        box-shadow: 0 10px 26px rgba(0,0,0,.55);
     }
     div[data-testid="stColumn"]:first-child .sim-badge[data-tooltip]::after {
         left: 0; transform: translateY(4px);
@@ -4514,6 +4532,8 @@ def _open_fiche_in_dialog(kind: str, tmdb_id: int, return_actor: dict | None = N
         st.session_state.pop(f"ia_coulisses_{_ik}_{_tid}", None)
         st.session_state[f"ia_nonce_{_ik}_{_tid}"] = time.time()
     st.session_state["_cinema_detail_row"] = media_row
+    # V185 — une nouvelle fiche film annule tout ancien retour-casting.
+    st.session_state.pop("_msl_return_to_fiche", None)
     # V179 — FICHE SUIVANTE EN HAUT, VRAIE SOLUTION : le mécanisme V177
     # (rendu vide intermédiaire) n'a JAMAIS atteint le navigateur — le
     # st.rerun() lancé dans le MÊME run annule son delta (prouvé au
@@ -6197,28 +6217,27 @@ def _render_cinema_detail_body(row: dict) -> None:
             f'<div class="cast-face">{face}</div>'
             f'<span class="cast-name">{name}</span>{role_html}'
         )
-        # V139 — retour aux liens TMDB externes (la fiche acteur intégrée
-        # est retirée : demandé par l'utilisateur après les soucis de
-        # fiabilité — fiabilité d'abord).
-        person_id = int(member.get("tmdb_id") or 0)
-        if person_id:
-            return (
-                f'<a class="cast-card cast-link" target="_blank" rel="noopener noreferrer"'
-                f' href="https://www.themoviedb.org/person/{person_id}"'
-                f' title="Voir la fiche de {name} sur TMDB">{inner}</a>'
-            )
-        return f'<div class="cast-card">{inner}</div>'
-
+        # V185 — CASTING CLIQUABLE (demande utilisateur : « cliquer une
+        # personne du casting → sa fiche acteur, avec retour à la fiche
+        # film en la refermant ») : plus de lien externe — la carte porte
+        # msl-click et un BOUTON TRANSPARENT (calque V175) ouvre la fiche
+        # personne DANS l'app. Le nom garde un lien TMDB ? Non — tout le
+        # clic ouvre la fiche (plus simple, plus naturel).
+        return f'<div class="cast-card msl-click">{inner}</div>' 
+    # V185 — le CASTING devient une SECTION STREAMLIT (cliquable,
+    # boutons transparents) rendue juste après le bloc principal — le
+    # markdown ne garde que le repli texte (données locales sans ids).
+    cast_clickable = []
+    if director_member and int(director_member.get("tmdb_id") or 0):
+        _dm = dict(director_member)
+        _dm["is_director"] = True
+        cast_clickable.append(_dm)
+    cast_clickable += [
+        m for m in cast_members
+        if int(m.get("tmdb_id") or 0) and len(cast_clickable) < 12
+    ]
     casting_html = ""
-    if director_member or cast_members:
-        cards = ([_cast_card(director_member)] if director_member else []) + [
-            _cast_card(m) for m in cast_members
-        ]
-        casting_html = (
-            f'<p class="cinema-section-title">Distribution</p>'
-            f'<div class="cast-strip">{"".join(cards)}</div>'
-        )
-    elif people or directors:
+    if not cast_clickable and (people or directors):
         cast_bits = []
         if directors:
             cast_bits.append("🎬 " + escape(", ".join(map(str, directors[:2]))))
@@ -6531,6 +6550,30 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"</div></div></div>",
         unsafe_allow_html=True,
     )
+    # V185 — CASTING CLIQUABLE : chaque personne ouvre SA fiche acteur
+    # dans l'app ; refermée, la fiche film revient (cf.
+    # _open_actor_from_casting). Rendu en colonnes 78 px (le calque V175
+    # couvre chaque paire carte+bouton), aligné comme les bandeaux.
+    if cast_clickable:
+        st.markdown(
+            '<div class="cinema-strip-head">'
+            '<p class="cinema-section-title cinema-strip-title">Distribution</p></div>',
+            unsafe_allow_html=True,
+        )
+        _cast_cols = st.columns(len(cast_clickable), gap="small")
+        for _ccol, _cm in zip(_cast_cols, cast_clickable):
+            if _ccol is None:
+                continue
+            with _ccol:
+                st.markdown(_cast_card(_cm), unsafe_allow_html=True)
+                _cpid = int(_cm.get("tmdb_id") or 0)
+                if _cpid and st.button(
+                    "👤 Fiche",
+                    key=f"castnav_{_cpid}",
+                    use_container_width=True,
+                    type="secondary",
+                ):
+                    _open_actor_from_casting(_cm)
     # V175 — grilles Similaires / Saga cliquables (fiche dans le dialog).
     try:
         _render_sim_strip(saga_entries, _grid_watched, _grid_listed, _grid_names, "movie", saga_title_html, key_prefix="saga",
@@ -6968,7 +7011,39 @@ def _render_ton_histoire(row: dict, item: dict, tmdb_id: int | None,
 
 
 
-def _msl_on_cinema_dismiss(*_args) -> None:
+def _open_actor_from_casting(member: dict) -> None:
+    """V185 — CASTING CLIQUABLE (demande utilisateur : « cliquer une
+    personne du casting → sa fiche acteur, avec retour à la fiche film
+    en la refermant ») : miroir exact du flux filmographie (fiche acteur
+    → fiche film → retour acteur). Le drapeau _msl_return_to_fiche fera
+    rouvrir la fiche film à la fermeture de la fiche personne ; le
+    drapeau de fermeture de la fiche film est purgé (elle cède la place
+    volontairement, elle n'a pas été « fermée » par l'utilisateur)."""
+    try:
+        pid = int(member.get("tmdb_id") or 0)
+    except (TypeError, ValueError):
+        return
+    if not pid:
+        return
+    st.session_state["_msl_casting_person"] = {
+        "person_id": pid,
+        "person_kind": "realisateur" if member.get("is_director") else "acteur",
+    }
+    st.session_state["_msl_return_to_fiche"] = True
+    st.session_state.pop("_msl_fiche_dismissed", None)
+    st.session_state.pop("_msl_fiche_link_mode", None)
+    st.rerun()
+
+
+def _msl_on_actor_dismiss() -> None:
+    """Fermeture de la FICHE ACTEUR : pose un drapeau — consommé par le
+    main UNIQUEMENT si un retour est demandé (V185 : retour à la fiche
+    film après le casting). Sans callback, la fermeture d'un dialog ne
+    déclenche AUCUNE rerun (prouvé au banc V176)."""
+    st.session_state["_msl_actor_dismissed"] = True
+
+
+def _msl_on_cinema_dismiss() -> None:
     """V176 — appelée par Streamlit quand TU fermes la fiche cinéma (croix,
     Échap ou clic sur le voile). Pose un drapeau et déclenche une rerun :
     le main éteint alors le mode heartbeat (la fiche ne se rouvre plus) et,
@@ -7387,8 +7462,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         shown = bio if len(bio) <= 480 else bio[:bio.find(" ", 440) if bio.find(" ", 440) > 0 else 440] + "…"
         st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
 
-    def _section(title: str, rows: list, empty_skip: bool = True, key_prefix: str = "s",
-                 rail: dict | None = None) -> None:
+    def _section(title: str, rows: list, empty_skip: bool = True, key_prefix: str = "s") -> None:
         """V176 — BANDEAU DÉFILANT de posters cliquables (comme
         Similaires/Saga des fiches film) : tout est visible d'un coup et
         on fait défiler vers la droite. Chaque carte ouvre la fiche du
@@ -7422,22 +7496,8 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                         "tv" if c["kind"] == "Série" else "movie", _cid,
                         return_actor={"person_id": person_id, "person_kind": person_kind},
                     )
-                # V184 — PIÈCE DE RAIL sous cette carte : la ligne (prolongée
-                # dans les interstices → rail continu), les traits aux
-                # bornes de l'année, l'année centrée sur la colonne du
-                # milieu. Rendu DANS la colonne → défile avec les cartes.
-                _piece = (rail or {}).get(c["id"])
-                if _piece:
-                    _p_html = '<div class="tl-piece">'
-                    if _piece.get("tick_left"):
-                        _p_html += '<span class="tl-tickL"></span>'
-                    _p_html += '<span class="tl-line"></span>'
-                    if _piece.get("tick_right"):
-                        _p_html += '<span class="tl-tickR"></span>'
-                    if _piece.get("label"):
-                        _p_html += f'<span class="tl-lab">{escape(str(_piece["label"]))}</span>'
-                    _p_html += "</div>"
-                    st.markdown(_p_html, unsafe_allow_html=True)
+                # (V185 — les marqueurs d'année vivent dans la frise,
+                # plus aucune décoration sous les cartes.)
 
     # ══════════════════════════════════════════════════════════════
     # V181 — 📜 DEPUIS MON HISTOIRE : toggles de facette et de type,
@@ -7520,19 +7580,48 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             _groups[-1][1].append(c)
         else:
             _groups.append((_yr, [c]))
-    _rail: dict = {}
-    for _yr, _cs in _groups:
-        _mid = len(_cs) // 2 if len(_cs) % 2 == 1 else (len(_cs) // 2) - 1
-        for i, c in enumerate(_cs):
-            _rail[c["id"]] = {
-                "tick_left": i == 0,
-                "tick_right": i == len(_cs) - 1,
-                "label": _yr if i == _mid else "",
-            }
-    _section(
-        "📜 Depuis mon historique", _pool,
-        key_prefix=f"hist{_facet_sel}{_type_sel}{_sort_sel}", rail=_rail,
-    )
+    if _pool:
+        st.markdown(
+            f'<p class="actor-section-title">📜 Depuis mon historique '
+            f'<span class="actor-count">{len(_pool)}</span></p>',
+            unsafe_allow_html=True,
+        )
+        # V185 — UNE SEULE RANGÉE qui défile : [marqueur 2025][cartes…]
+        # [marqueur 2026][cartes…] — les bornes verticales encadrent
+        # chaque année, l'année est lisible à mi-hauteur, rien ne bouge
+        # au survol.
+        _flat: list = []
+        for _yr, _cs in _groups:
+            _flat.append(("mark", _yr))
+            for c in _cs:
+                _flat.append(("card", c))
+        _fcols = st.columns(len(_flat), gap="small")
+        for _fcol, (_fkind, _fpayload) in zip(_fcols, _flat):
+            if _fcol is None:
+                continue
+            with _fcol:
+                if _fkind == "mark":
+                    st.markdown(
+                        f'<div class="tl-mark"><span class="tl-mark-year">{escape(str(_fpayload))}</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                    continue
+                c = _fpayload
+                st.markdown(_card(c, _bucket(c)), unsafe_allow_html=True)
+                try:
+                    _cid = int(c["id"] or 0)
+                except (TypeError, ValueError):
+                    _cid = 0
+                if _cid and st.button(
+                    "🎬 Ouvrir la fiche",
+                    key=f"actnav_hist{_facet_sel}{_type_sel}{_sort_sel}_{c['kind']}_{_cid}",
+                    use_container_width=True,
+                    type="secondary",
+                ):
+                    _open_fiche_in_dialog(
+                        "tv" if c["kind"] == "Série" else "movie", _cid,
+                        return_actor={"person_id": person_id, "person_kind": person_kind},
+                    )
 
     any_seen_any_listed = False
     # V182 — LES FILTRES S'APPLIQUENT ICI AUSSI : seule la FACETTE
@@ -7604,9 +7693,11 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         )
 
 
-@st.dialog(" ", width="large")
+@st.dialog(" ", width="large", on_dismiss=_msl_on_actor_dismiss)
 def _actor_detail_dialog(person_id: int, person_kind: str = "acteur") -> None:
-    """Fenêtre modale : fiche acteur / réalisateur (V147)."""
+    """Fenêtre modale : fiche acteur / réalisateur (V147). V185 : le
+    callback on_dismiss permet le RETOUR À LA FICHE FILM quand la fiche
+    personne avait été ouverte depuis le casting."""
     _render_actor_detail_body(person_id, person_kind)
 
 def _open_cinema_detail(row: dict) -> None:
@@ -7615,6 +7706,8 @@ def _open_cinema_detail(row: dict) -> None:
     V150 : purge l'anecdote en session → une anecdote NOUVELLE à chaque
     ouverture de la fiche (demande utilisateur)."""
     st.session_state["_cinema_detail_row"] = row
+    # V185 — une nouvelle fiche film annule tout ancien retour-casting.
+    st.session_state.pop("_msl_return_to_fiche", None)
     # V170 — purge des accusés d'ajout (popover ➕) : une nouvelle fiche
     # repart sans vieux message « ✓ AJOUTÉ ».
     for _k in list(st.session_state):
@@ -17167,6 +17260,30 @@ if _fiche_link_raw and st.session_state.get("_msl_fiche_done") != _fiche_link_ra
         _open_fiche_from_link(_fiche_link_raw)
     except Exception:
         pass
+elif st.session_state.get("_msl_casting_person"):
+    # V185 — CASTING : une personne du casting a été cliquée → SA fiche
+    # acteur (le drapeau _msl_return_to_fiche rouvrira la fiche film à
+    # la fermeture). Pop APRÈS le test : le drapeau ne survit pas aux
+    # reruns suivants — la fiche personne vit sa vie (fragments).
+    _casting_p = st.session_state.pop("_msl_casting_person", None) or {}
+    try:
+        _actor_detail_dialog(int(_casting_p.get("person_id") or 0),
+                             str(_casting_p.get("person_kind") or "acteur"))
+    except Exception:
+        pass
+elif st.session_state.get("_msl_actor_dismissed"):
+    st.session_state.pop("_msl_actor_dismissed", None)
+    if st.session_state.pop("_msl_return_to_fiche", None) and st.session_state.get("_cinema_detail_row"):
+        # V185 — RETOUR À LA FICHE FILM : la fiche personne (ouverte
+        # depuis le casting) vient d'être fermée → la fiche film revient
+        # à l'endroit exact où elle était (heartbeat rafraîchi).
+        st.session_state["_msl_fiche_link_mode"] = True
+        st.session_state["_msl_fiche_heartbeat"] = time.time()
+        st.session_state.pop("_msl_fiche_dismissed", None)
+        try:
+            _cinema_detail_dialog(int(st.session_state.get("_msl_fiche_gen") or 0))
+        except Exception:
+            pass
 elif st.session_state.get("_msl_fiche_link_mode"):
     # V174 — la fiche-lien reste ouverte à travers les reruns automatiques
     # (heartbeat < 4 s) ; fermée par l'utilisateur (on_dismiss), le mode
