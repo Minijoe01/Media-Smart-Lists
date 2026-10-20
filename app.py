@@ -757,9 +757,16 @@ st.markdown(
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click)::before {
         content: ""; flex: 0 0 14%; min-width: 90px; margin-right: -2px;
     }
-    .cast-card { transition: transform .16s ease; }
-    .cast-card:hover { transform: translateY(-3px); }
-    .cast-card:hover .cast-face { border-color: rgba(255, 225, 0, .55); }
+    /* V186 — SURVOL D'ORIGINE restauré (retour : « avant c'était
+       parfait ») : c'est la PHOTO qui s'anime (soulèvement + halo +
+       liseré jaune) et le NOM qui passe en blanc — pas la carte. */
+    .cast-face { transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
+    .cast-card:hover .cast-face {
+        transform: translateY(-3px) scale(1.05);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, .45);
+        border-color: rgba(255, 225, 0, .55);
+    }
+    .cast-card:hover .cast-name { color: #fff; }
     .cast-face {
         width: 64px;
         height: 64px;
@@ -1278,12 +1285,15 @@ st.markdown(
        dedans, à mi-hauteur des posters. Colonne SÉPARÉE des cartes :
        jamais levée au survol (pas de msl-click), jamais recouverte, et
        elle défile AVEC le bandeau. */
-    .tl-mark { display: flex; align-items: center; justify-content: center;
-               height: 100%; min-height: 188px; position: relative; }
+    .tl-mark { display: flex; flex-direction: column; align-items: center; justify-content: center;
+               gap: 2px; height: 100%; min-height: 188px; position: relative; }
     .tl-mark::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px;
                        width: 2px; background: rgba(157,197,191,.45); border-radius: 1px; }
     .tl-mark-year { font-size: .76rem; font-weight: 700; color: var(--am-text-muted);
                     letter-spacing: .05em; white-space: nowrap; }
+    /* V186 — nombre de contenus vus de l'année, sous l'année */
+    .tl-mark-count { font-size: .58rem; font-weight: 600; color: rgba(157,197,191,.75);
+                     white-space: nowrap; letter-spacing: .03em; }
     [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(.tl-mark) {
         margin: 0 !important;
     }
@@ -1424,6 +1434,13 @@ st.markdown(
        l'intérieur au lieu d'être centrée et rognée. */
     .sim-badge[data-tooltip] {
         position: relative; overflow: visible; cursor: default;
+    }
+    /* V186 — PREMIER PLAN (retour : « les noms des films sont au 1er
+       plan, les info-bulles derrière ») : quand une info-bulle est
+       ouverte, SA carte passe AU-DESSUS de ses voisines — la bulle ne
+       passe plus derrière les titres des cartes suivantes. */
+    .sim-card:has(.sim-badge[data-tooltip]:hover) {
+        z-index: 60; position: relative;
     }
     /* V185 — fond OPAQUE BLINDÉ (retour : « le fond est complètement
        transparent, teste l'info-bulle ») : !important pour qu'AUCUNE
@@ -6227,15 +6244,22 @@ def _render_cinema_detail_body(row: dict) -> None:
     # V185 — le CASTING devient une SECTION STREAMLIT (cliquable,
     # boutons transparents) rendue juste après le bloc principal — le
     # markdown ne garde que le repli texte (données locales sans ids).
+    # V186 — FIX StreamlitDuplicateElementKey (erreur vue en production) :
+    # un réalisateur qui figure AUSSI dans le casting générait DEUX fois
+    # la clé castnav_{id} → dédoublonnage par personne (le réalisateur,
+    # en tête, prime) + clé indexée par sécurité.
     cast_clickable = []
+    _cast_seen_pids: set = set()
     if director_member and int(director_member.get("tmdb_id") or 0):
         _dm = dict(director_member)
         _dm["is_director"] = True
         cast_clickable.append(_dm)
-    cast_clickable += [
-        m for m in cast_members
-        if int(m.get("tmdb_id") or 0) and len(cast_clickable) < 12
-    ]
+        _cast_seen_pids.add(int(_dm["tmdb_id"]))
+    for _cm_v186 in cast_members:
+        _cmpid_v186 = int(_cm_v186.get("tmdb_id") or 0)
+        if _cmpid_v186 and _cmpid_v186 not in _cast_seen_pids and len(cast_clickable) < 12:
+            cast_clickable.append(_cm_v186)
+            _cast_seen_pids.add(_cmpid_v186)
     casting_html = ""
     if not cast_clickable and (people or directors):
         cast_bits = []
@@ -6561,7 +6585,7 @@ def _render_cinema_detail_body(row: dict) -> None:
             unsafe_allow_html=True,
         )
         _cast_cols = st.columns(len(cast_clickable), gap="small")
-        for _ccol, _cm in zip(_cast_cols, cast_clickable):
+        for _cast_i_v186, (_ccol, _cm) in enumerate(zip(_cast_cols, cast_clickable)):
             if _ccol is None:
                 continue
             with _ccol:
@@ -6569,7 +6593,7 @@ def _render_cinema_detail_body(row: dict) -> None:
                 _cpid = int(_cm.get("tmdb_id") or 0)
                 if _cpid and st.button(
                     "👤 Fiche",
-                    key=f"castnav_{_cpid}",
+                    key=f"castnav_{_cast_i_v186}_{_cpid}",
                     use_container_width=True,
                     type="secondary",
                 ):
@@ -7107,30 +7131,67 @@ def _actor_dialog_chrome_css() -> str:
         "z-index:2000!important;top:10px!important;right:10px!important;"
         "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
-        # V181 — EN-TÊTE DÉGRADÉ Aston (retour utilisateur : « un beau
-        # dégradé respectant mon thème serait bienvenu dans la fiche
-        # acteur ») : vert foncé → vert Aston, liseré discret, la photo
-        # et les infos vivent dedans (même structure, nouveau décor).
+        # V181 — EN-TÊTE DÉGRADÉ Aston. V186 — SUBLIMÉ (retours) :
+        # BANDEAU BISEAUTÉ Aston en fond (barres diagonales CSS,
+        # ANIMÉES — défilement lent) + HALO GLASS en haut à gauche.
         '[data-testid="stDialog"] .actor-head{'
         "background:linear-gradient(120deg,rgba(0,82,75,.96) 0%,rgba(0,116,104,.86) 52%,rgba(0,163,146,.42) 100%)!important;"
         "border:1px solid rgba(255,225,0,.16)!important;"
         "border-radius:14px!important;"
         "margin:.5rem .6rem .8rem!important;"
+        "position:relative!important;"
         "box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 12px 34px rgba(0,0,0,.38)!important;}"
+        '[data-testid="stDialog"] .actor-head::after{'
+        "content:\"\";position:absolute;inset:0;border-radius:14px;pointer-events:none;"
+        # barres biseautées Aston (vert, pas vert lime — retour) qui
+        # défilent lentement (24 s le cycle — subtil)
+        "background:repeating-linear-gradient(115deg,rgba(0,163,146,.13) 0 13px,rgba(0,163,146,0) 13px 34px);"
+        "animation:mslHeroStripes 26s linear infinite;}"
+        '[data-testid="stDialog"] .actor-head::before{'
+        # halo glass en haut à gauche (coin arrondi)
+        "content:\"\";position:absolute;top:-52px;left:-52px;width:230px;height:230px;"
+        "border-radius:50%;pointer-events:none;"
+        "background:radial-gradient(circle,rgba(255,255,255,.11),rgba(255,255,255,0) 68%);}"
+        "@keyframes mslHeroStripes{from{background-position:0 0;}to{background-position:544px 0;}}"
         '[data-testid="stDialog"] .actor-name{font-size:1.45rem!important;letter-spacing:.01em;}'
-        '[data-testid="stDialog"] .actor-bio{margin:.1rem .8rem .55rem;}'
-        # V181 — les toggles « DEPUIS MON HISTOIRE » (radios horizontaux)
-        # en PILULES VERRE du thème : l'option active porte le liseré
-        # jaune Aston.
-        '[data-testid="stDialog"] div[role="radiogroup"]{margin:.05rem 0 .3rem;}'
+        # V186 — BIO EN ENCADRÉ (retour : « noir carbone, légèrement
+        # transparent, icône de citation en jaune gras épais et
+        # visible »).
+        '[data-testid="stDialog"] .actor-bio{'
+        "margin:.15rem .6rem .6rem;position:relative;"
+        "background:rgba(9,13,12,.66);"
+        "border:1px solid rgba(255,225,0,.14);"
+        "border-left:3px solid rgba(255,225,0,.5);"
+        "border-radius:12px;"
+        "padding:.62rem .8rem .55rem 1rem;}"
+        '[data-testid="stDialog"] .actor-bio::before{'
+        "content:\"❝\";position:absolute;top:-1px;left:.3rem;"
+        "color:var(--am-yellow);font-size:1.5rem;font-weight:900;"
+        "text-shadow:0 0 12px rgba(255,225,0,.35);}"        # V186 — SEGMENTS ASSEMBLÉS (« pièces de puzzle », retour
+        # utilisateur avec 3 images) : les pastilles sont JOINTES — une
+        # seule tuile par groupe, coins arrondis aux extrémités
+        # uniquement, seule la SÉLECTION s'allume (liseré jaune Aston +
+        # fond dégradé), léger éclaircissement au survol.
+        '[data-testid="stDialog"] div[role="radiogroup"]{margin:.05rem 0 .3rem;display:flex;flex-wrap:wrap;gap:0!important;}'
         '[data-testid="stDialog"] div[role="radiogroup"] label{'
         "background:rgba(3,22,19,.55)!important;border:1px solid rgba(0,163,146,.35)!important;"
-        "border-radius:999px!important;padding:.14rem .68rem!important;margin:0 .22rem .28rem 0!important;"
-        "color:var(--am-text)!important;font-size:.78rem!important;font-weight:700!important;}"
+        "border-radius:0!important;padding:.14rem .6rem!important;margin:0!important;"
+        "color:var(--am-text)!important;font-size:.74rem!important;font-weight:700!important;"
+        "white-space:nowrap!important;}"
+        '[data-testid="stDialog"] div[role="radiogroup"] label:first-child{'
+        "border-radius:999px 0 0 999px!important;padding-left:.85rem!important;}"
+        '[data-testid="stDialog"] div[role="radiogroup"] label:last-child{'
+        "border-radius:0 999px 999px 0!important;padding-right:.85rem!important;}"
+        '[data-testid="stDialog"] div[role="radiogroup"] label:only-child{'
+        "border-radius:999px!important;}"
+        '[data-testid="stDialog"] div[role="radiogroup"] label + label{'
+        "margin-left:-1px!important;}"
+        '[data-testid="stDialog"] div[role="radiogroup"] label:hover{'
+        "background:rgba(0,163,146,.20)!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label:has(input:checked){'
         "background:linear-gradient(135deg,rgba(0,163,146,.38),rgba(0,82,75,.60))!important;"
         "border-color:rgba(255,225,0,.55)!important;color:#fff!important;"
-        "box-shadow:0 0 12px rgba(0,163,146,.28)!important;}"
+        "box-shadow:0 0 12px rgba(0,163,146,.28)!important;position:relative;z-index:1;}"
         "</style>"
     )
 
@@ -7195,8 +7256,13 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         )
         return
     try:
-        person = _fetch_person_details(person_id, api_key) or {}
-        facets = _person_filmography(person_id, api_key)
+        # V186 — SPINNER DE CHARGEMENT (retour : « la fiche s'ouvre avec
+        # les radios déformées pendant 2-3 s le temps des données TMDB »)
+        # : pendant les appels (personne hors top, caches froids), le
+        # dialog affiche un état de chargement PROPRE au lieu d'un vide.
+        with st.spinner("🎭 Chargement de la fiche…"):
+            person = _fetch_person_details(person_id, api_key) or {}
+            facets = _person_filmography(person_id, api_key)
     except Exception:
         st.markdown(
             '<div class="accent-callout">Fiche momentanément indisponible (TMDB).</div>',
@@ -7518,25 +7584,52 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     for _f_name in ("acteur", "realisateur"):
         _f_map = facets.get(_f_name) or {}
         _vu_by_facet[_f_name] = [c for c in _f_map.values() if _bucket(c) == "vu"]
+    # V186 — FUSION demandée (retour : « un acteur peut être réalisateur ;
+    # compter le nombre de contenus vus où il est acteur, celui où il est
+    # réalisateur — 2 compteurs différents — mais un film réalisé ET
+    # interprété ne compte qu'UNE fois dans "tout" ») : la facette TOUT
+    # est l'union DÉDUPLIQUÉE par contenu (la facette acteur prime).
+    _vu_union: dict = {}
+    for _f_name in ("acteur", "realisateur"):
+        for c in _vu_by_facet.get(_f_name) or []:
+            _vu_union.setdefault((str(c.get("kind")), int(c.get("id") or 0)), c)
+    _vu_by_facet["tout"] = list(_vu_union.values())
 
-    # V182 — RADIOS GLOBAUX (retour : « films dans tes listes apparait à
-    # la fois si je coche film, série ou tout — ce n'est pas logique ») :
-    # les filtres s'appliquent à TOUTE la fiche — historique, « dans tes
-    # listes » et « À découvrir ». Toujours des radios horizontaux : la
-    # valeur est disponible dès le début du run → filtre instantané, sans
-    # rerun global (qui FERMERAIT la fiche).
+    # V182 — RADIOS GLOBAUX : les filtres s'appliquent à TOUTE la fiche.
+    # V186 — SEGMENTS ASSEMBLÉS (« pièces de puzzle », retour utilisateur
+    # avec 3 images) + COMPTEURS de contenus vus par facette (suivant le
+    # TYPE choisi) + UNE SEULE RANGÉE facette | type | tri (plus de tri
+    # « en plein milieu d'un espace vide » sur PC).
+    _type_pre = st.session_state.get(f"actor_hist_type_radio_{person_id}") or "tout"
+
+    def _vu_count_facet(f: str) -> int:
+        _pool_c = list(_vu_by_facet.get(f) or [])
+        if _type_pre == "films":
+            _pool_c = [c for c in _pool_c if c["kind"] == "Film"]
+        elif _type_pre == "series":
+            _pool_c = [c for c in _pool_c if c["kind"] == "Série"]
+        return len(_pool_c)
+
     _f_avail = [f for f in ("acteur", "realisateur") if (facets.get(f) or {})]
+    if _f_avail:
+        _f_avail.append("tout")
     _facet_sel = _f_avail[0] if _f_avail else "acteur"
-    if len(_f_avail) > 1:
-        _fr_key = f"actor_hist_facet_radio_{person_id}"
-        if st.session_state.get(_fr_key) not in _f_avail:
-            st.session_state.pop(_fr_key, None)
-        _facet_sel = st.radio(
-            "Facette", _f_avail,
-            format_func=lambda f: "🎭 En tant qu'acteur" if f == "acteur" else "🎬 En tant que réalisateur",
-            horizontal=True, key=_fr_key, label_visibility="collapsed",
-        )
-    _tcol, _scol = st.columns([3, 2], gap="small")
+    _facet_labels = {
+        "acteur": f"🎭 Acteur · {_vu_count_facet('acteur')}",
+        "realisateur": f"🎬 Réal. · {_vu_count_facet('realisateur')}",
+        "tout": f"🗂️ Tout · {_vu_count_facet('tout')}",
+    }
+    _fcol_v186, _tcol, _scol = st.columns([2.5, 2.1, 1.9], gap="small")
+    with _fcol_v186:
+        if len(_f_avail) > 1:
+            _fr_key = f"actor_hist_facet_radio_{person_id}"
+            if st.session_state.get(_fr_key) not in _f_avail:
+                st.session_state.pop(_fr_key, None)
+            _facet_sel = st.radio(
+                "Facette", _f_avail,
+                format_func=lambda f: _facet_labels.get(f, f),
+                horizontal=True, key=_fr_key, label_visibility="collapsed",
+            )
     with _tcol:
         _type_sel = st.radio(
             "Type", ["films", "series", "tout"],
@@ -7592,7 +7685,9 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         # au survol.
         _flat: list = []
         for _yr, _cs in _groups:
-            _flat.append(("mark", _yr))
+            # V186 — le marqueur porte AUSSI le nombre de contenus vus de
+            # l'année (selon le type choisi — retour utilisateur).
+            _flat.append(("mark", (_yr, len(_cs))))
             for c in _cs:
                 _flat.append(("card", c))
         _fcols = st.columns(len(_flat), gap="small")
@@ -7601,8 +7696,10 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                 continue
             with _fcol:
                 if _fkind == "mark":
+                    _mk_yr, _mk_n = _fpayload
                     st.markdown(
-                        f'<div class="tl-mark"><span class="tl-mark-year">{escape(str(_fpayload))}</span></div>',
+                        f'<div class="tl-mark"><span class="tl-mark-year">{escape(str(_mk_yr))}</span>'
+                        f'<span class="tl-mark-count">{_mk_n} vu{"s" if _mk_n > 1 else ""}</span></div>',
                         unsafe_allow_html=True,
                     )
                     continue
@@ -7624,17 +7721,21 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                     )
 
     any_seen_any_listed = False
-    # V182 — LES FILTRES S'APPLIQUENT ICI AUSSI : seule la FACETTE
-    # sélectionnée est montrée, et le TYPE (films/séries/tout) filtre les
-    # sections « dans tes listes » comme le reste de la fiche (retour :
-    # « films dans tes listes apparait même si je coche série »).
+    # V182 — LES FILTRES S'APPLIQUENT ICI AUSSI. V186 — la facette TOUT
+    # montre les DEUX facettes (avec leurs étiquettes d'origine), les
+    # autres facettes seules.
     for facet_name in facet_order:
-        if facet_name != _facet_sel:
+        if _facet_sel != "tout" and facet_name != _facet_sel:
             continue
         facet_map = facets.get(facet_name) or {}
         if not facet_map:
             continue
         _label, role_word, facet_tag = facet_labels[facet_name]
+        if _facet_sel == "tout" and multi_facets:
+            st.markdown(
+                f'<p class="actor-facet-tag">{facet_tag}</p>',
+                unsafe_allow_html=True,
+            )
         films = {cid: c for cid, c in facet_map.items() if c["kind"] == "Film"}
         series = {cid: c for cid, c in facet_map.items() if c["kind"] == "Série"}
         vus_films = [c for c in films.values() if _bucket(c) == "vu"]
@@ -7651,8 +7752,16 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
         if _type_sel in ("series", "tout"):
             _section("📌 Séries dans tes listes", sorted(listed_series, key=lambda c: c["date"], reverse=True), key_prefix=f"{facet_name}-ls")
 
-    # V182 — « À découvrir » suit AUSSI les filtres (facette + type).
-    _dec_map = facets.get(_facet_sel) or {}
+    # V182 — « À découvrir » suit AUSSI les filtres. V186 — facette
+    # TOUT : union dédupliquée des deux facettes.
+    if _facet_sel == "tout":
+        _dec_map: dict = {}
+        for _f_name in facet_order:
+            for _cid_dec, c in (facets.get(_f_name) or {}).items():
+                _dec_map.setdefault((str(c.get("kind")), int(_cid_dec or 0)), c)
+        _dec_map = {int(c.get("id") or 0): c for c in _dec_map.values()}
+    else:
+        _dec_map = facets.get(_facet_sel) or {}
     decouvrir = [c for c in _dec_map.values() if _bucket(c) is None]
     if _type_sel == "films":
         decouvrir = [c for c in decouvrir if c["kind"] == "Film"]
