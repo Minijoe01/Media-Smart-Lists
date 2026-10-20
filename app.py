@@ -757,16 +757,22 @@ st.markdown(
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click)::before {
         content: ""; flex: 0 0 14%; min-width: 90px; margin-right: -2px;
     }
-    /* V186 — SURVOL D'ORIGINE restauré (retour : « avant c'était
-       parfait ») : c'est la PHOTO qui s'anime (soulèvement + halo +
-       liseré jaune) et le NOM qui passe en blanc — pas la carte. */
+    /* V187 — SURVOL DU CASTING (retour : « ça reste statique ») : le
+       :hover de la CARTE ne se déclenche JAMAIS — le CALQUE transparent
+       (bouton) couvre tout et reçoit le pointeur. Le sélecteur part du
+       CONTENEUR BOUTON survolé (même technique que les soulèvements
+       V175) : la carte qui le PRÉCÈDE anime sa photo. */
     .cast-face { transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
-    .cast-card:hover .cast-face {
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stButton"] button:hover)
+        ~ div[data-testid="stElementContainer"] .cast-card.msl-click .cast-face { }
+    div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:has(> div[data-testid="stVerticalBlock"] button:hover) .cast-card.msl-click .cast-face {
         transform: translateY(-3px) scale(1.05);
         box-shadow: 0 8px 20px rgba(0, 0, 0, .45);
         border-color: rgba(255, 225, 0, .55);
     }
-    .cast-card:hover .cast-name { color: #fff; }
+    div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:has(> div[data-testid="stVerticalBlock"] button:hover) .cast-card.msl-click .cast-name {
+        color: #fff;
+    }
     .cast-face {
         width: 64px;
         height: 64px;
@@ -1294,6 +1300,25 @@ st.markdown(
     /* V186 — nombre de contenus vus de l'année, sous l'année */
     .tl-mark-count { font-size: .58rem; font-weight: 600; color: rgba(157,197,191,.75);
                      white-space: nowrap; letter-spacing: .03em; }
+    /* V187 — ASCENSEUR de la frise, PC UNIQUEMENT et seulement quand ça
+       déborde (retour utilisateur) ; GSM : le scroll tactile est natif.
+       Fin, vert Aston, discret. */
+    @media (min-width: 641px) and (hover: hover) {
+        div[data-testid="stHorizontalBlock"]:has(.tl-mark) {
+            scrollbar-width: thin !important;
+            scrollbar-color: rgba(0,163,146,.55) rgba(0,0,0,.18) !important;
+            padding-bottom: .55rem !important;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.tl-mark)::-webkit-scrollbar {
+            display: block !important; height: 7px;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.tl-mark)::-webkit-scrollbar-thumb {
+            background: rgba(0,163,146,.55); border-radius: 4px;
+        }
+        div[data-testid="stHorizontalBlock"]:has(.tl-mark)::-webkit-scrollbar-track {
+            background: rgba(0,0,0,.18); border-radius: 4px;
+        }
+    }
     [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(.tl-mark) {
         margin: 0 !important;
     }
@@ -1435,11 +1460,13 @@ st.markdown(
     .sim-badge[data-tooltip] {
         position: relative; overflow: visible; cursor: default;
     }
-    /* V186 — PREMIER PLAN (retour : « les noms des films sont au 1er
-       plan, les info-bulles derrière ») : quand une info-bulle est
-       ouverte, SA carte passe AU-DESSUS de ses voisines — la bulle ne
-       passe plus derrière les titres des cartes suivantes. */
+    /* V186 — PREMIER PLAN : quand une info-bulle est ouverte, SA carte
+       passe AU-DESSUS de ses voisines. V187 — pareil pour les TUILES
+       (Que regarder / MÊME ESPRIT) : la tuile survolée monte. */
     .sim-card:has(.sim-badge[data-tooltip]:hover) {
+        z-index: 60; position: relative;
+    }
+    .media-list-card:has([data-tooltip]:hover) {
         z-index: 60; position: relative;
     }
     /* V185 — fond OPAQUE BLINDÉ (retour : « le fond est complètement
@@ -1473,7 +1500,10 @@ st.markdown(
         bottom: calc(100% + 8px);
         left: 50%;
         transform: translateX(-50%) translateY(4px);
-        background: rgba(0, 0, 0, .95);
+        /* V187 — fond OPAQUE pour TOUTES les bulles (retour : « je vois
+           toujours au travers ») : l'ancien rgba(0,0,0,.95) laissait
+           passer 5 % du contenu — lisible sur un fond clair. */
+        background: rgb(9, 22, 19);
         border: 1px solid rgba(255, 225, 0, .50);
         border-radius: 10px;
         color: var(--am-text);
@@ -2277,6 +2307,16 @@ st.markdown(
     }
     .cinema-strip-head { padding: 0 .95rem; }
     .cinema-strip-head > p { margin-left: calc(14% + 14px) !important; margin-right: 0 !important; }
+    /* V187 — SAISONS alignées sur la colonne d'infos (leur place
+       d'origine, à droite du poster) : le wrap réutilise les bases du
+       pied (marge 14 % + 14 px), remises à 0 sur GSM. */
+    .cinema-seasons-wrap { padding: 0 .95rem; }
+    .cinema-seasons-wrap > * { margin-left: calc(14% + 14px) !important; }
+    .cinema-seasons-wrap .season-strip { margin-left: calc(14% + 14px) !important; }
+    @media (max-width: 640px) {
+        .cinema-seasons-wrap > *,
+        .cinema-seasons-wrap .season-strip { margin-left: 0 !important; }
+    }
     /* V179 — BANDE-ANNONCE PLEINE LARGEUR : son bloc PROPRE, SANS le
        spacer d'alignement (14 % + 14 px) — l'iframe vidéo fait 100 % de
        large, le spacer la faisait DÉBORDER à droite (retour utilisateur :
@@ -6569,15 +6609,18 @@ def _render_cinema_detail_body(row: dict) -> None:
         f"{score_html}"
         f"{pills_html}"
         f"{synopsis_html}"
-        f"{casting_html}"
-        f"{seasons_html}"
         f"</div></div></div>",
         unsafe_allow_html=True,
     )
-    # V185 — CASTING CLIQUABLE : chaque personne ouvre SA fiche acteur
-    # dans l'app ; refermée, la fiche film revient (cf.
-    # _open_actor_from_casting). Rendu en colonnes 78 px (le calque V175
-    # couvre chaque paire carte+bouton), aligné comme les bandeaux.
+    # V187 — ORDRE D'ORIGINE RESTAURÉ (retour : « avant j'avais
+    # distribution après synopsis, puis la saison, la heatmap puis
+    # similaire — reprends la précédente disposition ») : le bloc
+    # principal S'ARRÊTE après le synopsis. Le CASTING (cliquable → il
+    # faut des boutons Streamlit, donc sa propre section) prend sa place
+    # juste dessous, puis les SAISONS + heatmap suivent alignées sur la
+    # colonne d'infos (comme avant), puis Similaires / Saga.
+    # V187 — le CASTING prend la place de la Distribution d'origine :
+    # JUSTE après le synopsis, AVANT les saisons (ordre restauré).
     if cast_clickable:
         st.markdown(
             '<div class="cinema-strip-head">'
@@ -6598,6 +6641,11 @@ def _render_cinema_detail_body(row: dict) -> None:
                     type="secondary",
                 ):
                     _open_actor_from_casting(_cm)
+    if seasons_html:
+        st.markdown(
+            f'<div class="cinema-seasons-wrap">{seasons_html}</div>',
+            unsafe_allow_html=True,
+        )
     # V175 — grilles Similaires / Saga cliquables (fiche dans le dialog).
     try:
         _render_sim_strip(saga_entries, _grid_watched, _grid_listed, _grid_names, "movie", saga_title_html, key_prefix="saga",
@@ -7062,9 +7110,11 @@ def _open_actor_from_casting(member: dict) -> None:
 def _msl_on_actor_dismiss() -> None:
     """Fermeture de la FICHE ACTEUR : pose un drapeau — consommé par le
     main UNIQUEMENT si un retour est demandé (V185 : retour à la fiche
-    film après le casting). Sans callback, la fermeture d'un dialog ne
-    déclenche AUCUNE rerun (prouvé au banc V176)."""
+    film après le casting) — et ÉTEINT le heartbeat V187 (sinon le main
+    la rouvrirait immédiatement). Sans callback, la fermeture d'un dialog
+    ne déclenche AUCUNE rerun (prouvé au banc V176)."""
     st.session_state["_msl_actor_dismissed"] = True
+    st.session_state.pop("_msl_actor_open", None)
 
 
 def _msl_on_cinema_dismiss() -> None:
@@ -7131,27 +7181,22 @@ def _actor_dialog_chrome_css() -> str:
         "z-index:2000!important;top:10px!important;right:10px!important;"
         "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
-        # V181 — EN-TÊTE DÉGRADÉ Aston. V186 — SUBLIMÉ (retours) :
-        # BANDEAU BISEAUTÉ Aston en fond (barres diagonales CSS,
-        # ANIMÉES — défilement lent) + HALO GLASS en haut à gauche.
+        # V187 — L'EN-TÊTE REVIENT COMME AVANT (retour : « je veux que
+        # l'en-tête revienne comme avant, je le trouvais plutôt joli ») :
+        # plus de biseaux NI de halo DANS l'en-tête. Le RUBAN « comète »
+        # défilant vit AU-DESSUS de l'en-tête, comme un filet décoratif
+        # (rendu par un div .actor-ribbon juste avant l'en-tête).
         '[data-testid="stDialog"] .actor-head{'
         "background:linear-gradient(120deg,rgba(0,82,75,.96) 0%,rgba(0,116,104,.86) 52%,rgba(0,163,146,.42) 100%)!important;"
         "border:1px solid rgba(255,225,0,.16)!important;"
         "border-radius:14px!important;"
-        "margin:.5rem .6rem .8rem!important;"
-        "position:relative!important;"
+        "margin:.15rem .6rem .8rem!important;"
         "box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 12px 34px rgba(0,0,0,.38)!important;}"
-        '[data-testid="stDialog"] .actor-head::after{'
-        "content:\"\";position:absolute;inset:0;border-radius:14px;pointer-events:none;"
-        # barres biseautées Aston (vert, pas vert lime — retour) qui
-        # défilent lentement (24 s le cycle — subtil)
-        "background:repeating-linear-gradient(115deg,rgba(0,163,146,.13) 0 13px,rgba(0,163,146,0) 13px 34px);"
+        '[data-testid="stDialog"] .actor-ribbon{'
+        "height:10px;margin:.5rem .85rem -.12rem;border-radius:999px;"
+        "background:repeating-linear-gradient(115deg,rgba(0,163,146,.34) 0 12px,rgba(0,163,146,.05) 12px 32px);"
+        "box-shadow:0 0 10px rgba(0,163,146,.18);"
         "animation:mslHeroStripes 26s linear infinite;}"
-        '[data-testid="stDialog"] .actor-head::before{'
-        # halo glass en haut à gauche (coin arrondi)
-        "content:\"\";position:absolute;top:-52px;left:-52px;width:230px;height:230px;"
-        "border-radius:50%;pointer-events:none;"
-        "background:radial-gradient(circle,rgba(255,255,255,.11),rgba(255,255,255,0) 68%);}"
         "@keyframes mslHeroStripes{from{background-position:0 0;}to{background-position:544px 0;}}"
         '[data-testid="stDialog"] .actor-name{font-size:1.45rem!important;letter-spacing:.01em;}'
         # V186 — BIO EN ENCADRÉ (retour : « noir carbone, légèrement
@@ -7163,35 +7208,37 @@ def _actor_dialog_chrome_css() -> str:
         "border:1px solid rgba(255,225,0,.14);"
         "border-left:3px solid rgba(255,225,0,.5);"
         "border-radius:12px;"
-        "padding:.62rem .8rem .55rem 1rem;}"
+        # V187 — l'icône ❝ vit dans sa PROPRE colonne (retour : « elle se
+        # met devant les premiers caractères du texte ») : marge interne
+        # dédiée à gauche, l'icône y est centrée en hauteur.
+        "padding:.62rem .8rem .55rem 2.35rem;}"
         '[data-testid="stDialog"] .actor-bio::before{'
-        "content:\"❝\";position:absolute;top:-1px;left:.3rem;"
-        "color:var(--am-yellow);font-size:1.5rem;font-weight:900;"
-        "text-shadow:0 0 12px rgba(255,225,0,.35);}"        # V186 — SEGMENTS ASSEMBLÉS (« pièces de puzzle », retour
-        # utilisateur avec 3 images) : les pastilles sont JOINTES — une
-        # seule tuile par groupe, coins arrondis aux extrémités
-        # uniquement, seule la SÉLECTION s'allume (liseré jaune Aston +
-        # fond dégradé), léger éclaircissement au survol.
-        '[data-testid="stDialog"] div[role="radiogroup"]{margin:.05rem 0 .3rem;display:flex;flex-wrap:wrap;gap:0!important;}'
+        "content:\"❝\";position:absolute;left:.55rem;top:50%;"
+        "transform:translateY(-52%);"
+        "color:var(--am-yellow);font-size:1.35rem;font-weight:900;line-height:1;"
+        "text-shadow:0 0 12px rgba(255,225,0,.35);}"        # V187 — SEGMENTS MODERNES (retour : « un peu plus moderne ») :
+        # un RAIL CREUX (fond sombre encastré, ombre interne) dans lequel
+        # glissent des PASTILLES ; seule la sélection est pleine
+        # (dégradé Aston + halo), le reste reste discret. Transition
+        # douce, compteurs en opacité réduite.
+        '[data-testid="stDialog"] div[role="radiogroup"]{'
+        "margin:.05rem 0 .35rem;display:flex;flex-wrap:wrap;gap:3px!important;"
+        "background:rgba(0,0,0,.30)!important;"
+        "border:1px solid rgba(255,255,255,.07)!important;"
+        "border-radius:999px!important;padding:3px!important;"
+        "box-shadow:inset 0 2px 6px rgba(0,0,0,.35)!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label{'
-        "background:rgba(3,22,19,.55)!important;border:1px solid rgba(0,163,146,.35)!important;"
-        "border-radius:0!important;padding:.14rem .6rem!important;margin:0!important;"
-        "color:var(--am-text)!important;font-size:.74rem!important;font-weight:700!important;"
-        "white-space:nowrap!important;}"
-        '[data-testid="stDialog"] div[role="radiogroup"] label:first-child{'
-        "border-radius:999px 0 0 999px!important;padding-left:.85rem!important;}"
-        '[data-testid="stDialog"] div[role="radiogroup"] label:last-child{'
-        "border-radius:0 999px 999px 0!important;padding-right:.85rem!important;}"
-        '[data-testid="stDialog"] div[role="radiogroup"] label:only-child{'
-        "border-radius:999px!important;}"
-        '[data-testid="stDialog"] div[role="radiogroup"] label + label{'
-        "margin-left:-1px!important;}"
+        "background:transparent!important;border:none!important;"
+        "border-radius:999px!important;padding:.15rem .68rem!important;margin:0!important;"
+        "color:var(--am-text-muted)!important;font-size:.73rem!important;font-weight:700!important;"
+        "white-space:nowrap!important;cursor:pointer!important;"
+        "transition:background .15s ease,color .15s ease,box-shadow .15s ease!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label:hover{'
-        "background:rgba(0,163,146,.20)!important;}"
+        "background:rgba(255,255,255,.06)!important;color:var(--am-text)!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label:has(input:checked){'
-        "background:linear-gradient(135deg,rgba(0,163,146,.38),rgba(0,82,75,.60))!important;"
-        "border-color:rgba(255,225,0,.55)!important;color:#fff!important;"
-        "box-shadow:0 0 12px rgba(0,163,146,.28)!important;position:relative;z-index:1;}"
+        "background:linear-gradient(135deg,rgba(0,163,146,.62),rgba(0,82,75,.82))!important;"
+        "color:#fff!important;"
+        "box-shadow:0 2px 10px rgba(0,163,146,.45),inset 0 1px 0 rgba(255,255,255,.18)!important;}"
         "</style>"
     )
 
@@ -7513,6 +7560,9 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     if age_txt or place_txt:
         _age_line = f'<p class="actor-meta" style="margin-top:.22rem;">{age_txt}{place_txt}</p>'
     st.markdown(_actor_dialog_chrome_css(), unsafe_allow_html=True)
+    # V187 — le RUBAN « comète » défilant vit AU-DESSUS de l'en-tête
+    # (retour utilisateur) ; l'en-tête lui-même revient comme avant.
+    st.markdown('<div class="actor-ribbon"></div>', unsafe_allow_html=True)
     st.markdown(
         f'<div class="actor-head">{head_photo}<div style="min-width:0;">'
         f'<p class="actor-name">{escape(str(person["name"]))}</p>'
@@ -7613,7 +7663,9 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     _f_avail = [f for f in ("acteur", "realisateur") if (facets.get(f) or {})]
     if _f_avail:
         _f_avail.append("tout")
-    _facet_sel = _f_avail[0] if _f_avail else "acteur"
+    # V187 — DÉFAUT (retour utilisateur) : « Tout » sélectionné d'office
+    # (une option TOUJOURS sélectionnée : jamais 0, jamais 2).
+    _facet_sel = "tout" if "tout" in _f_avail else (_f_avail[0] if _f_avail else "acteur")
     _facet_labels = {
         "acteur": f"🎭 Acteur · {_vu_count_facet('acteur')}",
         "realisateur": f"🎬 Réal. · {_vu_count_facet('realisateur')}",
@@ -7625,6 +7677,11 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
             _fr_key = f"actor_hist_facet_radio_{person_id}"
             if st.session_state.get(_fr_key) not in _f_avail:
                 st.session_state.pop(_fr_key, None)
+            # V187 — DÉFAUT « Tout » (retour : toujours 1 option choisie,
+            # « tout » par défaut) : un radio sans valeur prend l'option 0 —
+            # on pose donc la valeur AVANT le premier rendu du widget.
+            if _fr_key not in st.session_state:
+                st.session_state[_fr_key] = "tout"
             _facet_sel = st.radio(
                 "Facette", _f_avail,
                 format_func=lambda f: _facet_labels.get(f, f),
@@ -7721,6 +7778,11 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                     )
 
     any_seen_any_listed = False
+    # V187 — FIX NameError vu en production : `multi_facets` avait été
+    # supprimé par le patch V182 mais restait utilisé par la facette
+    # TOUT (V186) — le banc ne l'a pas vu : la frise rend AVANT le
+    # crash (leçon : vérifier les exceptions dans chaque section).
+    multi_facets = sum(1 for f in facet_order if facets.get(f)) > 1
     # V182 — LES FILTRES S'APPLIQUENT ICI AUSSI. V186 — la facette TOUT
     # montre les DEUX facettes (avec leurs étiquettes d'origine), les
     # autres facettes seules.
@@ -7806,7 +7868,14 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
 def _actor_detail_dialog(person_id: int, person_kind: str = "acteur") -> None:
     """Fenêtre modale : fiche acteur / réalisateur (V147). V185 : le
     callback on_dismiss permet le RETOUR À LA FICHE FILM quand la fiche
-    personne avait été ouverte depuis le casting."""
+    personne avait été ouverte depuis le casting. V187 : la fiche bat le
+    cœur (_msl_actor_open) — le main la ROUVRE aux reruns (le poll des
+    sections IA déclenche un rerun global à l'arrivée du contenu : sans
+    heartbeat, il FERMERAIT la fiche au lieu de la compléter)."""
+    st.session_state["_msl_actor_open"] = {
+        "person_id": int(person_id or 0), "person_kind": str(person_kind or "acteur"),
+        "ts": time.time(),
+    }
     _render_actor_detail_body(person_id, person_kind)
 
 def _open_cinema_detail(row: dict) -> None:
@@ -11306,6 +11375,10 @@ def _ia_coulisses_css(accent: str = "#FFE100", accent_soft: str = "rgba(255,225,
     .ia-block .ia-sub {{ font-size: .66rem; color: rgba(157, 197, 191, .85); margin-top: 1px; }}
     .ia-block .ia-text {{ font-size: .88rem; color: var(--ia-text); line-height: 1.5; margin-top: .45rem; }}
     .ia-block .ia-text strong {{ color: var(--ia-accent); }}
+    /* V187 — état « préparation » des sections IA (non bloquant) */
+    .ia-block.ia-loading {{ opacity: .55; border-style: dashed;
+                            animation: mslIaPulse 1.6s ease-in-out infinite; }}
+    @keyframes mslIaPulse {{ 0%, 100% {{ opacity: .45; }} 50% {{ opacity: .75; }} }}
     .ia-pc {{ display: flex; gap: .55rem; margin-top: .55rem; flex-wrap: wrap; }}
     .ia-pc .col {{ flex: 1 1 200px; border-radius: 10px; padding: .38rem .55rem .42rem; font-size: .78rem;
                    background: rgba(3, 22, 19, .45); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }}
@@ -11404,10 +11477,10 @@ def _render_ia_coulisses(state_key: str, subject: str, hint: str = "",
         if again:
             _IA_PREFETCH.pop(store_key, None)
             _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint)
-        with st.spinner("✨ Une autre pépite…" if again else "✨ L'info des coulisses arrive…"):
-            data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint, wait=22.0)
-        st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
-        shown = st.session_state.get(session_key)
+        # V187 — PLUS D'ATTENTE BLOQUANTE : placeholder + poll, la fiche
+        # reste interactive (retour : « je veux de la vitesse »).
+        _ia_render_when_ready(store_key, session_key, "L'INFO DES COULISSES")
+        return
 
     if not shown:
         return
@@ -11473,11 +11546,9 @@ def _render_ia_context(state_key: str, subject: str, hint: str = "",
         if again:
             _IA_PREFETCH.pop(store_key, None)
             _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel="context")
-        with st.spinner("✨ Une autre histoire culturelle…" if again else "✨ Pourquoi ça compte arrive…"):
-            data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint,
-                                            wait=22.0, channel="context")
-        st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
-        shown = st.session_state.get(session_key)
+        # V187 — PLUS D'ATTENTE BLOQUANTE (placeholder + poll).
+        _ia_render_when_ready(store_key, session_key, "POURQUOI ÇA COMPTE")
+        return
 
     if not shown:
         return
@@ -11518,6 +11589,49 @@ def _render_ia_context(state_key: str, subject: str, hint: str = "",
 
 
 
+def _ia_render_when_ready(store_key: str, session_key: str, title: str) -> None:
+    """V187 — LES SECTIONS IA NE BLOQUENT PLUS LA FICHE (retour
+    utilisateur : « je veux de la vitesse — les infos IA sont un nice to
+    have, ça doit se faire silencieusement »). Avant : le rendu ATTENDAIT
+    la réponse IA (jusqu'à 22 s) → aucun clic ni radio ne répondait
+    pendant ce temps. Maintenant : un PLACEHOLDER discret + un fragment
+    auto-pollé (1,5 s) ; dès que le précalcul est prêt, la donnée est
+    posée en session et UN SEUL rerun global est déclenché (garde
+    anti-boucle : le rerun ne part qu'une fois par clé) → le corps
+    re-rend la section en direct, le polling s'arrête. Prouvé au
+    micro-banc : les clics restent instantanés pendant tout le poll."""
+    _ph = (
+        '<div class="ia-block ia-loading">'
+        f'<div class="ia-head">✨<div><div class="ia-title">{title}</div>'
+        '<div class="ia-sub">préparation en arrière-plan…</div></div></div></div>'
+    )
+
+    @st.fragment(run_every=1.5)
+    def _ia_ready_poll():
+        entry = _IA_PREFETCH.get(store_key) or {}
+        _status = entry.get("status")
+        if _status in ("done", "error") and st.session_state.get(session_key) is None:
+            if _status == "done":
+                st.session_state[session_key] = entry.get("data") or {
+                    "error": "Indisponible — réessaie plus tard"}
+            else:
+                st.session_state[session_key] = {"error": str(entry.get("error") or "Erreur IA")[:110]}
+            # V187 — CRITIQUE : le rerun global doit RETROUVER la fiche
+            # OUVERTE. Une fiche ouverte par BOUTON n'a PAS link_mode →
+            # le main ne la rouvrirait pas → le poll la FERMERAIT. On pose
+            # donc link_mode + heartbeat (fiche film) ou on rafraîchit le
+            # cœur (fiche acteur) AVANT le rerun.
+            if st.session_state.get("_cinema_detail_row"):
+                st.session_state["_msl_fiche_link_mode"] = True
+                st.session_state["_msl_fiche_heartbeat"] = time.time()
+            if st.session_state.get("_msl_actor_open") and isinstance(st.session_state["_msl_actor_open"], dict):
+                st.session_state["_msl_actor_open"]["ts"] = time.time()
+            st.rerun()  # UNE fois : le corps re-rend la section en direct
+        st.markdown(_ph, unsafe_allow_html=True)
+
+    _ia_ready_poll()
+
+
 def _ia_generic_render(state_key: str, subject: str, hint: str, channel: str,
                        accent: str, accent_soft: str, accent_text: str,
                        title: str, subtitle: str, spinner_new: str,
@@ -11547,11 +11661,9 @@ def _ia_generic_render(state_key: str, subject: str, hint: str, channel: str,
         if again:
             _IA_PREFETCH.pop(store_key, None)
             _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel=channel, variant=variant)
-        with st.spinner(spinner_again if again else spinner_new):
-            data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint,
-                                            wait=22.0, channel=channel, variant=variant)
-        st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
-        shown = st.session_state.get(session_key)
+        # V187 — PLUS D'ATTENTE BLOQUANTE (placeholder + poll).
+        _ia_render_when_ready(store_key, session_key, title.upper())
+        return
 
     if not shown:
         return
@@ -11878,11 +11990,9 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             _IA_PREFETCH.pop(store_key, None)
             _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint,
                                 channel=channel, variant=variant)
-        with st.spinner("✨ D'autres propositions…" if again else "✨ Les propositions arrivent…"):
-            data, error = _ia_fetch_or_wait(store_key, gemini_key, groq_key, subject, hint,
-                                            wait=22.0, channel=channel, variant=variant)
-        st.session_state[session_key] = data if data else {"error": error or "Indisponible — réessaie plus tard"}
-        shown = st.session_state.get(session_key)
+        # V187 — PLUS D'ATTENTE BLOQUANTE (placeholder + poll).
+        _ia_render_when_ready(store_key, session_key, "MÊME ESPRIT")
+        return
     if not shown or shown.get("error") or shown.get("skip"):
         return
     picks = [p for p in (shown.get("picks") or []) if isinstance(p, dict)][:3]
@@ -17393,6 +17503,23 @@ elif st.session_state.get("_msl_actor_dismissed"):
             _cinema_detail_dialog(int(st.session_state.get("_msl_fiche_gen") or 0))
         except Exception:
             pass
+elif st.session_state.get("_msl_actor_open") and not st.session_state.get("_msl_casting_person"):
+    # V187 — HEARTBEAT FICHE ACTEUR : le poll des sections IA déclenche
+    # un rerun global à l'arrivée du contenu — le main ROUVRE la fiche
+    # acteur tant que son cœur bat (< 8 s), comme la fiche film.
+    _ao = st.session_state.get("_msl_actor_open") or {}
+    try:
+        _ao_fresh = time.time() - float(_ao.get("ts") or 0) < 8.0
+    except (TypeError, ValueError):
+        _ao_fresh = False
+    if _ao_fresh and int(_ao.get("person_id") or 0):
+        try:
+            _actor_detail_dialog(int(_ao.get("person_id") or 0),
+                                 str(_ao.get("person_kind") or "acteur"))
+        except Exception:
+            pass
+    else:
+        st.session_state.pop("_msl_actor_open", None)
 elif st.session_state.get("_msl_fiche_link_mode"):
     # V174 — la fiche-lien reste ouverte à travers les reruns automatiques
     # (heartbeat < 4 s) ; fermée par l'utilisateur (on_dismiss), le mode
