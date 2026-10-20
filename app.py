@@ -744,7 +744,7 @@ st.markdown(
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click) {
         overflow-x: auto;
         flex-wrap: nowrap !important;
-        padding: .45rem .95rem .35rem;
+        padding: .22rem .95rem .3rem;
         scrollbar-width: none;
     }
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click)::-webkit-scrollbar {
@@ -1291,15 +1291,28 @@ st.markdown(
        dedans, à mi-hauteur des posters. Colonne SÉPARÉE des cartes :
        jamais levée au survol (pas de msl-click), jamais recouverte, et
        elle défile AVEC le bandeau. */
+    /* V188 — TRAITS D'ANNÉE SOUS LES INFO-BULLES (retour : « il ne
+       reste que les traits entre les années de la frise qui passent
+       encore au-dessus de l'info-bulle ») : le marqueur est posé
+       EXPLICITEMENT au plan 0 — la carte survolée (z-index:60, cf.
+       .sim-card:has(.sim-badge[data-tooltip]:hover)) repasse devant,
+       bulle comprise, quel que soit l'ordre du DOM. */
     .tl-mark { display: flex; flex-direction: column; align-items: center; justify-content: center;
-               gap: 2px; height: 100%; min-height: 188px; position: relative; }
+               gap: 2px; height: 100%; min-height: 188px; position: relative; z-index: 0; }
     .tl-mark::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px;
                        width: 2px; background: rgba(157,197,191,.45); border-radius: 1px; }
     .tl-mark-year { font-size: .76rem; font-weight: 700; color: var(--am-text-muted);
                     letter-spacing: .05em; white-space: nowrap; }
-    /* V186 — nombre de contenus vus de l'année, sous l'année */
-    .tl-mark-count { font-size: .58rem; font-weight: 600; color: rgba(157,197,191,.75);
-                     white-space: nowrap; letter-spacing: .03em; }
+    /* V186 — nombre de contenus vus de l'année, sous l'année.
+       V188 — HABILLAGE (idée esthétique demandée) : pastille pilule
+       carbone, liseré vert doux, chiffre en blanc gras. */
+    .tl-mark-count { display: inline-flex; align-items: center; gap: 3px;
+                     font-size: .58rem; font-weight: 700; color: #b9dcd6;
+                     white-space: nowrap; letter-spacing: .03em;
+                     background: rgba(9,13,12,.62);
+                     border: 1px solid rgba(0,163,146,.30);
+                     border-radius: 999px; padding: 2px 8px; }
+    .tl-mark-count b { color: #fff; font-weight: 800; }
     /* V187 — ASCENSEUR de la frise, PC UNIQUEMENT et seulement quand ça
        déborde (retour utilisateur) ; GSM : le scroll tactile est natif.
        Fin, vert Aston, discret. */
@@ -2307,6 +2320,14 @@ st.markdown(
     }
     .cinema-strip-head { padding: 0 .95rem; }
     .cinema-strip-head > p { margin-left: calc(14% + 14px) !important; margin-right: 0 !important; }
+    /* V188 — GAP SYNOPSIS → DISTRIBUTION RESSERRÉ (retour : « un plus
+       gros gap qu'avant entre la fin du synopsis et le début de la
+       distribution ») : depuis V187 le titre vit dans SON PROPRE bloc
+       markdown → il cumulait le gap Streamlit inter-blocs + sa marge
+       .9rem. Le conteneur remonte pour absorber le gap inter-blocs et
+       la marge haute du titre est ramenée au niveau des autres titres. */
+    [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(> .cinema-strip-head--dist) { margin-top: -.15rem !important; }
+    .cinema-strip-head--dist > p { margin-top: .6rem !important; }
     /* V187 — SAISONS alignées sur la colonne d'infos (leur place
        d'origine, à droite du poster) : le wrap réutilise les bases du
        pied (marge 14 % + 14 px), remises à 0 sur GSM. */
@@ -2341,6 +2362,20 @@ st.markdown(
         padding: 0 !important;
         overflow: hidden !important;
     }
+    /* V188 — ANIMATION D'ENTRÉE DES FICHES (idée esthétique demandée) :
+       le composant invisible de tête de fiche pose la classe AU
+       CHANGEMENT de son marqueur — donc UNIQUEMENT à l'ouverture d'une
+       NOUVELLE fiche (sur un rerun de la même fiche l'iframe ne
+       recharge pas son script : jamais de clignotement pendant les
+       polls IA). La fiche apparaît en fondu + léger glissement. */
+    [data-testid="stDialog"].msl-fiche-in { animation: mslFicheIn .42s cubic-bezier(.22,.9,.34,1) both; }
+    @keyframes mslFicheIn {
+        from { opacity: 0; transform: translateY(16px) scale(.986); }
+        to { opacity: 1; transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        [data-testid="stDialog"].msl-fiche-in { animation: none; }
+    }
     .cinema-tail > * { margin-left: calc(14% + 14px) !important; }
     /* V180 — TON HISTOIRE commence À GAUCHE (retour utilisateur : « je
        veux le mettre tout à gauche, je veux vraiment éviter le zigzag »)
@@ -2349,6 +2384,16 @@ st.markdown(
     .msl-hist-wrap > p.cinema-section-title { margin-left: 0 !important; }
     @media (max-width: 640px) {
         div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card.msl-click)::before { display: none; }
+        /* V188 — CASTING À GAUCHE SUR GSM (retour : « un gros espace
+           entre l'extrême gauche de la fiche film et le réalisateur,
+           ce n'est pas acceptable ; sur GSM tu peux les mettre à
+           gauche ») : le spacer 14 % (calqué sur le poster du layout
+           PC, min-width 90px !) et le padding .95rem du bandeau sont
+           annulés — la distribution commence au bord gauche, comme le
+           synopsis du layout empilé. */
+        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click)::before { display: none; }
+        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click) { padding-left: 0 !important; }
+        .cinema-strip-head--dist { padding-left: 0 !important; }
         .cinema-strip-head > p,
         .cinema-trailer > *,
         .cinema-tail > *,
@@ -4607,6 +4652,17 @@ def _open_fiche_in_dialog(kind: str, tmdb_id: int, return_actor: dict | None = N
     # les reruns automatiques.
     st.session_state["_msl_fiche_link_mode"] = True
     st.session_state["_msl_fiche_heartbeat"] = time.time()
+    # V188 — FIX NAVIGATION ACTEUR → FILM (retour : « le clic sur une
+    # fiche film depuis une fiche acteur ne donne rien ; il faut quitter
+    # la fiche acteur, parfois changer d'onglet, et alors la fiche film
+    # s'ouvre ; en la quittant, la fiche acteur revient ») : la chaîne du
+    # main teste le cœur ACTEUR (mimic V187) AVANT la fiche film — or ce
+    # cœur bat encore (< 8 s) au moment du clic → le main ROUVRAIT la
+    # fiche acteur et la fiche film posée ici n'était JAMAIS rendue.
+    # La fiche acteur CÈDE LA PLACE au film : on éteint son cœur (comme
+    # le fait son on_dismiss). Le retour-acteur (miroir V176) reste posé
+    # via _msl_return_to_actor : fermer la fiche film retrouve l'acteur.
+    st.session_state.pop("_msl_actor_open", None)
     if return_actor:
         st.session_state["_msl_return_to_actor"] = {
             "person_id": int(return_actor.get("person_id") or 0),
@@ -5732,6 +5788,9 @@ def _msl_fiche_scrolltop_component(marker: str) -> None:
             "var node=el,n=0;"
             "while(node&&node!==dlg.parentElement&&n<40){"
             "node.scrollTop=0;node=node.parentElement;n+=1;}"
+            "dlg.classList.remove('msl-fiche-in');"
+            "void dlg.offsetWidth;"
+            "dlg.classList.add('msl-fiche-in');"
             "dlg.setAttribute('data-msl-scrolltop-run',String(Date.now()));"
             "}catch(e){}})();"
             "</script><!-- msl-fiche-scrolltop " + str(marker) + " -->",
@@ -6623,7 +6682,7 @@ def _render_cinema_detail_body(row: dict) -> None:
     # JUSTE après le synopsis, AVANT les saisons (ordre restauré).
     if cast_clickable:
         st.markdown(
-            '<div class="cinema-strip-head">'
+            '<div class="cinema-strip-head cinema-strip-head--dist">'
             '<p class="cinema-section-title cinema-strip-title">Distribution</p></div>',
             unsafe_allow_html=True,
         )
@@ -7097,6 +7156,14 @@ def _open_actor_from_casting(member: dict) -> None:
         return
     if not pid:
         return
+    # V188 — NONCE D'OUVERTURE (comme les fiches film en V179) : le
+    # marqueur du composant de tête change à CHAQUE ouverture depuis le
+    # casting → l'animation d'entrée rejoue, même si on rouvre la même
+    # personne depuis un autre film.
+    try:
+        st.session_state["_msl_actor_nav_nonce"] = int(st.session_state.get("_msl_actor_nav_nonce") or 0) + 1
+    except (TypeError, ValueError):
+        st.session_state["_msl_actor_nav_nonce"] = 1
     st.session_state["_msl_casting_person"] = {
         "person_id": pid,
         "person_kind": "realisateur" if member.get("is_director") else "acteur",
@@ -7181,23 +7248,49 @@ def _actor_dialog_chrome_css() -> str:
         "z-index:2000!important;top:10px!important;right:10px!important;"
         "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
-        # V187 — L'EN-TÊTE REVIENT COMME AVANT (retour : « je veux que
-        # l'en-tête revienne comme avant, je le trouvais plutôt joli ») :
-        # plus de biseaux NI de halo DANS l'en-tête. Le RUBAN « comète »
-        # défilant vit AU-DESSUS de l'en-tête, comme un filet décoratif
-        # (rendu par un div .actor-ribbon juste avant l'en-tête).
+        # V188 — LA COMÈTE DANS L'EN-TÊTE (retour : « démarre au 1er
+        # pixel en haut de la fiche, dégradé vers transparent, 100 %
+        # transparent au bas de l'en-tête ; le raccord du biseau entre
+        # début et fin doit être parfait »). L'en-tête garde son dégradé
+        # Aston V185 (fond) ; la comète est une couche absolue PLEIN
+        # EN-TÊTE, DERRIÈRE le contenu (.actor-head-in), estompée par un
+        # MASQUE VERTICAL : opaque au 1er pixel, invisible au bas.
+        # RACCORD PARFAIT : la période du repeating-linear-gradient(45deg)
+        # totalise 45.2548px le long de l'axe (= 64px/√2) — sa projection
+        # horizontale fait EXACTEMENT 64px ; l'animation déplace le fond
+        # de 64px par cycle → le motif coïncide au pixel près à chaque
+        # boucle. (L'ancien ruban glissait de 544px = 40,24 périodes →
+        # la « petouille » visible au raccord.)
         '[data-testid="stDialog"] .actor-head{'
+        "position:relative!important;overflow:hidden!important;"
         "background:linear-gradient(120deg,rgba(0,82,75,.96) 0%,rgba(0,116,104,.86) 52%,rgba(0,163,146,.42) 100%)!important;"
         "border:1px solid rgba(255,225,0,.16)!important;"
         "border-radius:14px!important;"
-        "margin:.15rem .6rem .8rem!important;"
+        "margin:0 .6rem .8rem!important;"
         "box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 12px 34px rgba(0,0,0,.38)!important;}"
-        '[data-testid="stDialog"] .actor-ribbon{'
-        "height:10px;margin:.5rem .85rem -.12rem;border-radius:999px;"
-        "background:repeating-linear-gradient(115deg,rgba(0,163,146,.34) 0 12px,rgba(0,163,146,.05) 12px 32px);"
-        "box-shadow:0 0 10px rgba(0,163,146,.18);"
-        "animation:mslHeroStripes 26s linear infinite;}"
-        "@keyframes mslHeroStripes{from{background-position:0 0;}to{background-position:544px 0;}}"
+        '[data-testid="stDialog"] .actor-head-in{'
+        "position:relative;z-index:1;display:flex;gap:16px;align-items:center;"
+        "width:100%;min-width:0;}"
+        '[data-testid="stDialog"] .actor-comet{'
+        "position:absolute;top:0;left:0;right:0;bottom:0;z-index:0;pointer-events:none;"
+        "background-image:repeating-linear-gradient(45deg,"
+        "rgba(0,82,75,.62) 0 20.3652px,"
+        "rgba(0,163,146,.30) 20.3652px 31.6784px,"
+        "rgba(255,225,0,.50) 31.6784px 33.9411px,"
+        "rgba(0,163,146,.30) 33.9411px 45.2548px);"
+        "-webkit-mask-image:linear-gradient(180deg,rgba(0,0,0,1) 0%,rgba(0,0,0,.48) 52%,rgba(0,0,0,0) 100%);"
+        "mask-image:linear-gradient(180deg,rgba(0,0,0,1) 0%,rgba(0,0,0,.48) 52%,rgba(0,0,0,0) 100%);"
+        "animation:mslCometSlide 26s linear infinite;}"
+        "@keyframes mslCometSlide{from{background-position:0 0;}to{background-position:64px 0;}}"
+        # V188 — HALO « CLEAR GLASS » en haut à gauche de l'en-tête
+        # (retour : « je ne vois pas de halo/clear glass en haut à gauche
+        # de l'en-tête de la fiche acteur, sais-tu le faire ? ») : un
+        # reflet vitreux doux posé AU-DESSUS de la comète, sous le texte.
+        '[data-testid="stDialog"] .actor-head::after{'
+        "content:\"\";position:absolute;top:0;left:0;width:72%;height:64%;"
+        "background:radial-gradient(ellipse 78% 88% at 14% 10%,"
+        "rgba(255,255,255,.17),rgba(255,255,255,.055) 46%,rgba(255,255,255,0) 72%);"
+        "pointer-events:none;z-index:2;border-radius:14px 0 0 0;}"
         '[data-testid="stDialog"] .actor-name{font-size:1.45rem!important;letter-spacing:.01em;}'
         # V186 — BIO EN ENCADRÉ (retour : « noir carbone, légèrement
         # transparent, icône de citation en jaune gras épais et
@@ -7223,22 +7316,31 @@ def _actor_dialog_chrome_css() -> str:
         # douce, compteurs en opacité réduite.
         '[data-testid="stDialog"] div[role="radiogroup"]{'
         "margin:.05rem 0 .35rem;display:flex;flex-wrap:wrap;gap:3px!important;"
+        # V188 — PASTILLE PLEINE HAUTEUR (retour : « agrandis la pastille,
+        # qu'elle ait la même hauteur que le rail creux, pour qu'on ait
+        # l'impression qu'elle le remplit ») : les labels S'ÉTIRENT sur
+        # toute la hauteur intérieure du rail (padding 3px excepté).
+        "align-items:stretch!important;"
         "background:rgba(0,0,0,.30)!important;"
         "border:1px solid rgba(255,255,255,.07)!important;"
         "border-radius:999px!important;padding:3px!important;"
         "box-shadow:inset 0 2px 6px rgba(0,0,0,.35)!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label{'
         "background:transparent!important;border:none!important;"
-        "border-radius:999px!important;padding:.15rem .68rem!important;margin:0!important;"
+        "border-radius:996px!important;padding:.18rem .72rem!important;margin:0!important;"
+        "display:flex!important;align-items:center!important;justify-content:center!important;"
+        "box-sizing:border-box!important;min-height:26px!important;"
         "color:var(--am-text-muted)!important;font-size:.73rem!important;font-weight:700!important;"
         "white-space:nowrap!important;cursor:pointer!important;"
-        "transition:background .15s ease,color .15s ease,box-shadow .15s ease!important;}"
+        "transition:background .18s cubic-bezier(.4,0,.2,1),color .18s ease,"
+        "box-shadow .18s ease!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label:hover{'
         "background:rgba(255,255,255,.06)!important;color:var(--am-text)!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label:has(input:checked){'
-        "background:linear-gradient(135deg,rgba(0,163,146,.62),rgba(0,82,75,.82))!important;"
+        "background:linear-gradient(135deg,rgba(0,163,146,.66),rgba(0,82,75,.88))!important;"
         "color:#fff!important;"
-        "box-shadow:0 2px 10px rgba(0,163,146,.45),inset 0 1px 0 rgba(255,255,255,.18)!important;}"
+        "box-shadow:0 3px 14px rgba(0,163,146,.48),inset 0 1px 0 rgba(255,255,255,.22),"
+        "inset 0 0 0 1px rgba(255,255,255,.09)!important;}"
         "</style>"
     )
 
@@ -7341,7 +7443,11 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     # invisible (même mécanisme que la fiche film — le marqueur contient
     # l'id de la personne ; les reruns de la MÊME fiche ne rechargent
     # pas l'iframe → scroll conservé).
-    _msl_fiche_scrolltop_component(f"person:{int(person_id or 0)}:{str(person_kind)}")
+    try:
+        _msl_an_v188 = int(st.session_state.get("_msl_actor_nav_nonce") or 0)
+    except (TypeError, ValueError):
+        _msl_an_v188 = 0
+    _msl_fiche_scrolltop_component(f"person:{int(person_id or 0)}:{str(person_kind)}:{_msl_an_v188}")
 
     # V181 — DATES DE VISIONNAGE par contenu (clé typée movie:/tv:) :
     # elles alimentent le tri du bloc « DEPUIS MON HISTOIRE », sa
@@ -7562,21 +7668,42 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     st.markdown(_actor_dialog_chrome_css(), unsafe_allow_html=True)
     # V187 — le RUBAN « comète » défilant vit AU-DESSUS de l'en-tête
     # (retour utilisateur) ; l'en-tête lui-même revient comme avant.
-    st.markdown('<div class="actor-ribbon"></div>', unsafe_allow_html=True)
+    # V188 — LA COMÈTE VIT DANS L'EN-TÊTE (retour : « qu'elle démarre
+    # au 1er pixel en haut de la fiche, en dégradé vers transparent, le
+    # 100 % transparent atteint au bas de l'en-tête ») : plus de ruban
+    # séparé AU-DESSUS — une couche .actor-comet couvre TOUT l'en-tête
+    # (fondu vertical par masque), DERRIÈRE le contenu. Le contenu de
+    # l'en-tête est inchangé, simplement enveloppé dans .actor-head-in
+    # (il doit passer AU-DESSUS de la couche positionnée).
     st.markdown(
-        f'<div class="actor-head">{head_photo}<div style="min-width:0;">'
+        f'<div class="actor-head"><div class="actor-comet"></div>'
+        f'<div class="actor-head-in">{head_photo}<div style="min-width:0;">'
         f'<p class="actor-name">{escape(str(person["name"]))}</p>'
         f'<p class="actor-meta">{escape(dept)} · {total_career} titre(s) · '
         f'<strong style="color:var(--am-yellow);">{total_seen} déjà dans ton historique</strong>{_avg_txt}</p>'
         f"{_age_line}"
         f'<div style="margin-top:.35rem;">{tmdb_link}</div>'
-        f"</div></div>",
+        f"</div></div></div>",
         unsafe_allow_html=True,
     )
     bio = str(person.get("biography") or "").strip()
     if bio:
         shown = bio if len(bio) <= 480 else bio[:bio.find(" ", 440) if bio.find(" ", 440) > 0 else 440] + "…"
-        st.markdown(f'<p class="actor-bio">{escape(shown)}</p>', unsafe_allow_html=True)
+        # V188 — BIO ENTIÈRE DANS L'ENcadré (retour : « tu as juste la
+        # 1ère de ces 3 phrases dans l'encadré, je ne comprends pas
+        # pourquoi on n'y met pas les 3 ») : st.markdown PARSE le HTML
+        # en BLOCS — un double retour à la ligne FERME le <p> et les
+        # phrases suivantes sortaient de l'encadré (rendues comme du
+        # markdown ordinaire). Les paragraphes sont joints par <br><br> :
+        # TOUT reste dans le même <p class="actor-bio">.
+        bio_v188 = (
+            escape(shown)
+            .replace("\r\n", "\n")
+            .replace("\n\n\n", "\n\n")
+            .replace("\n\n", "<br><br>")
+            .replace("\n", " ")
+        )
+        st.markdown(f'<p class="actor-bio">{bio_v188}</p>', unsafe_allow_html=True)
 
     def _section(title: str, rows: list, empty_skip: bool = True, key_prefix: str = "s") -> None:
         """V176 — BANDEAU DÉFILANT de posters cliquables (comme
@@ -7688,6 +7815,14 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                 horizontal=True, key=_fr_key, label_visibility="collapsed",
             )
     with _tcol:
+        # V188 — FIX DÉFAUT (retour : « film/série/tout semble réglé par
+        # défaut sur film, je veux que ce soit tout ») : comme la facette
+        # en V187, la valeur est posée EN SESSION AVANT le premier rendu
+        # du widget — sinon un radio sans valeur prend l'option 0
+        # (« films »). Les compteurs du haut lisent déjà cette clé.
+        _tr_key_v188 = f"actor_hist_type_radio_{person_id}"
+        if _tr_key_v188 not in st.session_state:
+            st.session_state[_tr_key_v188] = "tout"
         _type_sel = st.radio(
             "Type", ["films", "series", "tout"],
             format_func=lambda t: {"films": "🎬 Films", "series": "📺 Séries", "tout": "🗂️ Tout"}[t],
@@ -7696,6 +7831,11 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     with _scol:
         # V183 — TRI (retour : « mettre un autre bouton radio pour
         # indiquer tri par date croissant ou décroissant »).
+        # V188 — défaut « croissant » posé explicitement (même mécanique
+        # que le type : une option TOUJOURS sélectionnée, jamais 0 ni 2).
+        _sr_key_v188 = f"actor_hist_sort_radio_{person_id}"
+        if _sr_key_v188 not in st.session_state:
+            st.session_state[_sr_key_v188] = "croissant"
         _sort_sel = st.radio(
             "Tri", ["croissant", "decroissant"],
             format_func=lambda s: "⬆️ Croissant" if s == "croissant" else "⬇️ Décroissant",
@@ -7756,7 +7896,7 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
                     _mk_yr, _mk_n = _fpayload
                     st.markdown(
                         f'<div class="tl-mark"><span class="tl-mark-year">{escape(str(_mk_yr))}</span>'
-                        f'<span class="tl-mark-count">{_mk_n} vu{"s" if _mk_n > 1 else ""}</span></div>',
+                        f'<span class="tl-mark-count"><b>{_mk_n}</b>&nbsp;vu{"s" if _mk_n > 1 else ""}</span></div>',
                         unsafe_allow_html=True,
                     )
                     continue
