@@ -744,7 +744,7 @@ st.markdown(
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click) {
         overflow-x: auto;
         flex-wrap: nowrap !important;
-        padding: .12rem .95rem .28rem;
+        padding: .45rem .95rem .35rem;
         scrollbar-width: none;
     }
     div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card.msl-click)::-webkit-scrollbar {
@@ -2330,14 +2330,16 @@ st.markdown(
     }
     .cinema-strip-head { padding: 0 .95rem; }
     .cinema-strip-head > p { margin-left: calc(14% + 14px) !important; margin-right: 0 !important; }
-    /* V188 — GAP SYNOPSIS → DISTRIBUTION RESSERRÉ (retour : « un plus
-       gros gap qu'avant entre la fin du synopsis et le début de la
-       distribution ») : depuis V187 le titre vit dans SON PROPRE bloc
-       markdown → il cumulait le gap Streamlit inter-blocs + sa marge
-       .9rem. Le conteneur remonte pour absorber le gap inter-blocs et
-       la marge haute du titre est ramenée au niveau des autres titres. */
-    [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(> .cinema-strip-head--dist) { margin-top: -.55rem !important; }
-    .cinema-strip-head--dist > p { margin: 0 0 .22rem !important; }
+    /* V190 — DISTRIBUTION : RETOUR AUX ÉCARTS STANDARD (retour : « je
+       veux la disposition d'avant, avec les fonctionnalités de
+       maintenant — idéalement le même écart entre chaque fin et chaque
+       début de widget ») : plus AUCUNE marge spéciale. La V189 avait
+       remonté le titre SOUS le bloc du synopsis (titre invisible, et
+       les cercles du bandeau tronqués en haut au survol). Désormais le
+       titre porte les marges standard .cinema-section-title comme
+       Saisons/Similaires, et le bandeau a le même padding que les
+       autres bandeaux → écart uniforme partout. Le GSM (validé) reste
+       inchangé : spacer masqué + padding .95rem. */
     /* V187 — SAISONS alignées sur la colonne d'infos (leur place
        d'origine, à droite du poster) : le wrap réutilise les bases du
        pied (marge 14 % + 14 px), remises à 0 sur GSM. */
@@ -5813,15 +5815,6 @@ def _msl_fiche_scrolltop_component(marker: str) -> None:
             "dlg.classList.remove('msl-fiche-in');"
             "void dlg.offsetWidth;"
             "dlg.classList.add('msl-fiche-in');"
-            "var comet=dlg.querySelector('.actor-comet');"
-            "if(comet){"
-            "var cHost=comet.parentElement;"
-            "var cDb=dlg.getBoundingClientRect();"
-            "var cHb=cHost.getBoundingClientRect();"
-            "dlg.style.setProperty('--msl-comet-top',(cDb.top-cHb.top)+'px');"
-            "var cAh=dlg.querySelector('.actor-head');"
-            "if(cAh){dlg.style.setProperty('--msl-comet-h',(cAh.getBoundingClientRect().bottom-cDb.top)+'px');}"
-            "}"
             "dlg.setAttribute('data-msl-scrolltop-run',String(Date.now()));"
             "}catch(e){}})();"
             "</script><!-- msl-fiche-scrolltop " + str(marker) + " -->",
@@ -6713,7 +6706,7 @@ def _render_cinema_detail_body(row: dict) -> None:
     # JUSTE après le synopsis, AVANT les saisons (ordre restauré).
     if cast_clickable:
         st.markdown(
-            '<div class="cinema-strip-head cinema-strip-head--dist">'
+            '<div class="cinema-strip-head">'
             '<p class="cinema-section-title cinema-strip-title">Distribution</p></div>',
             unsafe_allow_html=True,
         )
@@ -7283,12 +7276,9 @@ def _actor_dialog_chrome_css() -> str:
         "z-index:2000!important;top:10px!important;right:10px!important;"
         "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
-        # V189 — L'EN-TÊTE REVIENT À L'IDENTIQUE DE LA V187 (retour :
-        # « remets mon en-tête comme la version précédente ») : dégradé
-        # Aston, liseré, coins, marges d'origine. Le bloc markdown qui le
-        # porte devient position:relative : c'est le repère de la comète.
-        '[data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(> .actor-head){'
-        "position:relative;}"
+        # V190 — L'EN-TÊTE SANS COMÈTE (retour : « annule tout ce que
+        # tu as fait concernant la comète, on va laisser sans comète ») :
+        # l'en-tête reste à l'identique de la V187.
         '[data-testid="stDialog"] .actor-head{'
         "position:relative;"
         "background:linear-gradient(120deg,rgba(0,82,75,.96) 0%,rgba(0,116,104,.86) 52%,rgba(0,163,146,.42) 100%)!important;"
@@ -7296,38 +7286,19 @@ def _actor_dialog_chrome_css() -> str:
         "border-radius:14px!important;"
         "margin:.15rem .6rem .8rem!important;"
         "box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 12px 34px rgba(0,0,0,.38)!important;}"
-        # V189 — LA COMÈTE EN ARRIÈRE-PLAN (couleurs de la V187 : vert
-        # Aston translucide, biseaux 115°) : couche z-index:-1 DANS le
-        # bloc markdown de l'en-tête → elle en fait exactement la
-        # hauteur (remontée à fleur du haut de la fiche par top:-4px)
-        # et se glisse DERRIÈRE l'en-tête ET les sections, DEVANT le
-        # fond du dialog. Masque vertical : opaque en haut, 100 %
-        # transparent au bas de l'en-tête.
-        # RACCORD PARFAIT : la période du motif vaut 32.6271px le long
-        # de l'axe = 36px×sin(115°) → sa projection horizontale fait
-        # EXACTEMENT 36px ; l'animation déplace le fond de 576px par
-        # cycle (16 périodes pile) → coïncidence au pixel près à chaque
-        # boucle, aux couleurs de la version précédente.
-        '[data-testid="stDialog"] .actor-comet{'
-        "position:absolute;left:0;right:0;top:var(--msl-comet-top,-67px);height:var(--msl-comet-h,148px);"
-        "z-index:-1;pointer-events:none;"
-        "background-image:repeating-linear-gradient(115deg,"
-        "rgba(0,163,146,.34) 0 12.2352px,"
-        "rgba(0,163,146,.05) 12.2352px 32.6271px);"
-        "-webkit-mask-image:linear-gradient(180deg,rgba(0,0,0,1) 0%,rgba(0,0,0,0) 100%);"
-        "mask-image:linear-gradient(180deg,rgba(0,0,0,1) 0%,rgba(0,0,0,0) 100%);"
-        "animation:mslCometSlide 26s linear infinite;}"
-        "@keyframes mslCometSlide{from{background-position:0 0;}to{background-position:576px 0;}}"
         # V189 — séparation compacte des paragraphes de la bio.
         '[data-testid="stDialog"] .actor-bio br.bio-sep{'
         "display:block;content:\"\";margin:.3rem 0 0;}"
-        # V189 — HALO « CLEAR GLASS » NETTEMENT VISIBLE (retour : « dans
-        # ce cas pourquoi ne pas l'avoir mis en place ? je ne le vois
-        # pas ») : reflet vitreux blanc RENFORCÉ + plus étendu.
+        # V190 — HALO DE LUMIÈRE au coin HAUT-GAUCHE, HYPER VISIBLE
+        # (retour : « est-ce possible de le faire partir du coin en haut
+        # à gauche de manière hyper visible ? comme un halo de
+        # lumière ? ») : double halo radial ancré pile au coin (0% 0%).
         '[data-testid="stDialog"] .actor-head::after{'
-        "content:\"\";position:absolute;top:0;left:0;width:78%;height:72%;"
-        "background:radial-gradient(ellipse 80% 90% at 12% 8%,"
-        "rgba(255,255,255,.28),rgba(255,255,255,.09) 46%,rgba(255,255,255,0) 72%);"
+        "content:\"\";position:absolute;top:0;left:0;width:88%;height:82%;"
+        "background:radial-gradient(circle 230px at 0% 0%,"
+        "rgba(255,255,255,.55),rgba(255,255,255,.15) 40%,rgba(255,255,255,0) 64%),"
+        "radial-gradient(ellipse 72% 62% at 0% 0%,"
+        "rgba(255,255,255,.20),rgba(255,255,255,0) 58%);"
         "border-radius:14px 0 0 0;pointer-events:none;}"
         '[data-testid="stDialog"] .actor-name{font-size:1.45rem!important;letter-spacing:.01em;}'
         # V186 — BIO EN ENCADRÉ (retour : « noir carbone, légèrement
@@ -7347,8 +7318,8 @@ def _actor_dialog_chrome_css() -> str:
         # de paragraphe est devenue moche » : centrée à 50 % d'une bio
         # désormais haute, elle tombait au milieu de l'encadré).
         '[data-testid="stDialog"] .actor-bio::before{'
-        "content:\"❝\";position:absolute;left:.55rem;top:.55rem;"
-        "color:var(--am-yellow);font-size:1.35rem;font-weight:900;line-height:1;"
+        "content:\"❝\";position:absolute;left:.5rem;top:.42rem;"
+        "color:var(--am-yellow);font-size:1.62rem;font-weight:900;line-height:1;"
         "text-shadow:0 0 12px rgba(255,225,0,.35);}"        # V187 — SEGMENTS MODERNES (retour : « un peu plus moderne ») :
         # un RAIL CREUX (fond sombre encastré, ombre interne) dans lequel
         # glissent des PASTILLES ; seule la sélection est pleine
@@ -7367,7 +7338,7 @@ def _actor_dialog_chrome_css() -> str:
         "box-shadow:inset 0 2px 6px rgba(0,0,0,.35)!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label{'
         "background:transparent!important;border:none!important;"
-        "border-radius:996px!important;padding:.18rem .72rem!important;margin:0!important;"
+        "border-radius:996px!important;padding:.18rem .72rem!important;margin:-4px 0!important;"
         "display:flex!important;align-items:center!important;justify-content:center!important;"
         "box-sizing:border-box!important;min-height:40px!important;"
         "color:var(--am-text-muted)!important;font-size:.73rem!important;font-weight:700!important;"
@@ -7728,17 +7699,10 @@ def _render_actor_detail_body(person_id: int, person_kind: str = "acteur") -> No
     st.markdown(_actor_dialog_chrome_css(), unsafe_allow_html=True)
     # V187 — le RUBAN « comète » défilant vit AU-DESSUS de l'en-tête
     # (retour utilisateur) ; l'en-tête lui-même revient comme avant.
-    # V189 — LA COMÈTE VIT DERRIÈRE L'EN-TÊTE (retour : « remets mon
-    # en-tête comme la version précédente ; je veux une comète VERT
-    # ASTON qui commence à fleur de la fiche tout en haut, en dégradé
-    # transparent jusqu'au bas de l'en-tête, mais TOUJOURS en
-    # arrière-plan ») : l'en-tête revient À L'IDENTIQUE de la V187 ; la
-    # comète est posée DANS LE MÊME bloc markdown, en couche z-index:-1
-    # — le bloc (position:relative) fait exactement la hauteur de
-    # l'en-tête, la comète est remontée à fleur du haut de la fiche et
-    # passe derrière l'en-tête ET les sections, devant le fond du dialog.
+    # V190 — PLUS DE COMÈTE (retour : « annule tout ce que tu as fait
+    # concernant la comète dans la fiche acteur, ça ne va pas, on va
+    # laisser sans comète ») : l'en-tête reste à l'identique de la V187.
     st.markdown(
-        f'<div class="actor-comet"></div>'
         f'<div class="actor-head">{head_photo}<div style="min-width:0;">'
         f'<p class="actor-name">{escape(str(person.get("name") or fallback_name or "Fiche personne"))}</p>'
         f'<p class="actor-meta">{escape(dept)} · {total_career} titre(s) · '
