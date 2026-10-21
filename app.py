@@ -2340,6 +2340,20 @@ st.markdown(
        Saisons/Similaires, et le bandeau a le même padding que les
        autres bandeaux → écart uniforme partout. Le GSM (validé) reste
        inchangé : spacer masqué + padding .95rem. */
+    /* V191 — DISTRIBUTION ADAPTATIVE (retour : « l'écart entre le bas
+       du synopsis et le début de la distribution est vraiment énorme —
+       ou le problème vient que tu commences distribution juste après
+       le bas du poster ») : EXACTEMENT ça — le bloc markdown fait la
+       hauteur du POSTER (plus haut que le texte quand le synopsis est
+       court). Le composant invisible de tête de fiche MESURE le
+       dépassement du poster sous le texte (--msl-cast-lift, remesuré
+       après chargement de l'affiche) et le conteneur du titre remonte
+       d'autant : la Distribution démarre sous le SYNOPTIQUE, avec
+       l'écart standard. Sur GSM (layout empilé), le dépassement est
+       nul → rien ne bouge. */
+    [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(> .cinema-strip-head--dist) {
+        margin-top: calc(-1 * var(--msl-cast-lift, 0px)) !important;
+    }
     /* V187 — SAISONS alignées sur la colonne d'infos (leur place
        d'origine, à droite du poster) : le wrap réutilise les bases du
        pied (marge 14 % + 14 px), remises à 0 sur GSM. */
@@ -5815,6 +5829,21 @@ def _msl_fiche_scrolltop_component(marker: str) -> None:
             "dlg.classList.remove('msl-fiche-in');"
             "void dlg.offsetWidth;"
             "dlg.classList.add('msl-fiche-in');"
+            "var liftCast=function(){try{"
+            "var lay=dlg.querySelector('.cinema-layout');"
+            "var titre=dlg.querySelector('.cinema-strip-head--dist');"
+            "if(!lay||!titre){return;}"
+            "var syns=lay.querySelectorAll('p.cinema-synopsis');"
+            "if(!syns.length){return;}"
+            "var syn=syns[syns.length-1];"
+            "var cible=17;"
+            "var actuel=Math.round(titre.getBoundingClientRect().top-syn.getBoundingClientRect().bottom);"
+            "var cur=parseInt(dlg.style.getPropertyValue('--msl-cast-lift')||'0',10)||0;"
+            "var nouv=Math.max(0,cur+(actuel-cible));"
+            "if(nouv!==cur){dlg.style.setProperty('--msl-cast-lift',nouv+'px');}"
+            "}catch(e){}};"
+            "liftCast();"
+            "setInterval(liftCast,800);"
             "dlg.setAttribute('data-msl-scrolltop-run',String(Date.now()));"
             "}catch(e){}})();"
             "</script><!-- msl-fiche-scrolltop " + str(marker) + " -->",
@@ -6524,7 +6553,8 @@ def _render_cinema_detail_body(row: dict) -> None:
                             f'<div class="ep-cells">{"".join(cells)}</div></div>'
                         )
                 seasons_html = (
-                    f'<p class="cinema-section-title">Saisons & notes des épisodes</p>'
+                    f'<p class="cinema-section-title cinema-strip-title" '
+                    f'style="color:rgb({a2r},{a2g},{a2b}) !important;">Saisons &amp; notes des épisodes</p>'
                     f'<div class="season-strip">{"".join(season_cards)}</div>'
                     f'<div class="ep-heatmap">{"".join(heat_rows)}</div>'
                 )
@@ -6706,7 +6736,7 @@ def _render_cinema_detail_body(row: dict) -> None:
     # JUSTE après le synopsis, AVANT les saisons (ordre restauré).
     if cast_clickable:
         st.markdown(
-            '<div class="cinema-strip-head">'
+            '<div class="cinema-strip-head cinema-strip-head--dist">'
             '<p class="cinema-section-title cinema-strip-title">Distribution</p></div>',
             unsafe_allow_html=True,
         )
@@ -7276,30 +7306,56 @@ def _actor_dialog_chrome_css() -> str:
         "z-index:2000!important;top:10px!important;right:10px!important;"
         "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
-        # V190 — L'EN-TÊTE SANS COMÈTE (retour : « annule tout ce que
-        # tu as fait concernant la comète, on va laisser sans comète ») :
-        # l'en-tête reste à l'identique de la V187.
+        # V191 — EN-TÊTE « VERRE FUTURISTE » (description TRÈS précise
+        # fournie par l'utilisateur) : panneau horizontal vert pétrole
+        # très sombre NON uniforme (#003F3C → #002E2D), coins arrondis
+        # ~18px ; HALO TURQUOISE diffus au coin SUPÉRIEUR GAUCHE (coeur
+        # #00DCD2, transitions douces vers vert canard puis fond — la
+        # signature visuelle) ; BORDURE fine 1-2px à luminosité variable
+        # (lumineuse au coin, discrète ailleurs) ; léger halo externe ;
+        # reflets GÉOMÉTRIQUES diagonaux très fins et secondaires ;
+        # contenu (photo + informations) DEVANT tous les effets.
+        # Pas d'animation permanente.
         '[data-testid="stDialog"] .actor-head{'
-        "position:relative;"
-        "background:linear-gradient(120deg,rgba(0,82,75,.96) 0%,rgba(0,116,104,.86) 52%,rgba(0,163,146,.42) 100%)!important;"
-        "border:1px solid rgba(255,225,0,.16)!important;"
-        "border-radius:14px!important;"
+        "position:relative;isolation:isolate;overflow:hidden;"
+        "background:"
+        "linear-gradient(118deg,rgba(0,86,80,.60) 0%,rgba(0,52,50,.88) 42%,rgba(0,35,34,.95) 100%),"
+        "#003F3C!important;"
+        "border:none!important;"
+        "border-radius:18px!important;"
         "margin:.15rem .6rem .8rem!important;"
-        "box-shadow:inset 0 1px 0 rgba(255,255,255,.05),0 12px 34px rgba(0,0,0,.38)!important;}"
+        "box-shadow:0 12px 34px rgba(0,0,0,.38),0 0 16px rgba(0,175,168,.10)!important;}"
+        # V191 — HALO TURQUOISE interne (coeur rgba(0,240,220,.30) au
+        # coin 0% 0% → vert canard → fond) + 3 lignes diagonales très
+        # fines (reflets de verre, secondaires, jamais au-dessus du
+        # texte).
+        '[data-testid="stDialog"] .actor-head::before{'
+        "content:\"\";position:absolute;inset:0;border-radius:inherit;"
+        "pointer-events:none;z-index:0;"
+        "background:"
+        "linear-gradient(115deg,transparent 21%,rgba(0,175,168,.05) 21.4%,transparent 21.8%),"
+        "linear-gradient(115deg,transparent 56%,rgba(0,220,210,.07) 56.4%,transparent 56.8%),"
+        "linear-gradient(67deg,transparent 79%,rgba(0,175,168,.04) 79.4%,transparent 79.8%),"
+        "radial-gradient(ellipse at 0% 0%,"
+        "rgba(0,240,220,.30) 0%,rgba(0,190,175,.16) 20%,"
+        "rgba(0,100,95,.06) 42%,rgba(0,0,0,0) 65%);}"
+        # V191 — BORDURE FINE DÉGRADÉE (technique masque) : turquoise
+        # lumineux au coin haut-gauche, #168A80 translucide ailleurs.
+        '[data-testid="stDialog"] .actor-head::after{'
+        "content:\"\";position:absolute;inset:0;border-radius:inherit;"
+        "pointer-events:none;z-index:2;padding:1.5px;"
+        "background:linear-gradient(135deg,rgba(0,220,210,.80) 0%,"
+        "rgba(22,138,128,.34) 38%,rgba(22,138,128,.14) 100%);"
+        "-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);"
+        "-webkit-mask-composite:xor;"
+        "mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);"
+        "mask-composite:exclude;}"
+        # V191 — LA PHOTO ET LES INFOS PASSENT DEVANT TOUS LES EFFETS.
+        '[data-testid="stDialog"] .actor-head>*{'
+        "position:relative;z-index:3;}"
         # V189 — séparation compacte des paragraphes de la bio.
         '[data-testid="stDialog"] .actor-bio br.bio-sep{'
         "display:block;content:\"\";margin:.3rem 0 0;}"
-        # V190 — HALO DE LUMIÈRE au coin HAUT-GAUCHE, HYPER VISIBLE
-        # (retour : « est-ce possible de le faire partir du coin en haut
-        # à gauche de manière hyper visible ? comme un halo de
-        # lumière ? ») : double halo radial ancré pile au coin (0% 0%).
-        '[data-testid="stDialog"] .actor-head::after{'
-        "content:\"\";position:absolute;top:0;left:0;width:88%;height:82%;"
-        "background:radial-gradient(circle 230px at 0% 0%,"
-        "rgba(255,255,255,.55),rgba(255,255,255,.15) 40%,rgba(255,255,255,0) 64%),"
-        "radial-gradient(ellipse 72% 62% at 0% 0%,"
-        "rgba(255,255,255,.20),rgba(255,255,255,0) 58%);"
-        "border-radius:14px 0 0 0;pointer-events:none;}"
         '[data-testid="stDialog"] .actor-name{font-size:1.45rem!important;letter-spacing:.01em;}'
         # V186 — BIO EN ENCADRÉ (retour : « noir carbone, légèrement
         # transparent, icône de citation en jaune gras épais et
@@ -7319,7 +7375,7 @@ def _actor_dialog_chrome_css() -> str:
         # désormais haute, elle tombait au milieu de l'encadré).
         '[data-testid="stDialog"] .actor-bio::before{'
         "content:\"❝\";position:absolute;left:.5rem;top:.42rem;"
-        "color:var(--am-yellow);font-size:1.62rem;font-weight:900;line-height:1;"
+        "color:var(--am-yellow);font-size:1.9rem;font-weight:900;line-height:1;"
         "text-shadow:0 0 12px rgba(255,225,0,.35);}"        # V187 — SEGMENTS MODERNES (retour : « un peu plus moderne ») :
         # un RAIL CREUX (fond sombre encastré, ombre interne) dans lequel
         # glissent des PASTILLES ; seule la sélection est pleine
@@ -7327,20 +7383,27 @@ def _actor_dialog_chrome_css() -> str:
         # douce, compteurs en opacité réduite.
         '[data-testid="stDialog"] div[role="radiogroup"]{'
         "margin:.05rem 0 .35rem;display:flex;flex-wrap:wrap;gap:3px!important;"
-        # V188 — PASTILLE PLEINE HAUTEUR (retour : « agrandis la pastille,
-        # qu'elle ait la même hauteur que le rail creux, pour qu'on ait
-        # l'impression qu'elle le remplit ») : les labels S'ÉTIRENT sur
-        # toute la hauteur intérieure du rail (padding 3px excepté).
-        "align-items:stretch!important;"
+        # V191 — RAIL 38px / PASTILLE 40px (retour : « je veux le rail en
+        # 38px et la pastille en 40px — plus de fin liseré quand le bouton
+        # est actif ») : hauteur du rail FORCÉE à 38px, labels à 40px
+        # centrés → la pastille déborde symétriquement de 1px et COUVRE
+        # le liseré (l'inset shadow du rail) sur son passage.
+        "align-items:center!important;"
         "background:rgba(0,0,0,.30)!important;"
-        "border:1px solid rgba(255,255,255,.07)!important;"
-        "border-radius:999px!important;padding:3px!important;"
-        "box-shadow:inset 0 2px 6px rgba(0,0,0,.35)!important;}"
+        "border:none!important;"
+        "border-radius:999px!important;height:38px!important;padding:0 3px!important;"
+        "box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),inset 0 2px 6px rgba(0,0,0,.35)!important;}"
+        # V191 — L'INPUT RADIO de baseWeb fait ~36px de haut : c'est LUI
+        # qui étirait les pastilles au-delà du min-height. Réduit à 16px,
+        # le min-height des labels redevient la hauteur qui gouverne.
+        '[data-testid="stDialog"] div[role="radiogroup"] label input{'
+        "width:16px!important;height:16px!important;flex:0 0 16px!important;"
+        "margin:0!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label{'
         "background:transparent!important;border:none!important;"
-        "border-radius:996px!important;padding:.18rem .72rem!important;margin:-4px 0!important;"
+        "border-radius:996px!important;padding:.18rem .72rem!important;margin:0!important;"
         "display:flex!important;align-items:center!important;justify-content:center!important;"
-        "box-sizing:border-box!important;min-height:40px!important;"
+        "box-sizing:border-box!important;height:40px!important;min-height:40px!important;"
         "color:var(--am-text-muted)!important;font-size:.73rem!important;font-weight:700!important;"
         "white-space:nowrap!important;cursor:pointer!important;"
         "transition:background .18s cubic-bezier(.4,0,.2,1),color .18s ease,"
