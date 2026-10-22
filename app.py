@@ -939,7 +939,7 @@ st.markdown(
     }
     .season-card .t { font-size: .72rem; font-weight: 800; color: var(--am-text); margin-top: .3rem; }
     .season-card .d { font-size: .64rem; color: var(--am-text-muted); }
-    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: 1.9rem .4rem .25rem 0; overflow-x: auto; }
+    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: 1.6rem .4rem .25rem 0; overflow-x: auto; }
     .ep-row { display: flex; gap: .45rem; align-items: center; }
     .ep-season { font-size: .64rem; font-weight: 800; color: var(--am-text-muted); width: 24px; flex-shrink: 0; }
     .ep-cells { display: flex; gap: 3px; }
@@ -2352,7 +2352,7 @@ st.markdown(
     /* V187 — SAISONS alignées sur la colonne d'infos (leur place
        d'origine, à droite du poster) : le wrap réutilise les bases du
        pied (marge 14 % + 14 px), remises à 0 sur GSM. */
-    .cinema-seasons-wrap { padding: 0 .95rem; }
+    .cinema-seasons-wrap { padding: 0 .95rem .55rem; }
     .cinema-seasons-wrap > * { margin-left: calc(14% + 14px) !important; }
     .cinema-seasons-wrap .season-strip { margin-left: calc(14% + 14px) !important; }
     @media (max-width: 640px) {
@@ -7298,11 +7298,11 @@ def _actor_dialog_chrome_css() -> str:
         "position:relative;isolation:isolate;overflow:hidden;"
         "background:"
         "linear-gradient(118deg,rgba(0,110,102,.38) 0%,rgba(0,74,70,.52) 48%,rgba(0,56,53,.66) 100%),"
-        "#00524B!important;"
+        "#004C48!important;"
         "border:none!important;"
         "border-radius:18px!important;"
         "margin:.15rem .6rem .8rem!important;"
-        "box-shadow:0 12px 34px rgba(0,0,0,.38),0 0 24px rgba(0,190,178,.30)!important;}"
+        "box-shadow:0 12px 34px rgba(0,0,0,.38),0 0 28px rgba(0,200,185,.38)!important;}"
         # V192 — HALO TURQUOISE interne (coeur rgba(0,240,220,.30) au
         # coin 0% 0% → vert canard → fond) — les 3 lignes diagonales
         # sont retirées (demande explicite).
@@ -7310,15 +7310,15 @@ def _actor_dialog_chrome_css() -> str:
         "content:\"\";position:absolute;inset:0;border-radius:inherit;"
         "pointer-events:none;z-index:0;"
         "background:radial-gradient(ellipse at 0% 0%,"
-        "rgba(0,240,220,.30) 0%,rgba(0,190,175,.16) 20%,"
-        "rgba(0,100,95,.06) 42%,rgba(0,0,0,0) 65%);}"
+        "rgba(0,240,220,.38) 0%,rgba(0,190,175,.20) 22%,"
+        "rgba(0,100,95,.08) 45%,rgba(0,0,0,0) 68%);}"
         # V191 — BORDURE FINE DÉGRADÉE (technique masque) : turquoise
         # lumineux au coin haut-gauche, #168A80 translucide ailleurs.
         '[data-testid="stDialog"] .actor-head::after{'
         "content:\"\";position:absolute;inset:0;border-radius:inherit;"
         "pointer-events:none;z-index:2;padding:1.5px;"
-        "background:linear-gradient(135deg,rgba(0,230,218,.95) 0%,"
-        "rgba(0,190,178,.55) 35%,rgba(22,138,128,.30) 100%);"
+        "background:linear-gradient(135deg,rgb(0,240,228) 0%,"
+        "rgba(0,200,185,.70) 35%,rgba(22,138,128,.38) 100%);"
         "-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);"
         "-webkit-mask-composite:xor;"
         "mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);"
@@ -7364,7 +7364,7 @@ def _actor_dialog_chrome_css() -> str:
         "align-items:center!important;"
         "background:rgba(0,0,0,.30)!important;"
         "border:none!important;"
-        "border-radius:999px!important;height:38px!important;padding:0 3px!important;"
+        "border-radius:999px!important;height:38px!important;padding:0!important;"
         "box-shadow:inset 0 0 0 1px rgba(255,255,255,.07),inset 0 2px 6px rgba(0,0,0,.35)!important;}"
         # V191 — L'INPUT RADIO de baseWeb fait ~36px de haut : c'est LUI
         # qui étirait les pastilles au-delà du min-height. Réduit à 16px,
@@ -7374,9 +7374,9 @@ def _actor_dialog_chrome_css() -> str:
         "margin:0!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label{'
         "background:transparent!important;border:none!important;"
-        "border-radius:996px!important;padding:.18rem .72rem!important;margin:0!important;"
+        "border-radius:996px!important;padding:.18rem .72rem!important;margin:0 -1px!important;"
         "display:flex!important;align-items:center!important;justify-content:center!important;"
-        "box-sizing:border-box!important;height:42px!important;min-height:42px!important;"
+        "box-sizing:border-box!important;height:40px!important;min-height:40px!important;"
         "color:var(--am-text-muted)!important;font-size:.73rem!important;font-weight:700!important;"
         "white-space:nowrap!important;cursor:pointer!important;"
         "transition:background .18s cubic-bezier(.4,0,.2,1),color .18s ease,"
