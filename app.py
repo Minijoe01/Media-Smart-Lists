@@ -939,7 +939,7 @@ st.markdown(
     }
     .season-card .t { font-size: .72rem; font-weight: 800; color: var(--am-text); margin-top: .3rem; }
     .season-card .d { font-size: .64rem; color: var(--am-text-muted); }
-    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: 3.2rem .4rem .25rem 0; overflow-x: auto; }
+    .ep-heatmap { display: flex; flex-direction: column; gap: .28rem; padding: 1.9rem .4rem .25rem 0; overflow-x: auto; }
     .ep-row { display: flex; gap: .45rem; align-items: center; }
     .ep-season { font-size: .64rem; font-weight: 800; color: var(--am-text-muted); width: 24px; flex-shrink: 0; }
     .ep-cells { display: flex; gap: 3px; }
@@ -2340,20 +2340,15 @@ st.markdown(
        Saisons/Similaires, et le bandeau a le même padding que les
        autres bandeaux → écart uniforme partout. Le GSM (validé) reste
        inchangé : spacer masqué + padding .95rem. */
-    /* V191 — DISTRIBUTION ADAPTATIVE (retour : « l'écart entre le bas
-       du synopsis et le début de la distribution est vraiment énorme —
-       ou le problème vient que tu commences distribution juste après
-       le bas du poster ») : EXACTEMENT ça — le bloc markdown fait la
-       hauteur du POSTER (plus haut que le texte quand le synopsis est
-       court). Le composant invisible de tête de fiche MESURE le
-       dépassement du poster sous le texte (--msl-cast-lift, remesuré
-       après chargement de l'affiche) et le conteneur du titre remonte
-       d'autant : la Distribution démarre sous le SYNOPTIQUE, avec
-       l'écart standard. Sur GSM (layout empilé), le dépassement est
-       nul → rien ne bouge. */
-    [data-testid="stDialog"] div[data-testid="stMarkdownContainer"]:has(> .cinema-strip-head--dist) {
-        margin-top: calc(-1 * var(--msl-cast-lift, 0px)) !important;
-    }
+    /* V192 — DISTRIBUTION : LIFT ANNULÉ, REMIS COMME AVANT (retour :
+       « ta solution fait remonter le TITRE mais pas la distribution ni
+       les widgets suivants — l'espace énorme se déplace du titre à la
+       vraie distribution. Au final, remets comme ce qui était avant »).
+       Diagnostic utilisateur confirmé : le vide vient du bloc
+       « Pourquoi ce score ? » présent au-dessus du synopsis dans
+       « Que regarder ? » mais absent des fiches ouvertes ailleurs —
+       sans lui le texte est plus court que le poster. On garde la
+       disposition standard : titre visible, bandeau à écart standard. */
     /* V187 — SAISONS alignées sur la colonne d'infos (leur place
        d'origine, à droite du poster) : le wrap réutilise les bases du
        pied (marge 14 % + 14 px), remises à 0 sur GSM. */
@@ -5829,21 +5824,7 @@ def _msl_fiche_scrolltop_component(marker: str) -> None:
             "dlg.classList.remove('msl-fiche-in');"
             "void dlg.offsetWidth;"
             "dlg.classList.add('msl-fiche-in');"
-            "var liftCast=function(){try{"
-            "var lay=dlg.querySelector('.cinema-layout');"
-            "var titre=dlg.querySelector('.cinema-strip-head--dist');"
-            "if(!lay||!titre){return;}"
-            "var syns=lay.querySelectorAll('p.cinema-synopsis');"
-            "if(!syns.length){return;}"
-            "var syn=syns[syns.length-1];"
-            "var cible=17;"
-            "var actuel=Math.round(titre.getBoundingClientRect().top-syn.getBoundingClientRect().bottom);"
-            "var cur=parseInt(dlg.style.getPropertyValue('--msl-cast-lift')||'0',10)||0;"
-            "var nouv=Math.max(0,cur+(actuel-cible));"
-            "if(nouv!==cur){dlg.style.setProperty('--msl-cast-lift',nouv+'px');}"
-            "}catch(e){}};"
-            "liftCast();"
-            "setInterval(liftCast,800);"
+
             "dlg.setAttribute('data-msl-scrolltop-run',String(Date.now()));"
             "}catch(e){}})();"
             "</script><!-- msl-fiche-scrolltop " + str(marker) + " -->",
@@ -6736,7 +6717,7 @@ def _render_cinema_detail_body(row: dict) -> None:
     # JUSTE après le synopsis, AVANT les saisons (ordre restauré).
     if cast_clickable:
         st.markdown(
-            '<div class="cinema-strip-head cinema-strip-head--dist">'
+            '<div class="cinema-strip-head">'
             '<p class="cinema-section-title cinema-strip-title">Distribution</p></div>',
             unsafe_allow_html=True,
         )
@@ -7306,37 +7287,29 @@ def _actor_dialog_chrome_css() -> str:
         "z-index:2000!important;top:10px!important;right:10px!important;"
         "background:rgba(0,0,0,.55)!important;border-radius:8px!important;"
         "padding:5px!important;}"
-        # V191 — EN-TÊTE « VERRE FUTURISTE » (description TRÈS précise
-        # fournie par l'utilisateur) : panneau horizontal vert pétrole
-        # très sombre NON uniforme (#003F3C → #002E2D), coins arrondis
-        # ~18px ; HALO TURQUOISE diffus au coin SUPÉRIEUR GAUCHE (coeur
-        # #00DCD2, transitions douces vers vert canard puis fond — la
-        # signature visuelle) ; BORDURE fine 1-2px à luminosité variable
-        # (lumineuse au coin, discrète ailleurs) ; léger halo externe ;
-        # reflets GÉOMÉTRIQUES diagonaux très fins et secondaires ;
-        # contenu (photo + informations) DEVANT tous les effets.
-        # Pas d'animation permanente.
+        # V192 — EN-TÊTE « VERRE FUTURISTE » AUX COULEURS ASTON (retour :
+        # « inspire-toi surtout de mes couleurs Aston Martin — je veux
+        # bien un fondu mais moins prononcé ») : base vert foncé Aston
+        # #00524B, voile dégradé DOUX ; HALO TURQUOISE du coin conservé ;
+        # BORDURE ENCORE PLUS LUMINEUSE + glow externe ; les 3 lignes
+        # diagonales sont RETIRÉES (retour : « tu peux enlever ces 3
+        # lignes stp ? ») ; contenu DEVANT tout ; pas d'animation.
         '[data-testid="stDialog"] .actor-head{'
         "position:relative;isolation:isolate;overflow:hidden;"
         "background:"
-        "linear-gradient(118deg,rgba(0,86,80,.60) 0%,rgba(0,52,50,.88) 42%,rgba(0,35,34,.95) 100%),"
-        "#003F3C!important;"
+        "linear-gradient(118deg,rgba(0,110,102,.38) 0%,rgba(0,74,70,.52) 48%,rgba(0,56,53,.66) 100%),"
+        "#00524B!important;"
         "border:none!important;"
         "border-radius:18px!important;"
         "margin:.15rem .6rem .8rem!important;"
-        "box-shadow:0 12px 34px rgba(0,0,0,.38),0 0 16px rgba(0,175,168,.10)!important;}"
-        # V191 — HALO TURQUOISE interne (coeur rgba(0,240,220,.30) au
-        # coin 0% 0% → vert canard → fond) + 3 lignes diagonales très
-        # fines (reflets de verre, secondaires, jamais au-dessus du
-        # texte).
+        "box-shadow:0 12px 34px rgba(0,0,0,.38),0 0 24px rgba(0,190,178,.30)!important;}"
+        # V192 — HALO TURQUOISE interne (coeur rgba(0,240,220,.30) au
+        # coin 0% 0% → vert canard → fond) — les 3 lignes diagonales
+        # sont retirées (demande explicite).
         '[data-testid="stDialog"] .actor-head::before{'
         "content:\"\";position:absolute;inset:0;border-radius:inherit;"
         "pointer-events:none;z-index:0;"
-        "background:"
-        "linear-gradient(115deg,transparent 21%,rgba(0,175,168,.05) 21.4%,transparent 21.8%),"
-        "linear-gradient(115deg,transparent 56%,rgba(0,220,210,.07) 56.4%,transparent 56.8%),"
-        "linear-gradient(67deg,transparent 79%,rgba(0,175,168,.04) 79.4%,transparent 79.8%),"
-        "radial-gradient(ellipse at 0% 0%,"
+        "background:radial-gradient(ellipse at 0% 0%,"
         "rgba(0,240,220,.30) 0%,rgba(0,190,175,.16) 20%,"
         "rgba(0,100,95,.06) 42%,rgba(0,0,0,0) 65%);}"
         # V191 — BORDURE FINE DÉGRADÉE (technique masque) : turquoise
@@ -7344,8 +7317,8 @@ def _actor_dialog_chrome_css() -> str:
         '[data-testid="stDialog"] .actor-head::after{'
         "content:\"\";position:absolute;inset:0;border-radius:inherit;"
         "pointer-events:none;z-index:2;padding:1.5px;"
-        "background:linear-gradient(135deg,rgba(0,220,210,.80) 0%,"
-        "rgba(22,138,128,.34) 38%,rgba(22,138,128,.14) 100%);"
+        "background:linear-gradient(135deg,rgba(0,230,218,.95) 0%,"
+        "rgba(0,190,178,.55) 35%,rgba(22,138,128,.30) 100%);"
         "-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);"
         "-webkit-mask-composite:xor;"
         "mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);"
@@ -7403,7 +7376,7 @@ def _actor_dialog_chrome_css() -> str:
         "background:transparent!important;border:none!important;"
         "border-radius:996px!important;padding:.18rem .72rem!important;margin:0!important;"
         "display:flex!important;align-items:center!important;justify-content:center!important;"
-        "box-sizing:border-box!important;height:40px!important;min-height:40px!important;"
+        "box-sizing:border-box!important;height:42px!important;min-height:42px!important;"
         "color:var(--am-text-muted)!important;font-size:.73rem!important;font-weight:700!important;"
         "white-space:nowrap!important;cursor:pointer!important;"
         "transition:background .18s cubic-bezier(.4,0,.2,1),color .18s ease,"
@@ -7411,7 +7384,7 @@ def _actor_dialog_chrome_css() -> str:
         '[data-testid="stDialog"] div[role="radiogroup"] label:hover{'
         "background:rgba(255,255,255,.06)!important;color:var(--am-text)!important;}"
         '[data-testid="stDialog"] div[role="radiogroup"] label:has(input:checked){'
-        "background:linear-gradient(135deg,rgba(0,163,146,.66),rgba(0,82,75,.88))!important;"
+        "background:linear-gradient(135deg,rgba(0,163,146,.90),rgba(0,82,75,.97))!important;"
         "color:#fff!important;"
         "box-shadow:0 3px 14px rgba(0,163,146,.48),inset 0 1px 0 rgba(255,255,255,.22),"
         "inset 0 0 0 1px rgba(255,255,255,.09)!important;}"
