@@ -37,7 +37,9 @@ Media Smart Lists répond à tout ça, en une analyse.
 | ▶️ **En cours de lecture** | Tes séries en cours : %, temps vu/restant, **prochain épisode SxxEyy**, affiches, liens (Où regarder / TMDB / MDBList). Cartes aérées |
 | 👻 **Progression Fantôme** | Les reprises mises en pause : progression réelle, temps restant, dernière activité — avec **suppression directe** du scrobble fantôme |
 | 🧹 **Nettoyage des listes** | Retire les contenus déjà vus, avec garde-fou intelligent : distinction **ajouté avant le visionnage** (= à retirer) vs **ajouté après** (= tu veux le revoir, on le garde). **Doublons entre listes**, **suppression sécurisée** (aperçu + sauvegarde + confirmation), marquer vu / non-vu / abandonnée |
-| 🎯 **Que regarder ?** | Filtres **Genres / Styles / Presets** (voir le mode d'emploi ci-dessous), score personnel **100 % explicable** (/100 + indice de friction 🚪), pastilles à infobulles, **🎲 2 roulettes**, **🎯 recherche « Hors de mes listes »** sur tout TMDB, **🔖 signets de recherche partageables** |
+| 🎯 **Que regarder ?** | Filtres **Genres / Styles / Presets** (voir le mode d'emploi ci-dessous), score personnel **100 % explicable** (/100 + indice de friction 🚪), pastilles à infobulles, **🎲 2 roulettes**, **🎯 recherche « Hors de mes listes »** sur tout TMDB, **🔖 signets de recherche partageables**, **⚖️ résolveur de dilemme** (l'IA tranche entre tes hésitations) |
+| 🎲 **La Pépite** | L'IA joue les **curateurs** : selon **ton humeur du moment**, elle choisit UN trésor pas encore vu dans tes listes et le défend (pourquoi toi, pourquoi maintenant). Candidats scorés **localement** (top 40), seule leur fiche technique part chez l'IA — **aucune donnée personnelle**. Repli local sans clé |
+| 🎬 **Fiches film & acteur** | Clique n'importe quel contenu ou visage : **fiche cinéma complète** (bannière aux couleurs du film, distribution cliquable, saisons + heatmap des notes, saga / similaires, où le regarder, bande-annonce, 📜 TON HISTOIRE, blocs IA) et **fiche acteur / réalisateur** (en-tête « verre » Aston, filmographie, frise chronologique, note moyenne de tes notés, IA parcours & coulisses) — le détail juste en dessous 👇 |
 | 📅 **Calendrier des sorties** | Les prochaines sorties de TES contenus : films, premières de séries, prochains épisodes — horizons jusqu'à **1 an et demi**, export CSV/ICS |
 | 📊 **Statistiques** | Heatmap façon GitHub, heures par mois, genres, répartition jour/heure/année, ADN cinéphile, studios, marathons, **« Mes contenus notés »** ⭐ (retrouve tes 10/10), évolution des goûts — une seule série de filtres partout |
 | 🎬 **Rendez-vous annuel** | Ton « Wrapped » perso + **image PNG partageable** |
@@ -134,6 +136,43 @@ Et avec **« ➕ Ajouter une découverte à mes listes »**, tu ranges le bon tr
 
 Au premier chargement, l'app affiche tes listes **immédiatement** (données MDBList seules) puis **enrichit en arrière-plan** : genres complets, acteurs, réalisateurs, studios, mots-clés (les styles !), pays, certifications… Sans bloquer l'interface.
 
+## 🎬 Les fiches : ton cinéma, en détail
+
+Clique sur **n'importe quelle affiche ou n'importe quel visage** (distribution, Similaires, Saga, Statistiques, recherche…) : la fiche s'ouvre **sans recharger la page** et tout est cliquable à l'intérieur — fiche d'un film → sa distribution → la fiche d'un acteur → un de ses films → fermeture → **retour exactement où tu étais**.
+
+### 🎥 La fiche film / série
+
+- **Bannière fondue** dans les couleurs propres du film, poster, chips (année · note · durée · statut dans TES listes) ;
+- **Synopsis** + tagline, puis la **Distribution en cercles cliquables** (réalisateur en tête) → la fiche de chaque personne ;
+- **Saisons & notes des épisodes** : affiches par saison + **heatmap des notes d'épisodes** (aux couleurs du film, info-bulles de tes dates de visionnage) ;
+- **Saga** et **Similaires** : bandeaux défilants cliquables (fiche → fiche) ;
+- **Où le regarder** (plateformes FR) et **bande-annonce** intégrée ;
+- **📜 TON HISTOIRE** : tes dates de visionnage, rewatchs, ta note personnelle, ta progression de saga ;
+- **Les blocs IA** — précalculés, jamais bloquants : 🕰️ *Pourquoi ça compte* (héritage culturel, sans spoiler) · ✨ *L'esprit du film* (3 mots-clés d'ambiance + humeur de visionnage) · 💡 *L'info des coulisses* (anecdotes de tournage) · 🧬 *Même esprit* (recommandations aux couleurs de la fiche, avec note /100 et état de tes listes).
+
+### 🎭 La fiche acteur / réalisateur
+
+- **En-tête « verre futuriste »** aux couleurs Aston Martin : halo turquoise au coin supérieur gauche, bordure fine lumineuse — photo, métier, **N titres · N déjà dans ton historique · note moyenne de tes contenus notés**, âge / dates ;
+- **Bio** encadrée (icône ❝, tous les paragraphes) et lien TMDB ;
+- **Radios globaux** : facette (Acteur / Réal. / **Tout** — union dédupliquée) · type (Films / Séries / Tout) · tri chronologique — avec compteurs ;
+- **Frise chronologique** : tes visionnages classés par **année**, marqueurs avec compte de vus, ascenseur fin sur PC / tactile sur mobile ;
+- **Filmographie** complète en code couleur (✅ vu · ▶️ en cours · 🚫 abandonnée · 📂 en liste · 🌐 à découvrir) ;
+- **IA** : *Son parcours* (le rôle qui a tout changé) et *L'info des coulisses* (anecdotes sans spoiler) ;
+- **Navigation miroir** : fiche acteur → un film → fermeture → retour sur la fiche de l'acteur.
+
+## 🤖 L'IA, seulement quand elle sert
+
+L'app reste **100 % utilisable sans clé IA** (replis locaux partout). Avec une clé (Gemini, ou Groq pour la vitesse) :
+
+| Où | Ce que fait l'IA | Ce qui part chez elle |
+|---|---|---|
+| 🎲 **La Pépite** | **Curateur** : choisit et défend UN trésor de tes listes selon ton humeur | La fiche technique du top 40 local (titre, genres, durée, note) — **aucune donnée personnelle** |
+| 🎯 **Que regarder ?** | **⚖️ Résolveur de dilemme** : tu hésites entre 2-3 contenus ? L'IA tranche et explique | Les fiches techniques des hésitants |
+| 🎬 **Fiche film** | Pourquoi ça compte · L'esprit du film · Info des coulisses · Même esprit | Titre, année, genres, note — rien de plus |
+| 🎭 **Fiche acteur** | Son parcours · Info des coulisses | Nom + filmographie technique |
+
+Tous les blocs IA sont **précalculés en arrière-plan** : les fiches restent **instantanées** (radios, clics, navigation répondent pendant que l'IA prépare), le contenu arrive en silence quand il est prêt.
+
 ## ⚡ Pourquoi c'est rapide
 
 - **Cache persistant (1 h)** : données chargées une fois, rechargées depuis le cache au F5 — 0 appel API ;
@@ -150,6 +189,11 @@ Au premier chargement, l'app affiche tes listes **immédiatement** (données MDB
 <p align="center"><img src="docs/Que_regarder.png" alt="Que regarder ?" width="820"></p>
 <p align="center"><img src="docs/Statistiques1.png" alt="Vos statistiques" width="820"></p>
 <p align="center"><img src="docs/Statistiques2.png" alt="Vos statistiques" width="820"></p>
+
+<!-- ── Nouvelles captures : dépose tes fichiers dans le dossier docs/ du repo, sous ces noms exacts ── -->
+<p align="center"><img src="docs/La_pepite.png" alt="La Pépite — l'IA défend un trésor de tes listes selon ton humeur" width="820"></p>
+<p align="center"><img src="docs/Fiche_film.png" alt="Fiche film — bannière, distribution cliquable, saisons & heatmap, TON HISTOIRE, blocs IA" width="820"></p>
+<p align="center"><img src="docs/Fiche_acteur.png" alt="Fiche acteur — en-tête verre Aston, frise chronologique, filmographie, note moyenne" width="820"></p>
 
 ## 🚀 Utiliser l'app
 

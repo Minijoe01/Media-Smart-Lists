@@ -1,6 +1,6 @@
 # Media Smart Lists — TODO actif
 
-> Dernière mise à jour : 17 octobre 2026 · Dernière version déployée : V174.
+> Dernière mise à jour : 21 octobre 2026 · Dernière version déployée : V193.
 > Dépôt : https://github.com/Minijoe01/Media-Smart-Lists
 > Application : https://media-smart-lists.streamlit.app
 > Ancienne application (référence) : https://github.com/Minijoe01/Trakt-Smart-Lists
@@ -1454,6 +1454,846 @@ de l'état V51 existe : `BACKUP-Media-Smart-Lists-V51-avant-skin.zip`
       juste après l'ouverture ne ferme plus la fiche ; après fermeture
       manuelle, un rerun ne la rouvre pas.
 - [x] Banc : 18/18 + 3/3 (persistance testée séparément) + 23/23 tests.
+
+### Fait en V175 (retours du 17/10 — calque cliquable, éco IA, tuiles)
+- [x] 🖱️ TUILES « QUE REGARDER » ENTIÈREMENT CLIQUABLES (retour : « pourquoi
+      ne pas utiliser le principe du bouton transparent depuis la tuile
+      Que regarder, afin d'ouvrir la fiche ? Cela permettrait de supprimer
+      le bouton Voir la fiche ») : le bouton devient un CALQUE TRANSPARENT
+      couvrant toute la tuile — cliquer n'importe où ouvre la fiche (sans
+      rechargement ni nouvel onglet). Pastilles (info-bulles), liens
+      TMDB/MDBL/JustWatch et « Pourquoi ce score ? » restent actifs
+      AU-DESSUS du calque. Prouvé au banc : couverture exacte (0 px
+      d'écart), clic au centre ET au coin, info-bulles intactes.
+- [x] 🎬 FICHE DEPUIS UNE FICHE SANS NOUVEL ONGLET (retour : « je perds
+      tout juste en cliquant sur un poster », appli installée) : cause
+      racine PROUVÉE au banc de sonde — Streamlit FORCE target="_blank"
+      sur toutes les ancres du markdown, même internes (?msl_fiche).
+      Fini les liens sur les posters : SIMILAIRES + SAGA deviennent des
+      GRILLES (4 par ligne, tout visible d'un coup, PC comme GSM) où
+      chaque carte est un bouton transparent → la fiche du contenu
+      REMPLACE celle du dialog ouvert (le corps du dialog relit la row
+      en session à chaque rerun de fragment) : instantané, session
+      intacte, zéro onglet. Bonus : le bouton « 🎬 Ouvrir la fiche » du
+      pied disparaît (la carte entière est le bouton). Les liens
+      ?msl_fiche déjà partagés continuent de fonctionner (banc ✓).
+- [x] 🌍 ÉCO IA (retour : « est-ce que cela provoque des appels IA/token
+      supplémentaires ? Important de penser à la planète et la
+      consommation d'eau ») : vérité d'avant V175 — le nonce posé à
+      chaque ouverture de fiche invalidait le précalcul des 4 canaux
+      « contenu » → POURQUOI ÇA COMPTE / L'ESPRIT / MÊME ESPRIT / SON
+      PARCOURS étaient re-générés à CHAQUE nouvelle session pour chaque
+      œuvre. V175 : ces 4 canaux passent par un cache 30 jours (générés
+      UNE fois par œuvre, partagés entre sessions et appareils) ; SEULE
+      l'INFO DES COULISSES reste régénérée à chaque ouverture (ta demande
+      V152 : anecdote nouvelle à chaque fiche). « Une autre… » passe à
+      la variante suivante (chaque variante est aussi mémorisée).
+      Prouvé au banc : 2e session = 0 appel IA pour ces canaux (−75 %
+      d'appels par œuvre et par session).
+- [x] 🔄 MÊME ESPRIT au format EXACT des tuiles « Que regarder ? » (retour :
+      « qu'elles ressemblent encore plus à mes tuiles, sauf la couleur ») :
+      même structure (poster, tête de ligne + pastilles ⭐ note/année,
+      chip d'état, lien TMDB, barre de progression, « Pourquoi ce
+      contenu ? » déroulant, colonne note à droite) — couleurs d'ACCENT
+      de la fiche. La note affichée est étiquetée « note TMDB » (jamais
+      confondue avec ton score personnel). Tuiles cliquables (fiche dans
+      le dialog, comme Similaires/Saga).
+- [x] 🖱️ SOULÈVEMENT au survol corrigé : la carte ne bouge plus SEULE —
+      c'est le BLOC ENTIER (carte + calque + pastilles) qui se soulève
+      d'un tenant. Au banc, le translateY de la carte faisait glisser
+      « Pourquoi ce score ? » de 2 px sous le pointeur entre l'appui et
+      le relâchement → le déroulé ne s'activait pas toujours.
+- [x] 📏 BOUTON « UNE AUTRE ANECDOTE » : +2 px de hauteur (retour fiche
+      acteur : « légèrement tronqué en bas, il manque 1-2 pixel ») —
+      mesuré au banc : 26 px, aucun rognage, fiche film ET fiche acteur.
+- [x] Banc : 22/22 (calque exact, clics centre/coin, info-bulles, grilles
+      Similaires/Saga, tuiles MÊME ESPRIT + accent, navigation dans le
+      dialog sans onglet, éco sur 2 sessions, anecdote non tronquée,
+      lien partagé, saga × similaires sans collision de clés,
+      non-régressions Fantôme/personnes/BR2049).
+
+### Fait en V176 (retours du 17/10 — bandeaux, haut de fiche, cadre, acteur)
+- [x] 🎞️ SIMILAIRES/SAGA : RETOUR AU BANDEAU DÉFILANT (retour : « j'adorais
+      la disposition, la possibilité de scroller vers la droite ») — les
+      posters sont de nouveau côte à côte, même écart qu'avant (colonnes
+      de 84 px, gap 8 px), ET chaque carte reste un bouton transparent
+      (fiche dans la fenêtre, sans nouvel onglet). La rangée de colonnes
+      défile en CSS, les cartes ne s'écrasent jamais, PC comme GSM.
+- [x] ⬆️ Fiche ouverte depuis une fiche : elle démarre EN HAUT de la
+      fenêtre (retour : « celle-ci garde la position de la précédente »).
+      Un rerun de fragment conserve la position de défilement → on passe
+      par une ré-ouverture complète (dialog NEUF, protégé par le mode
+      heartbeat V174 contre les reruns automatiques). Mesuré au banc :
+      scrollTop = 7 px après navigation depuis une fiche déscendue.
+- [x] 🖼️ MÊME ESPRIT : CADRE UNI (retour : « entre la tête, les 3 tuiles
+      puis le bouton, j'ai l'impression de sortir de MÊME ESPRIT, le
+      cadre est comme cassé ») : tête + tuiles + bouton vivent dans UNE
+      SEULE boîte bordée d'accent (même habillage que les autres blocs
+      IA). + CHIPS COMPLÈTES comme les tuiles « Que regarder » (retour :
+      « ajoute les genres, studios, acteur, réal, saga ») : 🎭 genres ·
+      🏢 studios · 👥 acteurs · 🎬 réal · 🔗 saga + pilule de tête
+      (durée du film ou 📺 saisons/épisodes). Enrichissement via TMDB
+      (déjà en cache 30 j) — ZÉRO appel IA ajouté (prouvé au banc).
+- [x] 🖱️ TUILES CLIQUABLES PARTOUT (retour : « reproduis la même chose
+      partout où j'ai des tuiles ») : En cours de visionnage, Séries
+      abandonnées, Progression Fantôme, Calendrier des sorties — même
+      calque transparent, les boutons « Voir la fiche » deviennent
+      invisibles (la tuile entière ouvre la fiche).
+- [x] 💎 PÉPITE CORRIGÉE (retour : la 2e proposition n'apparaissait pas +
+      le « pourquoi » affichait du JSON brut) : cause réelle = réponse
+      Groq légèrement abîmée (accolade d'ouverture perdue + type « Séri »
+      au lieu de « Série » → The Haunting of Hill House cherchée comme un
+      film). Correctifs : récupération de JSON robuste (fences, accolades
+      perdues) + normalisation du type. Testé au banc avec la VRAIE
+      réponse de l'utilisateur : les DEUX tuiles reviennent.
+- [x] 👤 FICHE ACTEUR : filmographie en BANDEAUX de posters cliquables
+      (retour : « une vue poster comme avant, avec le nom du contenu en
+      dessous, l'année, la pastille, ET le nom du personnage joué ») —
+      chaque carte : poster, titre, personnage joué (italique), année,
+      pastille (✅ Vu / 📂 liste / 📌 Watchlist / 🌐 À découvrir).
+      Le clic ouvre la FICHE FILM ; FERMÉE, la FICHE ACTEUR REVIENT
+      (retour : « fermée cette fiche film pourrait permettre de retrouver
+      la fiche acteur du dessous »). Découverte au banc : fermer un
+      dialog ne déclenche AUCUNE rerun dans Streamlit → utilisation du
+      callback on_dismiss de st.dialog (pose un drapeau + rerun) : la
+      fermeture éteint proprement le mode heartbeat ET rouvre la fiche
+      acteur instantanément.
+- [x] Banc : 22/22 (parser avec la vraie réponse abîmée, calque, bandeaux
+      3+4 colonnes scrollables, scrollTop en haut, cadre uni + chips,
+      filmo acteur + personnage + retour acteur, éco 2 sessions,
+      non-régressions) + 23/23 tests cœur.
+
+### Fait en V177 (retours du 17/10 soir — bugs d'affichage, alignements)
+- [x] 🚨 BUG MAJEUR CORRIGÉ (retour : « des liserés accent partout, même
+      devant la fiche ; le liseré arrive à gauche pour englober toute la
+      fiche ; l'intégration de la bannière est cassée ; la couleur
+      d'accentuation change quand MÊME ESPRIT finit de charger ») : le
+      sélecteur CSS du « cadre uni » MÊME ESPRIT matchait AUSSI le bloc
+      contenant TOUTE la fiche (le dialog enveloppe son contenu dans
+      stLayoutWrapper > stVerticalBlock — prouvé au banc : un bloc de
+      3688 px portait la bordure 4 px + le fond, d'où le liseré
+      englobant, la teinte sur la bannière et « l'accent qui change »).
+      Le sélecteur exige désormais la TÊTE du bloc en enfant direct —
+      unique à la section MÊME ESPRIT. Prouvé : bloc total sans bordure
+      ni fond, cadre présent sur la seule section (371 px).
+- [x] 🎨 TITRES DE SECTION (La saga · Similaires · TON HISTOIRE ·
+      Bande-annonce · Où le regarder) : couleur d'accent RETROUVÉE +
+      ALIGNÉS sur les 1ers titres (Pourquoi ce score/Synopsis/
+      Distribution). Causes : (1) une règle globale `p, li, label
+      {color:var(--am-text)!important}` écrasait même les styles inline →
+      !important ciblés + inline renforcés ; (2) les sections étaient
+      sorties de la colonne d'infos en V176 → un SPACER invisible
+      (14 % + 14 px, mêmes bases que la colonne poster) réaligne tout au
+      pixel (mesuré : tous à 216 px, comme Synopsis, cartes comprises) ;
+      GSM : retour au bord (layout empilé).
+- [x] 🏷️ PASTILLES DES MINI-CARTES NON TRONQUÉES (retour : « les
+      pastilles sont comme tronquées au milieu, comme si le bloc du
+      dessous venait se mettre devant ») : dans les dialogs, Streamlit
+      pose margin-bottom:-16px sur les conteneurs markdown → le conteneur
+      d'une carte mesurait 16 px de MOINS que la carte → le badge du bas
+      débordait et la section suivante (positionnée) le recouvrait.
+      Annulé pour toutes les cartes (sim/alike/people). Prouvé :
+      conteneur = hauteur carte, plus rien devant.
+- [x] 🖼️ MÊME ESPRIT : écart tête→tuile réduit (7 px mesuré), écarts
+      tuile→tuile 2 px, bouton « D'autres suggestions » referme l'encart
+      sur toute sa largeur, ORDRE DES PASTILLES = Que regarder (état en
+      DERNIER, retour : « même ordre que les pastilles de Que regarder »).
+- [x] ⬆️ FICHE SUIVANTE EN HAUT — VRAIMENT (retour : « si je suis en bas
+      d'une fiche, je suis à la même position sur la nouvelle ») :
+      découvertes au banc : un clic dans le dialog ne déclenche qu'un
+      rerun de FRAGMENT (le scroll serait conservé) ; st.rerun() global
+      depuis le fragment FONCTIONNE (micro-test) ; un node réutilisé par
+      React garde son scrollTop. Solution : RENDU VIDE INTERMÉDIAIRE —
+      la fiche neuve s'affiche une fraction de seconde réduite à 2 px →
+      le navigateur RAMÈNE le défilement à zéro par clampage (prouvé au
+      micro-dialog : 800 → 0) → puis la fiche complète, en haut. Le
+      rendu vide rafraîchit le heartbeat (fenêtre 4→6 s : elle expirait
+      en cours de route → fermeture prématurée + faux « retour acteur »).
+- [x] 👤 TUILES PERSONNES CLIQUABLES (retour : « rends les tuiles des
+      acteurs directement cliquables, on enlève le bouton Fiche ») :
+      Statistiques → chaque tuile personne est un bouton transparent
+      (photo, nom, N déjà vus, lien TMDB actif au-dessus du calque).
+- [x] Banc : 19/19 (pas de liseré global, bannière affleurante, titres
+      accent + alignés à ±2 px, pastilles non tronquées, écarts MÊME
+      ESPRIT, ordre pastilles, fiche suivante + retour acteur, people
+      cards, parser, éco, anecdote) + 23/23 tests cœur.
+
+### Fait en V178 (retours du 17/10 nuit — NameError, alignements, 1 ligne)
+- [x] 🚨 NameError PRODUCTION corrigé (retour : erreur au clic sur un
+      poster → « NameError … _dismissed ») : la variable _dismissed était
+      UTILISÉE dans le main sans jamais être définie (le harnais de banc
+      ne teste pas le main de l'app — le banc ne pouvait pas le voir ;
+      ajout d'une garde source au banc). La navigation fiche → fiche
+      fonctionne à nouveau.
+- [x] 🔘 BOUTONS « UNE AUTRE… » réalignés (retour : « décalés par rapport
+      à leur tuile, le bouton commence x pixels trop tôt ») : la marge
+      pleine-largeur du bouton MÊME ESPRIT s'appliquait à TOUS les blocs
+      IA (coulisses/pourquoi/esprit/parcours) → décalage de 7 px. Le
+      sélecteur cible désormais le BLOC DE SECTION (identifié par sa tête
+      en enfant direct). Prouvé : tous les boutons à 17 px = bord de leur
+      bloc ; MÊME ESPRIT seul garde sa fermeture pleine largeur.
+- [x] 👥 TUILES PERSONNES EMPILÉES corrigées (retour : « 2 acteurs
+      sélectionnés qui se soulèvent ensemble, le clic ouvre toujours
+      celui du dessous ») : quand une colonne porte 2 personnes, le
+      calque couvrait la COLONNE entière. Chaque paire carte+bouton vit
+      maintenant dans son PROPRE conteneur. Prouvé au banc (6 personnes/
+      3 colonnes) : clic sur la carte du HAUT → SA fiche (Ryan Gosling),
+      clic sur celle du BAS → SA fiche (Bryan Cranston).
+- [x] 🎬 FICHE ACTEUR : les bandeaux filmo commencent À GAUCHE (retour :
+      « contrairement à la fiche film, les films vus etc. commencent à
+      gauche ») — classe marqueur act-filmo : le spacer 14 % + le padding
+      .95rem de la fiche film sont exclus. Prouvé : 1re carte à 17 px =
+      titre de section à 17 px.
+- [x] 🎞️ BANDEAUX : UNE SEULE LIGNE à nouveau (retour : « tous les
+      contenus apparaissent avec un retour à la ligne, la fiche est très
+      longue — je veux 1 ligne à scroller vers la droite comme avant ») :
+      Streamlit met flex-wrap:wrap par défaut sur ses rangées → nowrap
+      forcé + ascenseur MASQUÉ (retour : « pas besoin de montrer qu'il y
+      a un scroll possible, c'est intuitif »). Prouvé en GSM (390 px) :
+      nowrap, débordement scrollable, hauteur = 1 carte.
+- [x] Banc : 15/15 (NameError, boutons alignés, empilement people,
+      bandeaux acteur à gauche, 1 seule ligne GSM, non-régressions liseré/
+      titres/pastilles/anecdote/éco/retour acteur) + 23/23 tests cœur.
+
+### Fait en V179 (retours du 18/10 matin — scroll, bouton, bande-annonce, pastilles)
+- [x] 🚨 FICHE SUIVANTE EN HAUT — VRAIE SOLUTION (retour : « encore une
+      fois, cela garde la position de l'ancienne fiche film lors de
+      l'ouverture d'une nouvelle fiche film ») : le mécanisme V177 (rendu
+      vide intermédiaire) n'a JAMAIS atteint le navigateur — son delta
+      était ANNULÉ par le st.rerun() lancé dans le même run (prouvé au
+      micro-banc : le marqueur du rendu vide n'apparaît jamais côté
+      client). Nouveau mécanisme CÔTÉ NAVIGATEUR : un composant HTML
+      invisible (height=0) en TÊTE de fiche ; son iframe recharge son
+      script à chaque changement de marqueur (kind:id:nonce) et remet
+      scrollTop=0 sur le DIALOG — c'est lui le vrai scrolleur
+      (position:fixed, overflow-y:auto, mesuré au banc). La page DERRIÈRE
+      garde sa position. Prouvé au banc : 839 px → 0 px avec nouveau
+      marqueur ; « Une autre anecdote » (même fiche) → scroll CONSERVÉ à
+      900 px (l'iframe ne recharge pas). Même composant sur la fiche
+      ACTEUR (marqueur personne).
+- [x] 🔘 BOUTON « D'AUTRES SUGGESTIONS » réaligné (retour : « trop haut et
+      trop court en longueur ») : les marges -0.45rem le décalaient de
+      7 px à GAUCHE des tuiles sans l'élargir + il mordait la dernière
+      tuile de 5 px. Il vit maintenant dans SON PROPRE st.container,
+      EXACTEMENT comme les tuiles → même largeur, même alignement PAR
+      CONSTRUCTION. Prouvé : écarts 0 px gauche/droite, écart vertical
+      +2 px (soudé sans chevaucher), habillage verre/liseré conservé.
+- [x] 🎬 BANDE-ANNONCE PLEINE LARGEUR (retour : « plus grandes qu'en
+      V174, elles sortent de l'écran ») : le pied V177 appliquait le
+      spacer 14 % + 14 px à tous ses enfants alors que l'iframe vidéo
+      fait 100 % de large → débordement à droite. La bande-annonce vit
+      dans son PROPRE bloc sans spacer : elle commence à gauche (alignée
+      sur le poster), occupe toute la largeur de la fiche, et son titre
+      est aligné sur la vidéo (même départ → aucun effet de bug).
+      Prouvé PC : vidéo 32→1248 px dans un dialog de 1280, zéro
+      débordement ; GSM : 358/390 px. Plateformes/liens restent dans le
+      pied aligné sur la colonne d'infos.
+- [x] ⭐ NOTE TMDB EN PASTILLE dans MÊME ESPRIT (retour : « sur GSM,
+      l'affichage de la note dans Que regarder est une pastille —
+      reprends-la, avec info-bulle qu'il s'agit de la note TMDB ») :
+      la pastille ⭐ x.x (même format que Que regarder) porte
+      l'info-bulle « Note communauté TMDB (sur 10) — pas ton score
+      personnel » ; la colonne /100 à droite est retirée ; la barre
+      visualise toujours la note.
+- [x] 🎨 CODE COULEUR COMPLET, PARTOUT (retour : « garder le code couleur
+      vu / dans mes listes / hors de mes listes / en cours / abandonnée
+      dans chaque pastille, partout où c'est possible ») : JAUNE =
+      dans mes listes (📂/📌, nouvelle classe chip-liste), BLEU = hors de
+      tes listes (chip-hors), ORANGE = en cours, ROUGE = abandonnée —
+      désormais présents dans : MÊME ESPRIT (tous les états), bandeaux
+      Similaires/Saga (en cours + abandonnée AJOUTÉS), filmographies
+      acteur (en cours + abandonnée AJOUTÉES — elles restent visibles
+      dans « dans tes listes » avec LEUR badge), tuiles Que regarder
+      (📂 source passée en jaune). Styles prouvés au banc (jaune
+      255,225,0 · bleu 45,156,219 · orange 255,192,105 · rouge 255,154,171).
+- [x] Banc : 18/18 (scroll-top navigation + conservation anecdote, bouton
+      aligné au pixel, bande-annonce sans débordement PC+GSM, pastille
+      note, code couleur, non-régressions people/acteur/1 ligne/NameError/
+      titres/anecdote) + flux retour acteur validé + 23/23 tests cœur.
+
+### Fait en V180 (retours du 18/10 midi — bannière, bouton, zigzag, /100)
+- [x] 🚨 BANNIÈRE PARFAITEMENT INTÉGRÉE (retour : « quelques pixels entre
+      le haut de la fiche et le début de la bannière, je préfère comme
+      avant ») : le composant scroll-top V179 laissait 2 × 16 px de gap
+      flex autour de son conteneur invisible. Il est désormais HORS FLUX
+      (position:absolute, 1×0 px) : il n'occupe AUCUN pixel, la bannière
+      revient à 1 px du haut de la boîte (comme avant), et son script
+      s'exécute toujours (prouvé : fiche suivante toujours en haut +
+      « Une autre anecdote » conserve le scroll).
+- [x] 🔘 BOUTON « D'AUTRES SUGGESTIONS » = PIED DU CADRE (retour : « il
+      prend la taille de la tuile alors qu'il faudrait la taille du BLOC,
+      et il devrait être accolé à la FIN du bloc ») : le bouton s'étend
+      désormais jusqu'aux BORDS INTÉRIEURS du cadre MÊME ESPRIT (bord à
+      bord) et referme le bas du bloc (léger écart de 5 px sous la
+      dernière tuile, padding + bordure du cadre sous le bouton, coins
+      arrondis alignés). Prouvé : écarts 1/2/3 px, largeur 1243/1246.
+      Le sélecteur est scopé par un ~ : les TUILES précèdent l'ancre dans
+      le MÊME bloc — ça n'existe que dans le cadre MÊME ESPRIT (les
+      boutons « Une autre… » des autres sections restent à 17 px,
+      non-régression vérifiée).
+- [x] 🎬 FIN DU ZIGZAG (retour : « la bande-annonce tout à gauche puis le
+      spacer pour Où le regarder, ça fait bizarre ; mets Où le regarder
+      au-dessus ») : « Où le regarder » + liens passent AU-DESSUS de la
+      bande-annonce (tout l'aligné ensemble : Similaires, Saga, Où le
+      regarder à 216 px), puis la bande-annonce PLEINE LARGEUR (32 px).
+      Et 📜 TON HISTOIRE passe TOUT À GAUCHE (32 px, aligné poster/
+      bande-annonce/blocs IA — retour : « je veux vraiment éviter le
+      zigzag »). Prouvé PC et GSM (vidéo et TON HISTOIRE tous deux à
+      32 px).
+- [x] ⭐ COLONNE /100 RESTAURÉE dans MÊME ESPRIT (retour : « j'aimais
+      bien la colonne /100 ») : la pastille ⭐ (info-bulle « Note
+      communauté TMDB (sur 10) — pas ton score personnel ») ET la
+      colonne /100 cohabitent — sur GSM la colonne s'efface (règle du
+      skin), la pastille prend le relais, exactement comme les tuiles
+      « Que regarder ? ».
+- [x] Banc : 19/19 (bannière 1 px, bouton bord à bord, fin du zigzag,
+      /100 + pastille, scroll-top non-régression, anecdote conservée,
+      people, acteur, GSM, code couleur) + 23/23 tests cœur.
+
+### Fait en V181 (retours du 18/10 après-midi — lookup TMDB, bouton, fiche acteur enrichie)
+- [x] 🔎 RECHERCHE TMDB ROBUSTE (retour : « certains films ne remontent
+      pas en tuile, ni en poster » — ex. The Middle, dont la fiche TMDB
+      existe bien : tv/1422) : l'IA propose parfois une ANNÉE erronée, et
+      le filtre d'année TMDB renvoyait zéro résultat. Si la recherche
+      AVEC année ne trouve rien, on RESSAYE SANS l'année (la tuile
+      récupère poster, fiche, note et la VRAIE année TMDB). Prouvé au
+      banc (test unitaire : The Middle, année erronée → 2e appel sans
+      année → trouvée, id 1422). S'applique aussi aux pépites du POP.
+- [x] 🔘 BOUTON « D'AUTRES SUGGESTIONS » : DERNIER pixel de la fiche
+      film (retour : « qu'il soit le dernier élément, sans les quelques
+      pixels vides dessous ») + FIN de la DOUBLE COUCHE de liseré
+      (retour : « une double couche au niveau du liseré devant le
+      bouton ») : le cadre MÊME ESPRIT porte son liseré, le bouton garde
+      une bordure fine comme les boutons « Une autre… ». Prouvé :
+      dBottom 1 px, bord gauche 1 px, bord à bord 1/2 px. (Pas besoin
+      d'inverser les widgets IA — le bouton referme proprement la fiche.)
+- [x] ⚡ PASTILLE FRICTION dans les tuiles MÊME ESPRIT (retour : les 2
+      pastilles de « Que regarder ») : même formule que le moteur (durée
+      courte / peu d'épisodes = facile à commencer), pastille verte à
+      bord jaune + info-bulle. Le score personnel n'existe pas pour une
+      suggestion IA (pas encore dans tes données) — la note TMDB et la
+      friction sont les repères.
+- [x] 🎬 FICHE ACTEUR ENRICHIE (le grand chantier) :
+      • EN-TÊTE DÉGRADÉ Aston (vert foncé → vert clair, liseré discret)
+        — « un beau dégradé respectant mon thème » ;
+      • ÂGE (« 70 ans »), et si décédé : date de décès + âge au décès
+        (« ✝️ décédé le 20/01/1993 à 63 ans ») + lieu de naissance ;
+      • BLOC « 📜 DEPUIS MON HISTOIRE » : radios-pilules « En tant
+        qu'acteur / réalisateur » (si les deux facettes ont des vus) +
+        « 🎬 Films / 📺 Séries / 🗂️ Tout », tri par date de vision
+        DÉCROISSANTE, contenus RÉPARTIS PAR ANNÉES de visionnage
+        (inspiration Trakt / Cinopsys). Les toggles sont des radios
+        horizontaux : le filtre s'applique INSTANTANÉMENT (un rerun
+        global fermerait la fiche — les anciens bandeaux « Films/Séries
+        vus » sont remplacés par ce bloc) ;
+      • INFO-BULLES « Vu le 14/09/2026 » sur les pastilles Vu des cartes
+        filmo (ou « Vu N fois · 1er le … · dernier le … » pour les
+        rewatchs).
+- [x] Banc : 13/13 (lookup, bouton dernier pixel + liseré simple,
+      friction, dégradé + âge + décès, bloc historique + filtres
+      instantanés + année + tooltips, non-régressions bannière/scroll/
+      GSM/boutons) + 23/23 tests cœur.
+
+### Fait en V182 (retours du 18/10 soir — bouton, friction, fond Aston, filtres globaux, frise, info-bulle)
+- [x] 🔘 BOUTON « D'AUTRES SUGGESTIONS » : FOND et BORDURE TRANSPARENTS
+      au repos (retour : « plus sombre que les autres, persuadé qu'il y
+      a un autre contenu en dessous » — le verre du bouton se
+      superposait au verre du cadre = double couche sombre). Au repos le
+      bouton ne peint plus rien ; au survol il s'allume comme les autres
+      (« parfait » selon le retour). Bas de fiche film RESSERRÉ
+      (padding 10 → 2 px — retour : « un tout petit espace vide »).
+      Prouvé : fond rgba(0,0,0,0), bordure transparente, dBottom 1 px.
+- [x] ⚡ PASTILLE FRICTION RETIRÉE des tuiles MÊME ESPRIT (retour :
+      « n'apporte rien d'intéressant et prend de l'espace à l'écran
+      pour rien »).
+- [x] 🎨 FICHE ACTEUR : fond de TOUTE la fiche aux COULEURS ASTON
+      (retour : « le fond semble neutre, je vois mes couleurs
+      uniquement dans l'en-tête ») — dégradé vert Aston (0,82,75) en
+      haut, fondu vers le sombre. Prouvé : backgroundImage du cadre.
+- [x] 🎛️ RADIOS GLOBAUX (retour : « films dans tes listes apparait à la
+      fois si je coche film, série ou tout — ce n'est pas logique ») :
+      les filtres acteur/réalisateur et Films/Séries/Tout s'appliquent
+      désormais à TOUTE la fiche — historique, « dans tes listes » et
+      « À découvrir ». Prouvé : clic Séries → historique (films) ET
+      « Films dans tes listes » disparaissent ; clic Tout → tout revient.
+- [x] 📜 HISTORIQUE sur UNE SEULE LIGNE (retour : « 1 année = 1 ligne me
+      rallonge la fiche d'autant ») : frise chronologique CROISSANTE —
+      premier visionnage à gauche, dernières découvertes à droite (la
+      saga garde son ordre : BTTF1 le 25/12/25 puis BTTF2 le 01/01/26,
+      retour utilisateur). Chaque carte indique « 📅 vu en YYYY ».
+      Prouvé : une seule section, premier badge « Vu le 01/07/2026 »
+      (date la plus ancienne = début de frise).
+- [x] 💬 INFO-BULLE « Vu le … » RÉPARÉE (retour : « j'ai un ? qui
+      apparait ») : le curseur ? venait de cursor:help mais la BULLE
+      CSS était ROGNÉE par le bandeau défilant (overflow-x:auto rogne
+      aussi en Y — même cause que la heatmap V150). Solution : attribut
+      TITLE natif du navigateur (impossible à rogner) en plus du
+      data-tooltip. Prouvé : title « Vu le 01/07/2026 » sur le badge.
+- [x] Banc : 12/12 + 23/23 tests cœur.
+
+### Fait en V183 (retours du 18/10 soir — titre original TMDB, bouton, frise, info-bulle)
+- [x] 🔎 MÊME ESPRIT — RECHERCHE PAR TITRE ORIGINAL (retour : « le
+      principal problème des contenus TMDB non trouvés est que le film
+      est recherché en version française » — ex. « Les 12 Travaux
+      d'Hercule » introuvable, le titre original trouvé) : l'IA fournit
+      désormais le TITRE ORIGINAL de chaque proposition (pop_engine) ;
+      la recherche l'essaie EN PREMIER puis le titre français — le
+      résultat revient toujours avec TITRE et POSTER FRANÇAIS
+      (language=fr-FR). Prouvé au banc : tuile au titre français
+      volontairement inconnu de l'index → résolue via son original.
+- [x] 🔘 BOUTON « D'AUTRES SUGGESTIONS » : DÉLIMITÉ sans assombrir
+      (retour : « il n'y a pas de bouton délimité, sauf en
+      surbrillance ») : un voile BLANC très léger + un filet discret en
+      haut — plus de verre sombre empilé sur celui du cadre.
+- [x] 🎨 FICHE ACTEUR : dégradé Aston à ARRÊTS EN PIXELS (retour : « la
+      fiche grandit ou rapetisse au changement de radio — effet
+      clignotant ») : le haut de la fiche reste IDENTIQUE quelle que
+      soit la hauteur (seul le bas couleur unie s'allonge, invisible) ;
+      + halo radial vert en tête de fiche (esthétique).
+- [x] 📜 FRISE HISTORIQUE : l'année de visionnage affichée UNE SEULE
+      FOIS EN GRAS, avec un SEGMENT coloré sous les contenus de l'année
+      (retour : « plutôt que de répéter les années sous chaque
+      contenu ») + bouton radio ⬆️ Croissant / ⬇️ Décroissant (retour :
+      « mettre un autre bouton radio pour le tri »). Prouvé : 5
+      segments, « 2026 » une fois, inversion exacte au clic.
+- [x] 💬 INFO-BULLE « Vu le … » : la bulle STYLÉE s'affiche enfin —
+     Cause racine (pas le bandeau !) : le badge avait overflow:hidden
+      (ellipsis des longs noms de listes) → sa PROPRE bulle au-dessus
+      de lui était ROGNÉE (prouvé au banc : opacity 1 mais pixels =
+      fond de fiche). Fix : overflow:visible pour les badges à bulle ;
+      title natif retiré (plus de double bulle décalée d'une seconde).
+      Prouvé : 556 pixels de texte + 504 de bord jaune au survol.
+- [x] Banc : 13/13 + 23/23 tests cœur. ATTENTION : pop_engine.py change
+      aussi cette version (champ original dans le prompt MÊME ESPRIT).
+
+### Fait en V184 (retours du 18/10 nuit — bouton, dégradé, rail, info-bulle)
+- [x] 🔘 BOUTON « D'AUTRES SUGGESTIONS » : au SURVOL, exactement les
+      couleurs des autres boutons « Une autre… » (retour : « la couleur
+      n'est pas la même — pourquoi ne pas copier-coller un autre
+      bouton ? ») : c'est fait — les déclarations :hover des autres
+      boutons sont copiées telles quelles, portées par un sélecteur
+      aussi spécifique que ma règle de repos (qui les écrasait).
+      Prouvé : fond accent-soft, texte blanc, bord accent au survol.
+- [x] 🎨 DÉGRADÉ ACTEUR : fondu BEAUCOUP PLUS LENT (retour : « tu passes
+      très vite du vert au noir, le bas de la fiche est totalement
+      noir ») : le vert Aston s'étire sur 2200 px. Prouvé au pixel :
+      (1,57,51) à 1250 px de hauteur — toujours vert profond.
+- [x] 📜 RAIL CONTINU (retour : « un segment continu qui court en
+      dessous et le long des contenus, des traits qui indiquent le début
+      et la fin d'une année, l'année centrée sur son segment, plus
+      neutre ») : une PIÈCE par colonne (elle DÉFILE avec les cartes),
+      la ligne se prolonge dans les interstices → rail continu, traits
+      verticaux aux bornes de chaque année, année centrée sur la colonne
+      du milieu en style neutre (texte doux, pas de jaune gras). FINI
+      le trait jaune-vert sous chaque poster (retour : « de trop, ça
+      fait tache »). Prouvé : 5 pièces/5 colonnes, ticks, année centrée
+      à 0 px près.
+- [x] 💬 INFO-BULLE (retours) : plus de curseur « ? » (cursor:default —
+      le « ? » de Chrome venait de cursor:help), fond OPAQUE
+      rgb(7,19,17) (on voyait la pastille à travers — réglé en battant
+      la règle partagée par la spécificité), et ancrage AU BORD pour
+      les 1ers contenus (la solution heatmap : l'info-bulle part du
+      bord de la colonne vers l'intérieur, plus de rognage à gauche ;
+      idem à droite pour les derniers). Prouvé : left 0px, fond opaque,
+      596 pixels de texte visibles sur la 1re carte.
+- [x] Banc : 9/9 + 23/23 tests cœur.
+
+### Fait en V185 (retours du 19/10 — frise, bulle, CASTING cliquable)
+- [x] 📜 FRISE — MARQUEURS D'ANNÉE (retour : « l'année cachée par la
+      rubrique plus basse, pas centrée, le segment se lève au survol —
+      as-tu une idée qui fasse propre ? ») : FINI le rail sous les
+      cartes. Chaque groupe d'année est PRÉCÉDÉ d'une colonne MARQUEUR —
+      un TRAIT VERTICAL pleine hauteur (la borne de l'année) et l'année
+      centrée dedans, à mi-hauteur des posters. Colonne SÉPARÉE des
+      cartes : jamais levée au survol, jamais recouverte, elle défile
+      AVEC le bandeau. Prouvé : année à 10 px de la mi-hauteur des
+      posters, aucune pièce sous les cartes.
+- [x] 💬 INFO-BULLE : fond OPAQUE BLINDÉ (retour : « le fond est
+      complètement transparent, teste l'info-bulle ») — background avec
+      !important (aucune règle ne peut le ravaler) + ombre qui détache
+      la bulle. Prouvé : rgb(10,26,23) calculé.
+- [x] 🎭 CASTING CLIQUABLE (la variante demandée) : cliquer une personne
+      du casting d'une fiche film → SA fiche acteur ; refermée, la
+      FICHE FILM revient (miroir exact du flux filmographie : acteur →
+      film → retour acteur). Le casting devient un BANDEAU DÉFILANT de
+      cartes cliquables (calque transparent V175, réalisateur en tête),
+      aligné comme les autres bandeaux ; les liens TMDB externes sont
+      remplacés par la fiche intégrée. Mécanisme : drapeau
+      _msl_casting_person + callback on_dismiss sur la fiche acteur +
+      retour via _msl_return_to_fiche (heartbeat rafraîchi, la fiche
+      revient à l'endroit où elle était). Prouvé : clic Denis
+      Villeneuve → sa fiche ; fermeture → la fiche The Fall revient ;
+      puis navigation fiche→fiche toujours en haut.
+- [x] Banc : 10/10 + 23/23 tests cœur. (Leçon ré-confirmée : redémarrer
+      le harnais AVANT chaque banc complet — un harnais épuisé fait
+      échouer des clics qui marchent.)
+
+### Fait en V186 (retours du 19/10 — gros chantier fiche acteur + fixes)
+- [x] 🚨 FIX StreamlitDuplicateElementKey (erreur production) : un
+      réalisateur figurant AUSSI dans le casting générait deux fois la
+      clé castnav_ → DÉDOUBLONNAGE par personne (le réalisateur, en
+      tête, prime) + clé indexée. Prouvé au banc avec un réalisateur
+      volontairement doublé dans le cast : 1 seule carte, 0 exception.
+- [x] 🎛️ RADIOS → SEGMENTS ASSEMBLÉS (« pièces de puzzle », retour avec
+      3 images IA) : pastilles JOINTES en une seule tuile (rayons aux
+      extrémités, gap 0), seule la sélection s'allume, hover léger.
+      + FUSION demandée : facette TOUT (union DÉDUPLIQUÉE — un film
+      réalisé ET interprété = 1 contenu dans « tout ») avec COMPTEURS
+      de contenus vus par segment (Acteur · n / Réal. · n / Tout · n,
+      suivant le type choisi). + UNE SEULE RANGÉE (facette | type |
+      tri) — le tri n'est plus « en plein milieu d'un espace vide ».
+      Prouvé : segments joints, compteurs exacts, TOUT = 2 contenus
+      (pas 3).
+- [x] 📜 MARQUEURS D'ANNÉE : NOMBRE de contenus vus SOUS l'année
+      (« 2026 / 5 vus »), selon le type choisi (retour utilisateur).
+- [x] 💬 INFO-BULLE AU PREMIER PLAN (retour : « les noms des films
+      sont au 1er plan, les info-bulles derrière » — diagnostic
+      utilisateur EXACT) : la carte survolée passe AU-DESSUS de ses
+      voisines (z-60) pendant que sa bulle est ouverte. Prouvé :
+      z-index 60 calculé au survol.
+- [x] ✨ EN-TÊTE ACTEUR : BANDEAU BISEAUTÉ Aston en CSS
+      (repeating-linear-gradient ANIMÉ — défilement lent, vert Aston
+      pas vert lime) + HALO GLASS en haut à gauche (retours).
+- [x] 📖 BIO : encadré NOIR CARBONE légèrement transparent
+      rgba(9,13,12,.66), liseré jaune 3 px, icône de citation ❝
+      jaune grasse et visible (retour utilisateur).
+- [x] ⏳ SPINNER DE CHARGEMENT pendant les appels TMDB de la fiche
+      acteur (retour : « radios déformées 2-3 s le temps des données
+      TMDB ») : le dialog affiche « 🎭 Chargement de la fiche… » au
+      lieu d'un vide. Prouvé : stSpinner visible pendant le chargement
+      (personne lente simulée), puis la fiche.
+- [x] 🎭 CASTING : SURVOL D'ORIGINE restauré (retour : « avant c'était
+      parfait ») : la PHOTO s'anime (soulèvement + halo + liseré jaune)
+      et le NOM passe en blanc — plus de lift de la carte entière.
+- [x] Banc : 12/12 + 23/23 tests cœur.
+
+### Fait en V187 (retours du 19-20/10 — VITESSE, ordre restauré, esthétique)
+- [x] 🚨 FIX NameError production (multi_facets utilisé par la facette
+      TOUT mais supprimé en V182 — le banc ne l'avait pas vu : la frise
+      rend AVANT le crash ; leçon : contrôler les exceptions dans
+      CHAQUE section du banc).
+- [x] ⚡ VITESSE — LE GROS MORCEAU (retour : « je veux de la vitesse —
+      les infos IA sont un nice to have, ça doit se faire
+      silencieusement ») : les 4 sections IA (coulisses, pourquoi,
+      esprit, même esprit, parcours) ne BLOQUENT PLUS le rendu —
+      placeholder discret + fragment auto-pollé (1,5 s) ; dès que le
+      précalcul est prêt : la donnée est posée en session + UN rerun
+      global (garde anti-boucle) → le corps re-rend la section en
+      direct. Les radios et les clics restent INSTANTANÉS pendant tout
+      le chargement. Deux pièges trouvés et corrigés au banc : le rerun
+      du poll devait rafraîchir le heartbeat de la fiche film ET les
+      fiches ouvertes par BOUTON n'avaient pas link_mode (le poll les
+      fermait !) ; la fiche ACTEUR bat désormais aussi le cœur
+      (_msl_actor_open, rouverte par le main < 8 s). Prouvé : fiche
+      interactive pendant l'IA, contenu arrivé, fiche conservée, 0
+      exception.
+- [x] 📽️ ORDRE D'ORIGINE DE LA FICHE FILM RESTAURÉ (retour : « avant
+      j'avais distribution après synopsis, puis la saison, la heatmap
+      puis similaire — reprends la précédente disposition ») : synopsis
+      → Distribution (cliquable) → Saisons + heatmap (alignées sur la
+      colonne d'infos) → Saga → Similaires. Prouvé : positions
+      verticales dans l'ordre exact.
+- [x] 🎛️ SEGMENTS PLUS MODERNES (retour : « un peu plus moderne ») :
+      rail creux encastré + pastilles flottantes, transition douce.
+      DÉFAUTS : Tout / Tout / Croissant (retour : toujours 1 option
+      choisie, « tout » par défaut). Prouvé : Tout coché d'office,
+      rail creux, pastille pleine sans bordure.
+- [x] 📜 ASCENSEUR de la frise sur PC (fin, vert Aston, seulement si
+      débordement) ; GSM : scroll tactile natif. Prouvu :
+      scrollbar-width thin.
+- [x] 💬 INFO-BULLES : fond OPAQUE pour TOUTES les bulles (la règle
+      partagée passait rgba(0,0,0,.95) → on voyait le contenu à
+      travers) + les TUILES passent au premier plan au survol.
+- [x] ✨ RUBAN « comète » AU-DESSUS de l'en-tête (retour : « je le
+      voulais derrière l'entête et au dessus, l'entête comme avant ») :
+      filet défilant Aston au-dessus, l'en-tête revient à son look V185
+      (plus de biseaux ni de halo dedans). Prouvé : ruban animé
+      au-dessus, ::before/::after de l'en-tête vides.
+- [x] 📖 BIO : l'icône ❝ vit dans sa PROPRE colonne (plus de
+      superposition avec le texte — padding-left 2,35rem). Prouvu :
+      37,6px calculés.
+- [x] 🎭 CASTING : le survol FONCTIONNE (retour : « ça reste
+      statique ») — cause : le CALQUE intercepte le pointeur, le :hover
+      de la carte ne se déclençait jamais ; le sélecteur part du
+      bouton survolé (technique V175). Prouvé : photo scale(1.05) +
+      translateY(-3) + halo.
+- [x] Banc : U1-U9 validés (2 en passes ciblées — le harnais dégradé
+      fermait la fiche pendant les longues attentes IA) + 23/23 tests
+      cœur.
+
+### Fait en V188 (retours du 20/10 — fix navigation, comète, esthétique)
+- [x] 🚨 FIX NAVIGATION ACTEUR → FILM (retour : « le clic sur une fiche
+      film depuis une fiche acteur ne donne rien ; il faut quitter la
+      fiche acteur, parfois changer d'onglet ; en quittant le film,
+      la fiche acteur revient alors que je l'avais fermée ») : le cœur
+      V187 de la fiche acteur (mimic < 8 s) passait AVANT la branche
+      fiche film dans le main → il ROUVRAIT l'acteur et le film posé
+      n'était jamais rendu. Désormais la fiche acteur CÈDE LA PLACE :
+      son cœur est éteint au clic (comme son on_dismiss). Le MIROIR
+      V176 est conservé : fermer la fiche film retrouve la fiche
+      acteur. Prouvé : clic film → fiche film ouverte, acteur disparu,
+      fermeture → retour acteur, 0 exception.
+- [x] 🎛️ DÉFAUT DU RADIO TYPE (retour : « film/série/tout semble réglé
+      par défaut sur film, je veux tout ») : comme la facette en V187,
+      la valeur « tout » est posée en session AVANT le premier rendu du
+      widget — sinon l'option 0 (« films ») était prise. Tri : défaut
+      « croissant » posé explicitement. Prouvé : Tout / Tout /
+      Croissant.
+- [x] 🎛️ SEGMENTS : PASTILLE PLEINE HAUTEUR (retour : « agrandis la
+      pastille, qu'elle ait la même hauteur que le rail creux ») :
+      labels étirés sur toute la hauteur intérieure du rail (align-
+      items:stretch + centrage du texte) + polish (liseré hairline,
+      glow, transition 0,18 s). Prouvé : rail 40 px, pastille 32 px =
+      intérieur exact (écart 0).
+- [x] 📜 FRISE : TRAITS D'ANNÉE SOUS LES INFO-BULLES (retour : « il ne
+      reste que les traits entre les années qui passent encore au-
+      dessus de l'info-bulle ») : le marqueur est posé au plan 0 — la
+      carte survolée (z-index 60) repasse devant, bulle comprise.
+- [x] ✨ COMÈTE PLEIN EN-TÊTE (retour : « qu'elle démarre au 1er pixel
+      en haut de la fiche, dégradé vers transparent, 100 % transparent
+      au bas de l'en-tête ; le raccord du biseau doit être parfait ») :
+      plus de ruban séparé — une couche .actor-comet couvre TOUT
+      l'en-tête (masque vertical opaque → transparent), DERRIÈRE le
+      contenu (.actor-head-in). RACCORD PARFAIT : la période du motif
+      vaut 45,2548 px = 64 px/√2 — sa projection horizontale fait
+      EXACTEMENT 64 px et l'animation déplace le fond de 64 px par
+      cycle → le motif coïncide au pixel près à chaque boucle
+      (l'ancien ruban glissait de 544 px = 40,24 périodes → la
+      « petouille »).
+- [x] 🔮 HALO « CLEAR GLASS » en haut à gauche de l'en-tête acteur
+      (retour : « je ne vois pas de halo/clear glass, sais-tu le
+      faire ? ») : reflet vitreux radial blanc doux (::after).
+- [x] 📖 BIO : les 3 PHRASES dans l'encadré (retour : « tu as juste la
+      1ère des 3 phrases ») : st.markdown PARSE le HTML en blocs — un
+      double retour à la ligne FERMAIT le <p> et les phrases suivantes
+      sortaient de l'encadré. Les paragraphes sont joints par <br><br>.
+- [x] 📽️ GAP synopsis → Distribution RESSERRÉ (retour : « un plus gros
+      gap qu'avant ») : le titre vit dans son propre bloc markdown
+      depuis V187 → il cumulait le gap Streamlit inter-blocs + sa
+      marge. Recalé (conteneur -0,15 rem + titre 0,6 rem). Prouvé :
+      23,6 px mesurés (≈ l'écart d'avant).
+- [x] 📱 GSM : CASTING À GAUCHE (retour : « un gros espace entre
+      l'extrême gauche de la fiche et le réalisateur, ce n'est pas
+      acceptable ») : le spacer 14 % (min-width 90 px !) du bandeau
+      n'était pas masqué sur mobile — corrigé : la distribution
+      commence à la marge interne du dialog. Prouvé : 16,8 px du bord.
+- [x] ✨ ANIMATION D'ENTRÉE DES FICHES (idée esthétique) : la fiche
+      apparaît en fondu + léger glissement (0,42 s). Posée par le
+      composant invisible de tête de fiche UNIQUEMENT au changement de
+      son marqueur (nouvelle fiche) — jamais pendant les polls IA
+      (l'iframe ne recharge pas son script). Prouvé : animationstart
+      compté 1× à l'ouverture, toujours 1 après les polls.
+- [x] 🔢 COMPTEURS DE LA FRISE habillés (idée esthétique) : pastille
+      pilule carbone, liseré vert doux, chiffre en blanc gras.
+- [x] Banc : passe A 18/18 + passe B 5/5 (passes ciblées sur harnais
+      frais — le harnais dégradé détache les boutons pendant les
+      re-rendus IA) + 23/23 tests cœur. Deux infidélités du HARNAIS
+      corrigées au passage (le handler de fermeture ne popait pas le
+      cœur acteur ; le mimic n'avait pas le retour-acteur immédiat du
+      vrai main) — l'app réelle était correcte.
+
+### Fait en V189 (retours du 20/10 — comète en arrière-plan, alignements, ordre GSM)
+- [x] ✨ COMÈTE EN ARRIÈRE-PLAN + EN-TÊTE V187 RESTAURÉ (retour : « remets
+      mon en-tête comme la version précédente ; une comète VERT ASTON
+      qui commence à fleur de la fiche tout en haut, en dégradé
+      transparent jusqu'au bas de l'en-tête, mais TOUJOURS en
+      arrière-plan ») : l'en-tête revient À L'IDENTIQUE de la V187 ; la
+      comète (couleurs V187 : vert Aston translucide, biseaux 115°) est
+      une couche z-index:-1 DANS le bloc markdown de l'en-tête — le
+      composant invisible de tête de fiche MESURE sa géométrie
+      (--msl-comet-top / --msl-comet-h) : elle part du 1er pixel du
+      dialog et s'arrête au bas de l'en-tête, passant derrière l'en-tête
+      ET les sections, devant le fond. RACCORD PARFAIT : période
+      32,6271px = 36px×sin(115°) → projection horizontale de 36px PILE,
+      animation de 576px/cycle (16 périodes). Prouvé : comète à 1px du
+      haut, à 2px du bas de l'en-tête, z-index -1.
+- [x] 📽️ GAP synopsis → Distribution ENCORE RESSERRÉ (retour : « encore
+      pire qu'avant ! ») : conteneur -0,55rem + titre sans marge haute +
+      padding du bandeau réduit. Prouvé : 7,9px (≈ le compact d'avant
+      V187).
+- [x] 📱 GSM : CASTING ALIGNÉ SUR LE SYNOPSIS (retour : « je veux que le
+      casting commence au même niveau que le synopsis, tout aligné ») :
+      spacer 14% masqué + padding .95rem. Prouvé : carte 32,2px =
+      synopsis 32,2px, écart 0.
+- [x] 🎛️ PASTILLE 40px (retour : « tu saurais l'augmenter ? 40px par
+      exemple ? ») : min-height 40px. Prouvé : rail 48px, pastille
+      40px, écart 0.
+- [x] 💬 INFO-BULLE au-devant de TOUT (retour : « je vois encore le
+      trait de l'année dans l'info-bulle et du texte derrière ») : la
+      COLONNE de la carte survolée monte au plan 60 (le z-index de la
+      carte seule ne suffisait pas — les conteneurs Streamlit créent
+      leurs propres contextes d'empilement). Prouvé : colonne z=60 au
+      survol + capture pixel : la zone de la bulle s'assombrit de
+      12,4% (bulle opaque rgb(10,26,23) peinte au-dessus). NB :
+      elementFromPoint ignore les pseudo-éléments — preuve par pixel.
+- [x] 📖 BIO : ❝ EN HAUT alignée sur la 1re ligne (retour : « l'icône
+      est devenue moche ») + espace inter-paragraphes RÉDUIT (retour :
+      « le saut de ligne est trop marqué ») : <br class="bio-sep">
+      stylé en bloc, marge 0,3rem (~5px au lieu de ~20px). Prouvé :
+      ❝ top 8,8px, 2 séparateurs display:block.
+- [x] 🔢 TOP ACTEURS GSM : ORDRE CORRIGÉ (retour : « sur GSM il y a des
+      sauts : 12, 11, 12, 10, 11 ») : les colonnes étaient créées UNE
+      fois puis remplies en round-robin (col 1 = items 1, 6, 11…) —
+      sur GSM elles s'empilaient en 1, 6, 11, 2, 7… Désormais UNE
+      RANGÉE de colonnes par ligne : l'ordre est conservé sur PC ET
+      l'empilement mobile lit 1, 2, 3, 4, 5, 6. Prouvé : ordre DOM
+      P1→P6 en PC ET en contexte mobile.
+- [x] 🎭 FICHE ACTEUR VIA CASTING : ROBUSTESSE (retour : « l'encadré
+      d'infos n'apparaît que pour mes acteurs du top 10, pas sur les
+      fiches ouvertes depuis une fiche film ») : cause — un appel TMDB
+      frais (surcharge 429, réseau) faisait ABANDONNER toute la fiche
+      (les top, eux, sont en cache serveur). Désormais : 2 essais
+      espacés + la fiche VIT sans détails TMDB (en-tête au nom du
+      casting + bandeau discret + filmo locale). Prouvé : membre
+      « fetch KO » → fiche avec nom du casting + bandeau, 0 exception.
+- [x] Banc : passe A 19/19 + passe B 6/6 (passes ciblées sur harnais
+      frais) + 23/23 tests cœur.
+
+### Fait en V190 (retours du 20-21/10 — comète annulée, Distribution standard, pastille 40/40)
+- [x] ✨ COMÈTE ANNULÉE (retour : « annule tout ce que tu as fait
+      concernant la comète dans la fiche acteur, ça ne va pas, on va
+      laisser sans comète ») : couche, CSS, keyframes et JS de mesure
+      retirés. L'en-tête acteur reste à l'identique de la V187. Prouvé :
+      plus de .actor-comet, dégradé d'origine présent.
+- [x] 📽️ DISTRIBUTION : RETOUR AUX ÉCARTS STANDARD (retour : « je veux
+      la disposition d'avant avec les fonctionnalités de maintenant —
+      le même écart entre chaque fin et chaque début de widget ») : le
+      titre avait DISPARU (la marge négative V189 le remontait SOUS le
+      bloc du synopsis, et les cercles étaient tronqués au survol).
+      Toutes les marges spéciales sont ANNULÉES : le titre porte les
+      marges standard .cinema-section-title (comme Saisons/Similaires)
+      et le bandeau retrouve le padding des autres bandeaux. Prouvé :
+      titre visible, gap synopsis→titre 17px, titre→bandeau 6px,
+      padding 7,2px, cercles à 3px du bord au survol (non tronqués).
+      GSM inchangé (validé à nouveau : écart 0 avec le synopsis).
+- [x] 🎛️ PASTILLE : rail 40px ET pastille 40px (retour : « je veux que
+      le rail reste à 40px et que la pastille fasse aussi 40px pour la
+      remplir entièrement ») : les labels débordent le padding du rail
+      (margin -4px vertical) → la pastille couvre le rail BORD À BORD,
+      le rail ne reste visible que comme un liseré. Prouvé : rail 40px,
+      pastille 40px, couverture haute 0,0px / basse 0,0px.
+- [x] 📖 BIO : ❝ AGRANDIE (retour : « tu peux augmenter la taille de
+      ❝ si tu veux ») : 1,62rem (≈26px). Prouvé : 25,92px calculés.
+- [x] 🔮 HALO DE LUMIÈRE au coin haut-gauche HYPER VISIBLE (retour :
+      « est-ce possible de le faire partir du coin en haut à gauche de
+      manière hyper visible ? comme un halo de lumière ? ») : double
+      radial ancré PILE au coin (0% 0%), blanc à 55 % au centre. Prouvé :
+      radial .55 présent sur le ::after de l'en-tête.
+- [x] 🎭 ENCADRÉ TOP 10 (retour : « les encadrés ne fonctionnent pas
+      pour les acteurs qui ne font pas partie de mon top 10, tanpi ») :
+      aucun retrait — le filet de sécurité V189 reste (2 essais TMDB +
+      fiche vivante au nom du casting si l'API ne répond pas).
+- [x] Banc : passe PC 10/10 + passe GSM 2/2 + 23/23 tests cœur.
+
+### Fait en V191 (retours du 21/10 — Distribution adaptative, en-tête verre futuriste)
+- [x] 📽️ DISTRIBUTION ADAPTATIVE (retour : « l'écart entre le bas du
+      synopsis et le début de la distribution est vraiment énorme — ou
+      le problème vient que tu commences distribution juste après le
+      bas du poster ? » — EXACTEMENT ça) : le bloc markdown fait la
+      hauteur du POSTER, plus haut que le texte quand le synopsis est
+      court. Le composant invisible de tête de fiche mesure EN
+      PERMANENCE (800 ms) l'écart réel texte→titre et pose
+      --msl-cast-lift : le conteneur du titre remonte d'autant → la
+      Distribution démarre sous le SYNOPTIQUE avec l'écart classique
+      (~17 px), même après un chargement tardif de l'affiche. Sur GSM
+      (layout empilé), l'écart est déjà nominal → rien ne bouge.
+      Prouvé : cas nominal écart 17 px ; poster artificiellement
+      agrandi de 100 px → écart ramené à 18 px (lift 123 px posé).
+- [x] 📺 SAISONS : couleur d'accentuation RESTAURÉE (retour : « n'est
+      plus en couleur d'accentuation ») : le titre n'avait jamais eu la
+      classe cinema-strip-title que Saga/Similaires/Distribution ont.
+      Prouvé : même couleur que Similaires, plus le jaune standard.
+- [x] 🎛️ PASTILLE : TOUT À 40px SANS LISERÉ (retour : « je veux le rail
+      en 38 et la pastille en 40 — je ne veux plus voir le fin liseré
+      lorsque le bouton est actif ; si tu sais l'enlever en mettant
+      tout à 40px alors je prend ») : fait à 40/40 — hauteur du rail
+      et des labels à 40 px, liseré du rail en inset-shadow couvert
+      par la pastille sur tout son passage (l'input radio de baseWeb,
+      qui faisait 36 px et étirait tout, est réduit à 16 px). Prouvé :
+      rail 40, pastille 40, couverture 0/0.
+- [x] 📖 ❝ ENCORE AGRANDIE (retour : « tu peux l'agrandir encore un
+      peu ») : 1,9 rem (30,4 px calculés).
+- [x] 🔮 EN-TÊTE « VERRE FUTURISTE » selon la description TRÈS précise
+      de l'utilisateur : fond vert pétrole #003F3C non uniforme
+      (dégradé vers #002E2D), rayon 18 px ; HALO TURQUOISE diffus au
+      coin SUPÉRIEUR GAUCHE (cœur rgba(0,240,220,.30) → vert canard →
+      fond, transitions douces — la signature visuelle) ; BORDURE fine
+      dégradée par masque (turquoise lumineux au coin, #168A80
+      translucide ailleurs) + léger halo externe ; 3 lignes diagonales
+      très fines (reflets de verre secondaires) ; photo + informations
+      DEVANT tous les effets (z-index 3) ; pas d'animation permanente.
+      L'ancien halo blanc est EFFACÉ. Prouvé : fond rgb(0,63,60),
+      halo rgba(0,240,220,.3), bordure mask-composite exclude,
+      photo z-index 3, plus de radial blanc.
+- [x] Banc : passe PC 13/13 + passe GSM 2/2 + 23/23 tests cœur.
+
+### Fait en V192 (retours du 21/10 — lift annulé, saisons, pastille opaque, en-tête Aston)
+- [x] 📽️ DISTRIBUTION : LIFT ANNULÉ, REMIS COMME AVANT (retour : « ta
+      solution fait remonter le TITRE mais pas la distribution ni les
+      widgets suivants — l'espace énorme se déplace du titre à la vraie
+      distribution. Au final remets comme ce qui était avant, avec le
+      titre distribution visible puis à un écart très acceptable la
+      distribution ») : règle CSS, mesureur JS et classe --dist
+      retirés. DIAGNOSTIC UTILISATEUR (juste) : le vide vient du bloc
+      « Pourquoi ce score ? » présent au-dessus du synopsis dans « Que
+      regarder ? » mais absent des fiches ouvertes ailleurs — sans lui
+      le texte est plus court que le poster. Prouvé : marge du
+      conteneur neutre, titre visible, bandeau à 6px sous le titre.
+- [x] 📺 SAISONS : écart posters→heatmap RÉDUIT (retour : « l'écart
+      est trop grand entre les posters de la saison et le début de la
+      heatmap ») : le padding-top de la heatmap (réservé aux
+      info-bulles des cellules) passe de 3,2rem (51px) à 1,9rem
+      (30px) — les bulles gardent juste la place qu'il faut. Prouvé :
+      30,4px calculés.
+- [x] 🎛️ PASTILLE : OPAQUE + 42px (retour : « j'arrive encore à voir
+      un peu du rail DERRIÈRE la pastille — enlève 1-2px au rail ou
+      mets 1-2px en plus sur la pastille ») : la cause était la
+      TRANSLUCIDITÉ (le dégradé à 66-88 % laissait voir le fond du
+      rail à travers) → dégradé OPAQUE (.90/.97) + pastille 42px qui
+      déborde du rail de 2px. Prouvé : 42px, déborde 0px haut / 2px
+      bas, fond opaque.
+- [x] 🔮 EN-TÊTE : COULEURS ASTON (retour : « inspire-toi surtout de
+      mes couleurs Aston Martin — je veux bien un fondu mais moins
+      prononcé ») : base #00524B (vert foncé Aston) avec un voile
+      dégradé DOUX ; BORDURE ENCORE PLUS LUMINEUSE (coin .95) + glow
+      externe 24px turquoise (retour : « effet de halo/lumière en plus
+      de la bordure ») ; les 3 LIGNES DIAGONALES RETIRÉES (demande
+      explicite). Prouvé : fond rgb(0,82,75), radial seul, bordure
+      .95, glow, photo z-index 3.
+- [x] Banc : passe PC 12/12 + passe GSM 2/2 + 23/23 tests cœur.
+
+### Fait en V193 (retours du 21/10 — pastille extrémités, saisons, en-tête glow, README)
+- [x] 🎛️ PASTILLE : RAIL INVISIBLE AUX EXTRÉMITÉS (retour : « on voit le
+      rail sur le côté de Tout / Acteur / Film — la pastille du milieu
+      est parfaite ; la root cause est l'arrondi différent entre la
+      pastille et le rail ») : tout à 40px ; le rail n'a plus de
+      padding horizontal (il S'ARRÊTE aux pastilles extrêmes) et les
+      labels débordent de 1px de chaque côté → les arrondis de la
+      pastille COUVRENT les extrémités du rail. Prouvé : rail 40,
+      pastille 40, couverture 0/0, débordement 1px à gauche de la
+      1re et à droite de la dernière.
+- [x] 📺 SAISONS : heatmap ENCORE resserrée (retour : « tu peux réduire
+      encore un peu ») : padding-top 1,9rem → 1,6rem (25,6px) ; et
+      écart fin de saisons → Similaires LÉGÈREMENT AGRANDI (retour
+      explicite) : padding-bottom .55rem sur le wrap (+8,8px).
+- [x] 🔮 EN-TÊTE : un peu PLUS SOMBRE (retour : « plus de contraste
+      entre l'en-tête et la fiche ») : base #00524B → #004C48 ; HALO
+      RENFORCÉ pour l'effet glow (.30 → .38, diffusion étendue) ;
+      BORDURE PLUS LUMINEUSE (coin OPAQUE rgb(0,240,228), corps .70)
+      + glow externe 28px/.38.
+- [x] 📖 README MIS À JOUR (demande explicite — récupéré du GitHub
+      courant d'abord) : lignes 🎲 La Pépite (curateur IA selon
+      l'humeur, zéro donnée personnelle) et 🎬 Fiches film & acteur au
+      tableau des fonctionnalités ; section « 🎬 Les fiches : ton
+      cinéma, en détail » (fiche film : bannière, distribution
+      cliquable, saisons + heatmap, TON HISTOIRE, blocs IA ; fiche
+      acteur : en-tête Aston, radios, frise, filmographie, note
+      moyenne) ; section « 🤖 L'IA, seulement quand elle sert »
+      (tableau pépite/dilemme/fiches + précalcul non bloquant) ; les 6
+      captures existantes CONSERVÉES + 3 encarts prêts (docs/
+      La_pepite.png, Fiche_film.png, Fiche_acteur.png — l'utilisateur
+      dépose ses fichiers sous ces noms).
+- [x] Banc : passe PC 9/9 + 23/23 tests cœur.
 
 ### PROCHAINES ÉTAPES (au choix de l'utilisateur)
 - [ ] (facultatif) Score moyen sur la fiche acteur · duo favori stats
