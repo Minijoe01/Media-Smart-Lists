@@ -1492,6 +1492,83 @@ st.markdown(
     div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:has([data-tooltip]:hover) {
         position: relative; z-index: 60;
     }
+    /* ════════════════════════════════════════════════════════════════
+       V195 — LES 5 IDÉES ESTHÉTIQUES (validées ensemble par
+       l'utilisateur : « teste de mettre en place tes 5 idées, si l'une
+       ne me plaît pas je reviendrai en arrière »).
+       ════════════════════════════════════════════════════════════════ */
+    /* 1 · CASCADE d'apparition : les cartes des bandeaux arrivent en
+       FONDU + léger glissement — chaque bandeau se construit à son
+       tour (ils se rendent séquentiellement). Le décalage
+       carte-par-carte (nth-child) a été retiré : mesuré imprévisible
+       sur la structure de colonnes Streamlit (toutes les colonnes
+       héritaient du délai maximum). */
+    @keyframes mslCascadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    [data-testid="stDialog"] div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .media-list-card) > div[data-testid="stColumn"],
+    [data-testid="stDialog"] div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .sim-card) > div[data-testid="stColumn"],
+    [data-testid="stDialog"] div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] .cast-card) > div[data-testid="stColumn"] {
+        animation: mslCascadeIn .5s cubic-bezier(.22,.9,.34,1) both;
+    }
+    /* 2 · REFLET GLASS au survol : une lueur diagonale balaie la carte
+       (le fond du pseudo glisse DANS la carte — aucun débordement, les
+       info-bulles restent possibles). Déclenché par le CALQUE bouton
+       (le :hover de la carte ne se déclenche jamais sous le calque —
+       leçon V187) + hover direct pour les cartes sans calque. */
+    .cast-card, .people-card { position: relative; }
+    .sim-card::after, .media-list-card::after, .cast-card::after, .people-card::after {
+        content: ""; position: absolute; inset: 0; border-radius: inherit;
+        pointer-events: none; z-index: 5;
+        background: linear-gradient(105deg, rgba(255,255,255,0) 40%, rgba(255,255,255,.15) 50%, rgba(255,255,255,0) 60%);
+        background-size: 250% 100%; background-position: 200% 0; opacity: 0;
+        transition: background-position .55s ease, opacity .25s ease;
+    }
+    .sim-card:hover::after, .media-list-card:hover::after, .cast-card:hover::after, .people-card:hover::after,
+    div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:has(> div[data-testid="stVerticalBlock"] button:hover) .sim-card::after,
+    div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:has(> div[data-testid="stVerticalBlock"] button:hover) .media-list-card::after,
+    div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:has(> div[data-testid="stVerticalBlock"] button:hover) .cast-card::after,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdown"] .people-card):hover .people-card::after {
+        opacity: 1; background-position: 0% 0;
+    }
+    /* 5 · MICRO-ÉTINCELLES dorées sur les tuiles MÊME ESPRIT : 3 petites
+       lueurs scintillent le long du haut de la tuile au survol. */
+    @keyframes mslSparkle { 0%, 100% { opacity: .12; } 50% { opacity: 1; } }
+    .media-list-card.alike-qr::before {
+        content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6; opacity: 0;
+        background:
+            radial-gradient(circle 3px at 11% 5%, rgba(255,233,80,.95), rgba(255,233,80,0) 70%),
+            radial-gradient(circle 2px at 42% 2.5%, rgba(255,246,180,.90), rgba(255,246,180,0) 70%),
+            radial-gradient(circle 3px at 74% 6%, rgba(255,225,0,.85), rgba(255,225,0,0) 70%);
+    }
+    .media-list-card.alike-qr:hover::before,
+    div[data-testid="stHorizontalBlock"] div[data-testid="stColumn"]:has(> div[data-testid="stVerticalBlock"] button:hover) .media-list-card.alike-qr::before {
+        opacity: 1; animation: mslSparkle 1.15s ease-in-out infinite;
+    }
+    /* 4 · FOND GRAIN CARBONE : texture de micro-points à peine visible
+       (feTurbulence, opacité 4,5 %) posée SOUS le contenu (z-index:-1
+       = au-dessus du fond du dialog, sous tout le reste — technique
+       prouvée par la comète V189). */
+    [data-testid="stDialog"]::before {
+        content: ""; position: absolute; inset: 0; z-index: -1;
+        pointer-events: none; opacity: .045;
+        background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+        background-size: 180px 180px;
+    }
+    /* 3 · ANNEAU DE PROGRESSION autour des notes : l'étoile ⭐ devient
+       une jauge circulaire remplie à note×10 % (couleur d'accent de la
+       fiche quand disponible, vert Aston sinon). */
+    .mc-note { padding: 2px 9px 2px 1.62rem; }
+    .mc-note::before {
+        content: ""; position: absolute; left: .42rem; top: 50%;
+        transform: translateY(-50%);
+        width: .68rem; height: .68rem; border-radius: 50%;
+        background: conic-gradient(var(--ring, #00A392) calc(var(--np, 0) * 1%), rgba(255,255,255,.14) 0);
+        -webkit-mask: radial-gradient(circle, transparent 34%, #000 38%);
+        mask: radial-gradient(circle, transparent 34%, #000 38%);
+    }
+    @media (prefers-reduced-motion: reduce) {
+        [data-testid="stDialog"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+        .media-list-card.alike-qr::before { animation: none !important; }
+    }
     /* V185 — fond OPAQUE BLINDÉ (retour : « le fond est complètement
        transparent, teste l'info-bulle ») : !important pour qu'AUCUNE
        règle ne puisse le ravaler, + une ombre qui détache la bulle. */
@@ -2549,7 +2626,7 @@ st.markdown(
         padding: 2px 9px;
     }
     .mc-note {
-        display: inline-block;
+        display: inline-block; position: relative;
         font-size: .68rem; font-weight: 800;
         color: var(--am-yellow);
         background: linear-gradient(135deg, rgba(0, 163, 146, .16), rgba(0, 0, 0, .50));
@@ -3311,7 +3388,10 @@ def _public_note_html(item: Any) -> str:
     if note is None:
         return ""
     tip = "Note moyenne de la communauté (sur 10)."
-    return f'<span class="mc-note" data-tooltip="{escape(tip, quote=True)}">⭐ {note:.1f}/10</span>'
+    return (
+        f'<span class="mc-note" data-tooltip="{escape(tip, quote=True)}" '
+        f'style="--np:{int(round((note or 0) * 10))}">{note:.1f}/10</span>'
+    )
 
 
 def _score(item: dict) -> str:
@@ -6161,7 +6241,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         except (TypeError, ValueError):
             pass
     if row.get("note") is not None:
-        meta_bits.append(f'<span class="mc-note">⭐ {row["note"]:.1f}</span>')
+        meta_bits.append(f'<span class="mc-note" style="--np:{int(round((row["note"] or 0) * 10))}">{row["note"]:.1f}</span>')
     # V139 — TA NOTE personnelle (si tu as noté ce contenu) : cherchée
     # dans la section notes du dataset, par identifiant TMDB.
     try:
@@ -6181,7 +6261,7 @@ def _render_cinema_detail_body(row: dict) -> None:
                 break
         if my_note_val:
             meta_bits.append(
-                f'<span class="mc-note" data-tooltip="Ta note personnelle">💛 Ta note : {my_note_val:g}/10</span>'
+                f'<span class="mc-note" data-tooltip="Ta note personnelle" style="--np:{int(round(my_note_val * 10))};--ring:#FFE100">💛 Ta note : {my_note_val:g}/10</span>'
             )
     except Exception:
         pass
@@ -8238,7 +8318,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
         except (TypeError, ValueError):
             lead_pill = ""
     note_pill = (
-        f'<span class="mc-note" data-tooltip="Note communauté (sur 10)">⭐ {row["note"]:.1f}</span>'
+        f'<span class="mc-note" data-tooltip="Note communauté (sur 10)" style="--np:{int(round((row["note"] or 0) * 10))}">{row["note"]:.1f}</span>'
         if row.get("note") is not None else ""
     )
     year_pill = f'<span class="mc-year" data-tooltip="Année de sortie">{year}</span>' if year else ""
@@ -12078,7 +12158,8 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
     # précise bien qu'il s'agit de la note COMMUNAUTÉ TMDB (sur 10) —
     # jamais de confusion avec ton score personnel.
     note_pill = (
-        f'<span class="mc-note" data-tooltip="Note communauté TMDB (sur 10) — pas ton score personnel">⭐ {note:.1f}</span>'
+        f'<span class="mc-note" data-tooltip="Note communauté TMDB (sur 10) — pas ton score personnel" '
+        f'style="--np:{int(round((note or 0) * 10))}">{note:.1f}</span>'
         if note else ""
     )
     year_pill = (
@@ -12250,6 +12331,7 @@ def _render_ia_alike(state_key: str, subject: str, hint: str = "",
             f".media-list-card.alike-qr .mc-chip{{background:rgba({ar},{ag},{ab},.17);"
             f"border:1px solid rgba({ar},{ag},{ab},.42);}}"
             f".media-list-card.alike-qr .mc-year,.media-list-card.alike-qr .mc-note{{"
+            f"--ring:rgb({ar},{ag},{ab});"
             f"color:{accent_text};border:1px solid rgba({ar},{ag},{ab},.55);"
             f"background:linear-gradient(135deg,rgba({ar},{ag},{ab},.18),rgba(0,0,0,.50));}}"
             f".media-list-card.alike-qr .media-list-pct{{color:{accent_text};"
