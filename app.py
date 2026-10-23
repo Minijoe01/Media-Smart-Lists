@@ -7298,7 +7298,7 @@ def _actor_dialog_chrome_css() -> str:
         "position:relative;isolation:isolate;overflow:hidden;"
         "background:"
         "linear-gradient(118deg,rgba(0,110,102,.38) 0%,rgba(0,74,70,.52) 48%,rgba(0,56,53,.66) 100%),"
-        "#004C48!important;"
+        "#004F4A!important;"
         "border:none!important;"
         "border-radius:18px!important;"
         "margin:.15rem .6rem .8rem!important;"
@@ -12931,7 +12931,7 @@ def render_progress_page() -> None:
     # redevient purement « reprises en pause ». Actualisation silencieuse à
     # l'arrivée si les données datent de plus de 5 minutes (1 appel ciblé,
     # plafonné par l'âge du cache — fini le clic manuel systématique).
-    st.markdown("### 🔴 Lecture en cours maintenant")
+    st.markdown("### 🔴 Lecture en cours")
     if mdb_oauth.is_connected():
         live_cache = st.session_state.get(NOW_PLAYING_CACHE_KEY)
         live_age = time.time() - float((live_cache or {}).get("fetched_at") or 0)
@@ -13313,7 +13313,7 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float, note: str
             f'</div>'
         )
         st.markdown(
-            f'<div class="media-list-card upnext-card">{image_html}'
+            f'<div class="media-list-card upnext-card msl-click">{image_html}'
             f'<div class="media-list-content" style="width:100%;">'
             f'{head}'
             f'{info_html}'
@@ -13322,11 +13322,48 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float, note: str
             f'</div>{pct_col}</div>',
             unsafe_allow_html=True,
         )
-    checked = datetime.fromtimestamp(float(fetched_at)).strftime("%H:%M:%S")
+        # V194 — LA MÊME TUILE CLIQUABLE que partout ailleurs (retour :
+        # « la tuile du contenu en cours est une ancienne tuile non
+        # cliquable, remplace-la par celle que j'ai partout ailleurs ») :
+        # calque bouton → ouvre la fiche du contenu, pattern exact des
+        # tuiles Up Next / Similaires.
+        _live_kind_v194 = "Film" if str(row.get("type") or "") == "Film" else "Série"
+        _live_ids_v194 = row.get("ids") if isinstance(row.get("ids"), dict) else {}
+        try:
+            _live_tmdb_v194 = str(int(_live_ids_v194.get("tmdb") or 0) or "")
+        except (TypeError, ValueError):
+            _live_tmdb_v194 = ""
+        if st.button(
+            "🎬 Voir la fiche",
+            key=f"cin_live_{_live_kind_v194}_{_live_tmdb_v194 or str(title)[:40]}",
+            use_container_width=True,
+            type="secondary",
+        ):
+            _live_fiche_v194 = _history_fiche_row(
+                {"ids": _live_ids_v194, "title": str(row.get("title") or ""), "type": _live_kind_v194}
+            )
+            if not _live_fiche_v194:
+                _live_fiche_v194 = {
+                    "item": {"ids": _live_ids_v194, "title": str(row.get("title") or "")},
+                    "type": _live_kind_v194,
+                    "key": f"live_{_live_tmdb_v194}",
+                }
+            _open_cinema_detail(_live_fiche_v194)
+    # V194 — HEURE AU FUSEAU DE L'UTILISATEUR (retour : « l'heure n'est
+    # pas celle de mon fuseau — je regarde à 14h, l'app dit 12h ») : le
+    # serveur Streamlit est en UTC ; st.context.timezone donne le fuseau
+    # du NAVIGATEUR (utilisateur canadien ou français → son heure).
+    try:
+        _live_tz_v194 = ZoneInfo(str(st.context.timezone or ""))
+    except Exception:
+        _live_tz_v194 = None
+    checked = datetime.fromtimestamp(
+        float(fetched_at), tz=_live_tz_v194 or None
+    ).strftime("%H:%M:%S")
     st.caption(
         note
         if note is not None
-        else f"Dernier contrôle réseau : {checked} · progression ensuite estimée localement chaque minute."
+        else f"Dernier contrôle réseau : {checked} (ton heure) · progression ensuite estimée localement chaque minute."
     )
 
 
