@@ -3972,7 +3972,7 @@ def _fetch_tmdb_details_fr(kind: str, tmdb: int, key: str) -> dict:
             params={
                 "api_key": key,
                 "language": "fr-FR",
-                "append_to_response": "images,credits,videos,watch/providers",  # V138 : + plateformes FR
+                "append_to_response": "images,credits,videos,watch/providers,release_dates,content_ratings",  # V138 : plateformes FR · V196 : certifications FR
                 "include_image_language": "fr,en,null",
             },
             timeout=10,
@@ -5834,6 +5834,77 @@ def _msl_fiche_scrolltop_component(marker: str) -> None:
         pass
 
 
+# ═══════════════════════════════════════════════════════════════════
+# V196 — PEGI / ÂGE CONSEILLÉ (demande utilisateur : « je n'ai pas de
+# preset ou de pastilles m'indiquant le PEGI… j'aimerais filtrer ce que
+# je peux regarder avec mes enfants — Fresh Off the Boat n'est pas
+# répertoriée "familial" ; des infos "à partir de quel âge", et l'IA
+# qui indique pourquoi ce ne serait pas conseillé »).
+# ═══════════════════════════════════════════════════════════════════
+_CERT_AGE_MAP = {
+    # Tous publics (FR / US / GB)
+    "g": 0, "tp": 0, "tous": 0, "tous publics": 0, "all": 0, "u": 0,
+    "tv-g": 0, "tv-y": 0, "e": 0, "eirin g": 0, "approved": 0, "bc": 0,
+    # 7 ans
+    "7": 7, "-7": 7, "tv-y7": 7, "tv-y7-fv": 7, "k-7": 7, "6": 7,
+    # 10 ans (FR -10 ; US PG / TV-PG = accompagnement conseillé)
+    "pg": 10, "tv-pg": 10, "10": 10, "-10": 10, "pg-12": 10,
+    # 12 ans (FR -12 ; US PG-13 / TV-14)
+    "pg-13": 12, "tv-14": 12, "12": 12, "-12": 12, "12a": 12, "12+": 12,
+    # 16 ans (FR -16 ; US R / TV-MA)
+    "r": 16, "tv-ma": 16, "ma": 16, "16": 16, "-16": 16, "16+": 16, "m": 16,
+    # 18 ans
+    "nc-17": 18, "x": 18, "18": 18, "-18": 18, "18+": 18, "tv-m": 18,
+}
+
+
+def _cert_age(cert) -> int | None:
+    """Certification (MDBList US ou TMDB FR) → âge minimum conseillé.
+    None = inconnue (NR, Unrated, vide…). Le filtre « Que regarder ? »
+    et la pastille de fiche s'appuient dessus."""
+    c = str(cert or "").strip().casefold()
+    if not c or c in ("nr", "n/r", "not rated", "unrated", "none", "?", "-"):
+        return None
+    if c in _CERT_AGE_MAP:
+        return _CERT_AGE_MAP[c]
+    # formes avec préfixe (« certification PG », « Rated PG-13 »…)
+    for token in ("rated ", "certification ", "classé ", "classe "):
+        if c.startswith(token):
+            c2 = c[len(token):].strip()
+            if c2 in _CERT_AGE_MAP:
+                return _CERT_AGE_MAP[c2]
+    # nombre nu (« 10 », « 12 »…)
+    try:
+        n = int(c.lstrip("-").replace("+", ""))
+        if 0 <= n <= 18:
+            return n
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _cert_fr_from_payload(fr_payload: dict, kind: str) -> str:
+    """Certification FR depuis le payload TMDB de la fiche :
+    movie → release_dates (ISO FR) ; tv → content_ratings (ISO FR)."""
+    try:
+        if kind == "movie":
+            for res in (fr_payload.get("release_dates") or {}).get("results") or []:
+                if str(res.get("iso_3166_1") or "").upper() == "FR":
+                    for rd in res.get("release_dates") or []:
+                        c = str(rd.get("certification") or "").strip()
+                        if c:
+                            return c
+        else:
+            for res in (fr_payload.get("content_ratings") or {}).get("results") or []:
+                if str(res.get("iso_3166_1") or "").upper() == "FR":
+                    c = str(res.get("rating") or "").strip()
+                    if c:
+                        return c
+    except Exception:
+        pass
+    return ""
+
+
 def _render_cinema_detail_body(row: dict) -> None:
     """Fiche cinéma — V133 : TOUT en un seul bloc HTML, 100% OPAQUE.
 
@@ -6160,6 +6231,21 @@ def _render_cinema_detail_body(row: dict) -> None:
             meta_bits.append(f'<span class="mc-year">⏱️ {_format_minutes(int(row["runtime"]))}</span>')
         except (TypeError, ValueError):
             pass
+    # V196 — PASTILLE ÂGE CONSEILLÉ (demande : « des infos comme "à
+    # partir de quel âge" ») : certification FR (TMDB) en priorité,
+    # sinon celle de MDBList (souvent US). Affichée dès qu'elle est
+    # connue ; info-bulle = la classification brute.
+    _cert_raw_v196 = _cert_fr_from_payload(
+        fr_payload, "movie" if row.get("type") != "Série" else "tv"
+    ) or str(row.get("certification") or "").strip()
+    _cert_age_v196 = _cert_age(_cert_raw_v196)
+    if _cert_age_v196 is not None:
+        _cert_lbl_v196 = "Tous publics" if _cert_age_v196 == 0 else f"Dès {_cert_age_v196} ans"
+        _cert_ico_v196 = "🧒" if _cert_age_v196 <= 12 else "🔞"
+        meta_bits.append(
+            f'<span class="mc-chip" data-tooltip="Classification officielle : '
+            f'{escape(_cert_raw_v196 or "tous publics")}">{_cert_ico_v196} {_cert_lbl_v196}</span>'
+        )
     if row.get("note") is not None:
         meta_bits.append(f'<span class="mc-note">⭐ {row["note"]:.1f}</span>')
     # V139 — TA NOTE personnelle (si tu as noté ce contenu) : cherchée
@@ -6844,6 +6930,28 @@ def _render_cinema_detail_body(row: dict) -> None:
             )
         except Exception:
             pass
+
+        # V196 — 🧒 PUBLIC CONSEILLÉ : à partir de quel âge, et pourquoi
+        # (grossièretés, nudité, thèmes psychologiques…). Le hint porte
+        # la classification officielle quand elle existe (l'IA la nuance),
+        # et les genres pour l'estimation sinon.
+        try:
+            _genres_txt_v196 = ", ".join(str(g) for g in (row.get("genres") or [])[:4])
+            _cert_raw_hint_v196 = _cert_fr_from_payload(
+                fr_payload, "movie" if row.get("type") != "Série" else "tv"
+            ) or str(row.get("certification") or "").strip()
+            _hint_v196 = (
+                (f"genres : {_genres_txt_v196}" if _genres_txt_v196 else "")
+                + (f" ; classification officielle : {_cert_raw_hint_v196}" if _cert_raw_hint_v196 else "")
+            ).strip(" ;")
+            _render_ia_age(
+                _ia_state, _ia_subject,
+                hint=_hint_v196,
+                accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
+            )
+        except Exception:
+            pass
+
 
 def _msl_history_span(days: int) -> str:
     """« 1 an 11 mois 15 jours » / « 16 mois » / « 9 jours » — durée LISIBLE
@@ -10784,7 +10892,7 @@ def render_watchlist_page() -> None:
             min_value=1950, max_value=_CURRENT_YEAR, value=(1950, _CURRENT_YEAR),
             key="qr_year_range",
         )
-        f4, f5 = st.columns(2)
+        f4, f5, f6 = st.columns(3)
         note_min = f4.select_slider(
             "Note minimum",
             options=[0.0, 5.0, 6.0, 7.0, 7.5, 8.0, 8.5, 9.0],
@@ -10794,6 +10902,22 @@ def render_watchlist_page() -> None:
             "Statut",
             ["Tous les statuts", "Séries terminées", "Séries en cours", "Séries annulées"],
             key="qr_status",
+        )
+        # V196 — FILTRE PUBLIC (demande : « filtrer les séries et films
+        # que je peux regarder avec mes enfants — le filtre "familial"
+        # n'est pas parfait, Fresh Off the Boat (TV-PG) n'y est pas ») :
+        # basé sur la CERTIFICATION (MDBList/TMDB, convertie en âge) —
+        # plus fiable que le genre « Familial ». Les contenus sans
+        # certification connue sont écartés quand le filtre est actif.
+        public_filter = f6.selectbox(
+            "🧒 Public",
+            ["Tous", "Enfants (≤ 10 ans)", "Ados (≤ 12 ans)", "≤ 16 ans"],
+            key="qr_public",
+            help=(
+                "Garde les contenus dont la classification connue correspond à cet âge "
+                "(MDBList/TMDB : PG/TV-PG = 10 ans, -12/PG-13 = 12 ans…). "
+                "Les contenus sans classification connue sont écartés."
+            ),
         )
 
     # ── 🔃 Tri & affichage ────────────────────────────────────────────────
@@ -10969,6 +11093,12 @@ def render_watchlist_page() -> None:
             if status_filter == "Séries annulées" and status != "canceled":
                 continue
             if status_filter == "Séries en cours" and status in {"ended", "canceled"}:
+                continue
+        # V196 — FILTRE PUBLIC : certification convertie en âge ≤ seuil.
+        if public_filter != "Tous":
+            _seuil_v196 = {"Enfants (≤ 10 ans)": 10, "Ados (≤ 12 ans)": 12, "≤ 16 ans": 16}[public_filter]
+            _row_age_v196 = _cert_age(row.get("certification"))
+            if _row_age_v196 is None or _row_age_v196 > _seuil_v196:
                 continue
         if not preset_matches(preset, row, profile):
             continue
@@ -11419,6 +11549,8 @@ def _ia_ask_cached(channel: str, subject: str, hint: str, gemini_key: str, groq_
         "spirit": pop_engine.spirit_ask_ai,
         "alike": pop_engine.alike_ask_ai,
         "career": pop_engine.career_ask_ai,
+        # V196 — « Public conseillé » : âge + éléments sensibles
+        "age": pop_engine.age_ask_ai,
     }.get(channel)
     if _fn is None:
         return {}
@@ -11452,13 +11584,15 @@ def _ia_prefetch_launch(store_key: str, gemini_key: str, groq_key: str, subject:
         "spirit": pop_engine.spirit_ask_ai,
         "alike": pop_engine.alike_ask_ai,
         "career": pop_engine.career_ask_ai,
+        # V196 — « Public conseillé » : âge + éléments sensibles
+        "age": pop_engine.age_ask_ai,
     }.get(channel, pop_engine.coulisses_ask_ai)
 
     def _work() -> None:
         try:
             # V175 — ÉCO : canaux « contenu » → cache 30 jours (générés une
             # fois par œuvre) ; coulisses/score → appel direct (fraîcheur).
-            if channel in ("context", "spirit", "alike", "career"):
+            if channel in ("context", "spirit", "alike", "career", "age"):
                 data = _ia_ask_cached(channel, subject, hint, gemini_key, groq_key, variant)
             else:
                 data = _channel_fn(gemini_key, groq_key, subject, hint)
@@ -11491,7 +11625,7 @@ def _ia_fetch_or_wait(store_key: str, gemini_key: str, groq_key: str, subject: s
         return None, ""  # V164 : jamais d'appel bloquant pour la phrase du score
     try:
         # V175 — ÉCO : mêmes canaux « contenu » → cache 30 jours.
-        if channel in ("context", "spirit", "alike", "career"):
+        if channel in ("context", "spirit", "alike", "career", "age"):
             return _ia_ask_cached(channel, subject, hint, gemini_key, groq_key, variant), ""
         _fn = {
             "coulisses": pop_engine.coulisses_ask_ai,
@@ -11504,6 +11638,8 @@ def _ia_fetch_or_wait(store_key: str, gemini_key: str, groq_key: str, subject: s
             "spirit": pop_engine.spirit_ask_ai,
             "alike": pop_engine.alike_ask_ai,
             "career": pop_engine.career_ask_ai,
+            # V196 — « Public conseillé » : âge + éléments sensibles
+            "age": pop_engine.age_ask_ai,
         }.get(channel, pop_engine.coulisses_ask_ai)
         return _fn(gemini_key, groq_key, subject, hint), ""
     except RuntimeError as exc:
@@ -11849,6 +11985,59 @@ def _ia_render_when_ready(store_key: str, session_key: str, title: str) -> None:
         st.markdown(_ph, unsafe_allow_html=True)
 
     _ia_ready_poll()
+
+
+def _render_ia_age(state_key: str, subject: str, hint: str = "",
+                   accent: str = "#00A392", accent_soft: str = "rgba(0,163,146,.32)",
+                   accent_text: str = "#9DC5BF") -> None:
+    """🧒 PUBLIC CONSEILLÉ (V196 — demande utilisateur : « l'IA pourrait
+    indiquer à partir de quel âge et pourquoi ce ne serait pas conseillé
+    (grossièreté, nudité, psychologie etc.) ») : âge minimum estimé +
+    éléments sensibles. Si une classification officielle est fournie
+    dans le sujet, l'IA s'appuie dessus et la nuance. Précalculé en
+    arrière-plan (fiche instantanée) + cache 30 jours (éco IA) ; pas de
+    bouton « une autre » (l'âge ne change pas)."""
+    gemini_key = _gemini_api_key()
+    groq_key = _groq_api_key()
+    if not gemini_key and not groq_key:
+        return
+    session_key = f"ia_age_{state_key}"
+    store_key = f"|age|{state_key}"
+    _ia_prefetch_launch(store_key, gemini_key, groq_key, subject, hint, channel="age")
+
+    shown = st.session_state.get(session_key)
+    if not shown:
+        # V187 — placeholder + poll : jamais d'attente bloquante.
+        _ia_render_when_ready(store_key, session_key, "PUBLIC CONSEILLÉ")
+        return
+    if shown.get("error") or shown.get("skip"):
+        return
+    age = shown.get("age")
+    try:
+        age = int(age)
+    except (TypeError, ValueError):
+        return
+    raisons = [str(r).strip() for r in (shown.get("raisons") or []) if str(r).strip()][:4]
+    avis = str(shown.get("avis") or "").strip()
+    st.markdown(_ia_coulisses_css(accent, accent_soft, accent_text), unsafe_allow_html=True)
+    raison_html = "".join(f"<li>{escape(r)}</li>" for r in raisons)
+    raisons_bloc = (
+        f'<div class="col pros"><b>⚠️ À SAVOIR</b><ul>{raison_html}</ul></div>' if raison_html else ""
+    )
+    label = "Tous publics" if age == 0 else f"{age} ans et +"
+    st.markdown(
+        f'<div class="ia-block">'
+        f'<div class="ia-head">🧒<div><div class="ia-title">PUBLIC CONSEILLÉ</div>'
+        f'<div class="ia-sub">à partir de {label}</div></div></div>'
+        f'<div style="display:flex;gap:.9rem;align-items:center;margin:.4rem 0 .2rem;">'
+        f'<div style="font-size:2rem;font-weight:900;color:{accent};min-width:3.2rem;'
+        f'text-align:center;">{age if age else "TP"}</div>'
+        f'<div style="font-size:.85rem;color:{accent_text};line-height:1.45;">'
+        f'{escape(avis)}</div></div>'
+        f"{raisons_bloc}"
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _ia_generic_render(state_key: str, subject: str, hint: str, channel: str,

@@ -902,6 +902,59 @@ def context_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "")
     return {"skip": False, "pourquoi": pourquoi, "heritage": heritage, "anecdote": anecdote}
 
 
+def age_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -> dict:
+    """🧒 PUBLIC CONSEILLÉ (V196 — demande utilisateur : « l'IA pourrait
+    indiquer à partir de quel âge et pourquoi ce ne serait pas conseillé
+    (grossièreté, nudité, psychologie etc.) ») : âge minimum conseillé +
+    éléments sensibles éventuels. Si une classification OFFICIELLE est
+    fournie dans le sujet (hint), l'IA s'appuie dessus et la nuance.
+
+    Retourne {"skip": False, "age": int, "raisons": [..], "avis": str}
+    — ou {"skip": True} si l'œuvre est manifestement tous publics SANS
+    aucune réserve (dans ce cas l'app n'affiche RIEN). Lève
+    RuntimeError (raison lisible). Retry 503/timeout inclus."""
+    if not gemini_key and not groq_key:
+        raise RuntimeError("Aucune clé IA configurée")
+    prompt = (
+        "Tu es un spécialiste des classifications d'âge du cinéma et des séries "
+        "(équivalents PEGI / MPAA / CSA). À propos de "
+        f"{subject}" + (f" ({hint})" if hint else "") + ", estime l'âge MINIMUM "
+        "conseillé pour regarder cette œuvre, et liste les éléments sensibles "
+        "éventuels : grossièretés, nudité, violence, thèmes psychologiques lourds, "
+        "consommation d'alcool ou de drogue, suspense effrayant, discrimination…\n"
+        "Règles strictes :\n"
+        "- AUCUN SPOILER : ne révèle NI l'intrigue, NI des événements, NI la fin ;\n"
+        "- si une classification officielle est fournie, appuie-toi dessus et "
+        "nuance-la si le contenu réel le justifie ;\n"
+        "- tout en français, factuel et bienveillant (tu t'adresses à des parents) ;\n"
+        "- les raisons sont courtes et concrètes (une ligne chacune, zéro si rien "
+        "de sensible).\n"
+        'Réponds STRICTEMENT en JSON : {"skip": false, "age": 10, "raisons": '
+        '["une raison courte", "…"] (0 à 4 raisons, liste vide si rien de '
+        'sensible), "avis": "1 à 2 phrases de conseil aux parents"}'
+    )
+    text = ia_complete(gemini_key, groq_key, prompt, 1.0, 1200, "âge public")
+    if not text.strip():
+        raise RuntimeError("Réponse IA vide — relance")
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        raise RuntimeError("Réponse illisible — relance")
+    if parsed.get("skip"):
+        return {"skip": True}
+    try:
+        age = int(parsed.get("age"))
+    except (TypeError, ValueError):
+        raise RuntimeError("Âge illisible — relance")
+    if not 0 <= age <= 18:
+        raise RuntimeError("Âge hors bornes — relance")
+    raisons = [str(x).strip() for x in (parsed.get("raisons") or []) if str(x).strip()][:4]
+    avis = str(parsed.get("avis") or "").strip()
+    if len(avis) < 20:
+        raise RuntimeError("Réponse incomplète — relance")
+    return {"skip": False, "age": age, "raisons": raisons, "avis": avis}
+
+
 def spirit_ask_ai(gemini_key: str, groq_key: str, subject: str, hint: str = "") -> dict:
     """🎭 L'ESPRIT (V173 — idée « L'esprit du film » retravaillée suite à
     la remarque « les mots-clés ne sont pas assez parlants ») :
