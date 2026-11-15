@@ -5874,6 +5874,10 @@ def _cert_age(cert) -> int | None:
     None = inconnue (NR, Unrated, vide…). Le filtre « Que regarder ? »
     et la pastille de fiche s'appuient dessus."""
     c = str(cert or "").strip().casefold()
+    # V198 — retire une précision entre parenthèses (« PG (GB) », « 12
+    # (France) »…) : la classification seule suffit au mapping.
+    if " (" in c:
+        c = c.split(" (")[0].strip()
     if not c or c in ("nr", "n/r", "not rated", "unrated", "none", "?", "-"):
         return None
     if c in _CERT_AGE_MAP:
@@ -8342,10 +8346,9 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
         metadata.append('<span class="mc-chip chip-vu" data-tooltip="Contenu déjà vu — proposé car il correspond à ta recherche">✅ Vu</span>')
     else:
         metadata.append('<span class="mc-outside" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>')
-    # V197 — PASTILLE ÂGE dans la tuile (même code couleur mc-year).
-    _age_chip_v197 = _age_chip_html(row)
-    if _age_chip_v197:
-        metadata.append(_age_chip_v197)
+    # V198 — la pastille âge a DÉMÉNAGÉ dans le groupe durée/note/année
+    # du head (retour : « mets-la à côté de la durée, la note et de
+    # l'année »).
 
     signals = row.get("signals") or []
     if signals:
@@ -8399,7 +8402,7 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
         f'{_type_chip(str(row.get("type") or ""))}'
         f'<strong>{title}</strong>'
         f'<span style="display:inline-flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
-        f'{lead_pill}{note_pill}{year_pill}</span>'
+        f'{lead_pill}{note_pill}{year_pill}{_age_chip_html(row)}</span>'
         f'</div>'
     )
     score_val = int(round(row.get("score", 0)))
@@ -12077,12 +12080,28 @@ def _render_ia_age(state_key: str, subject: str, hint: str = "",
         f'<div class="ia-sub">à partir de {label} · estimation IA · sans spoiler</div>'
         "</div></div>"
     )
+    # V198 — FERMETURE ARRONDIE (retour : « ce bloc se finit de manière
+    # droite alors que les autres ont une finition arrondie grâce au
+    # bouton "une autre anecdote" ») : CAP au format EXACT du bouton des
+    # autres blocs IA (fond verre, liseré accent, filet gauche 4px,
+    # radius bas 13px, typo uppercase) — non cliquable, dans le MÊME
+    # markdown que le bloc (aucun gap Streamlit entre les deux).
+    cap_html = (
+        f'<div style="margin-top:.18rem;background:rgba(3,22,19,.52);'
+        f'border:1px solid {accent_soft};border-left:4px solid {accent};'
+        f'border-radius:0 0 13px 13px;min-height:26px;padding:.14rem .55rem;'
+        f'display:flex;align-items:center;justify-content:center;gap:.4rem;'
+        f'color:{accent_text};font-family:ManropeMSL,DejaVu Sans,sans-serif;'
+        f'font-size:.7rem;font-weight:800;letter-spacing:.1em;text-transform:uppercase;'
+        f'cursor:default;user-select:none;">🧒 estimation IA · sans spoiler</div>'
+    )
     st.markdown(
         '<div class="ia-block">'
         + head_html
         + f'<div class="ia-text"><strong>🧒 {"Tous publics" if age == 0 else f"Dès {age} ans"}</strong> — {escape(avis)}</div>'
         + f'<div class="ia-pc">{raisons_bloc}</div>'
-        + "</div>",
+        + "</div>"
+        + cap_html,
         unsafe_allow_html=True,
     )
 
@@ -12336,10 +12355,9 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
         )
     head = (
         f'<div class="mc-head">{_type_chip("Série" if lk_kind == "tv" else "Film")}'
-        f"{_age_chip_html(lk)}"
         f"<strong>{title}</strong>"
         f'<span style="display:inline-flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
-        f"{lead_pill}{note_pill}{year_pill}</span></div>"
+        f"{lead_pill}{note_pill}{year_pill}{_age_chip_html(lk)}</span></div>"
     )
     # Pastille d'état : MÊMES classes/priorités que les tuiles « Que
     # regarder ? » (en cours > abandonnée > vu > liste > watchlist > hors).
