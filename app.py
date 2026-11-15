@@ -102,7 +102,7 @@ APP_VERSION = "0.15.0-alpha"
 # ne coûte AUCUN appel réseau : il ne refait que l'extraction locale.
 # Historique : v1 = jusqu'à V148 (cast cap order≥20, directors parfois absents
 # des vieux enrichissements → « 0 vu » pour Martin Scorsese dans les stats).
-ENRICH_VERSION = 2
+ENRICH_VERSION = 3
 # Année courante (Paris) : borne haute ADAPTATIVE du slider d'époque — les
 # sorties de l'année en cours (2026…) ne sont plus masquées.
 _CURRENT_YEAR = datetime.now(ZoneInfo("Europe/Paris")).year
@@ -3903,7 +3903,7 @@ def _tmdb_api_key() -> str:
 
 
 @st.cache_data(ttl=2592000, show_spinner=False)  # 30 jours : mémoire TMDB par contenu
-def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
+def _fetch_tmdb_item(kind: str, tmdb: int, key: str, schema: int = 3) -> dict | None:
     """Un appel TMDB (genres + studios + casting) — mis en cache PAR CONTENU.
 
     Chaque fiche (film/série) est mémorisée 30 jours : un rechargement ne
@@ -3928,7 +3928,7 @@ def _fetch_tmdb_item(kind: str, tmdb: int, key: str) -> dict | None:
             params={
                 "api_key": key,
                 "language": "fr-FR",
-                "append_to_response": "credits,keywords,images",
+                "append_to_response": "credits,keywords,images,release_dates,content_ratings",  # V197 : certifications
                 "include_image_language": "fr,en,null",
             },
             timeout=8,
@@ -4311,6 +4311,16 @@ def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
                 return
             if payload:
                 _apply_tmdb_payload(m, payload, french=True)
+                # V197 — CERTIFICATION FR (le filtre « 🧒 Public » et les
+                # pastilles s'appuient dessus) : stockée sur le média. La
+                # FR prime ; une certification MDBList existante est
+                # conservée si TMDB n'en renvoie pas.
+                try:
+                    _cert_v197 = _cert_fr_from_payload(payload, k)
+                    if _cert_v197:
+                        m["certification"] = _cert_v197
+                except Exception:
+                    pass
             # MOTS-CLÉS TMDB (sport, superhero, biography…) : stockés sur le
             # média → le filtre des listes les utilise pour les genres sans
             # équivalent TMDB (ex. « Sport » trouve The Last Dance dans tes
@@ -5119,6 +5129,7 @@ def _reset_recommendation_filters() -> None:
         "qr_note_min": 0.0,
         "qr_time": "Aucune limite",
         "qr_status": "Tous les statuts",
+        "qr_public": "Tous",
         "qr_sort": "✨ Pour moi (recommandé)",
         "qr_preset": "Aucun preset",
         "qr_genres": [],
@@ -5905,6 +5916,35 @@ def _cert_fr_from_payload(fr_payload: dict, kind: str) -> str:
     return ""
 
 
+def _row_cert(source) -> str:
+    """V197 — certification d'un row/tuile, où qu'elle vive (niveau 1
+    ou dans ["item"]) : les rows du scoring, de la lecture en cours, du
+    fantôme… ne portent pas toujours les champs au même endroit."""
+    if not isinstance(source, dict):
+        return ""
+    cert = str(source.get("certification") or "").strip()
+    if not cert and isinstance(source.get("item"), dict):
+        cert = str(source["item"].get("certification") or "").strip()
+    return cert
+
+
+def _age_chip_html(source) -> str:
+    """V197 — mini-pastille « 🧒 10+ » pour les TUILES (demande : « la
+    même pastille dans toutes les tuiles : Que regarder, En cours,
+    Fantôme, partout »). Même code couleur que les pastilles standard
+    (mc-year). Vide si la certification est inconnue."""
+    cert = _row_cert(source)
+    age = _cert_age(cert)
+    if age is None:
+        return ""
+    lbl = "TP" if age == 0 else f"{age}+"
+    tip = f"Classification : {cert}" if cert else "Âge conseillé (classification inconnue)"
+    return (
+        f'<span class="mc-year" data-tooltip="{escape(tip, quote=True)}">'
+        f'{"🧒" if age <= 12 else "🔞"} {lbl}</span>'
+    )
+
+
 def _render_cinema_detail_body(row: dict) -> None:
     """Fiche cinéma — V133 : TOUT en un seul bloc HTML, 100% OPAQUE.
 
@@ -6243,7 +6283,7 @@ def _render_cinema_detail_body(row: dict) -> None:
         _cert_lbl_v196 = "Tous publics" if _cert_age_v196 == 0 else f"Dès {_cert_age_v196} ans"
         _cert_ico_v196 = "🧒" if _cert_age_v196 <= 12 else "🔞"
         meta_bits.append(
-            f'<span class="mc-chip" data-tooltip="Classification officielle : '
+            f'<span class="mc-year" data-tooltip="Classification officielle : '
             f'{escape(_cert_raw_v196 or "tous publics")}">{_cert_ico_v196} {_cert_lbl_v196}</span>'
         )
     if row.get("note") is not None:
@@ -6893,6 +6933,28 @@ def _render_cinema_detail_body(row: dict) -> None:
             f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
             accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
         )
+        # V197 — 🧒 PUBLIC CONSEILLÉ, JUSTE SOUS LES COULISSES (retour :
+        # « déplace ce bloc plus en haut, juste en dessous de l'info des
+        # coulisses ») — MÊME ESPRIT reste le bloc de FIN (aucune
+        # régression sur l'ordre construit en V194). Le hint porte la
+        # classification officielle (l'IA la nuance) et les genres.
+        try:
+            _genres_txt_v197 = ", ".join(str(g) for g in (row.get("genres") or [])[:4])
+            _cert_raw_hint_v197 = _cert_fr_from_payload(
+                fr_payload, "movie" if row.get("type") != "Série" else "tv"
+            ) or _row_cert(row)
+            _hint_v197 = (
+                (f"genres : {_genres_txt_v197}" if _genres_txt_v197 else "")
+                + (f" ; classification officielle : {_cert_raw_hint_v197}" if _cert_raw_hint_v197 else "")
+            ).strip(" ;")
+            _render_ia_age(
+                f"{'tv' if row.get('type') == 'Série' else 'movie'}_{tmdb_id}",
+                f"{media_word} « {raw_title} »" + (f" ({_media_year(item)})" if _media_year(item) else ""),
+                hint=_hint_v197,
+                accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
+            )
+        except Exception:
+            pass
         # V172 — 🕰️ POURQUOI ÇA COMPTE : héritage culturel sans spoiler,
         # même précalcul que les coulisses ; rien ne s'affiche si l'IA
         # n'a rien de notable à raconter.
@@ -6930,28 +6992,6 @@ def _render_cinema_detail_body(row: dict) -> None:
             )
         except Exception:
             pass
-
-        # V196 — 🧒 PUBLIC CONSEILLÉ : à partir de quel âge, et pourquoi
-        # (grossièretés, nudité, thèmes psychologiques…). Le hint porte
-        # la classification officielle quand elle existe (l'IA la nuance),
-        # et les genres pour l'estimation sinon.
-        try:
-            _genres_txt_v196 = ", ".join(str(g) for g in (row.get("genres") or [])[:4])
-            _cert_raw_hint_v196 = _cert_fr_from_payload(
-                fr_payload, "movie" if row.get("type") != "Série" else "tv"
-            ) or str(row.get("certification") or "").strip()
-            _hint_v196 = (
-                (f"genres : {_genres_txt_v196}" if _genres_txt_v196 else "")
-                + (f" ; classification officielle : {_cert_raw_hint_v196}" if _cert_raw_hint_v196 else "")
-            ).strip(" ;")
-            _render_ia_age(
-                _ia_state, _ia_subject,
-                hint=_hint_v196,
-                accent=_ia_accent, accent_soft=_ia_soft, accent_text=_ia_text,
-            )
-        except Exception:
-            pass
-
 
 def _msl_history_span(days: int) -> str:
     """« 1 an 11 mois 15 jours » / « 16 mois » / « 9 jours » — durée LISIBLE
@@ -8302,6 +8342,10 @@ def _render_recommendation_card(row: dict, highlighted: bool = False, key_prefix
         metadata.append('<span class="mc-chip chip-vu" data-tooltip="Contenu déjà vu — proposé car il correspond à ta recherche">✅ Vu</span>')
     else:
         metadata.append('<span class="mc-outside" data-tooltip="Découverte TMDB — pas dans tes listes">🌐 Hors de tes listes</span>')
+    # V197 — PASTILLE ÂGE dans la tuile (même code couleur mc-year).
+    _age_chip_v197 = _age_chip_html(row)
+    if _age_chip_v197:
+        metadata.append(_age_chip_v197)
 
     signals = row.get("signals") or []
     if signals:
@@ -11097,7 +11141,7 @@ def render_watchlist_page() -> None:
         # V196 — FILTRE PUBLIC : certification convertie en âge ≤ seuil.
         if public_filter != "Tous":
             _seuil_v196 = {"Enfants (≤ 10 ans)": 10, "Ados (≤ 12 ans)": 12, "≤ 16 ans": 16}[public_filter]
-            _row_age_v196 = _cert_age(row.get("certification"))
+            _row_age_v196 = _cert_age(_row_cert(row))
             if _row_age_v196 is None or _row_age_v196 > _seuil_v196:
                 continue
         if not preset_matches(preset, row, profile):
@@ -12020,22 +12064,25 @@ def _render_ia_age(state_key: str, subject: str, hint: str = "",
     raisons = [str(r).strip() for r in (shown.get("raisons") or []) if str(r).strip()][:4]
     avis = str(shown.get("avis") or "").strip()
     st.markdown(_ia_coulisses_css(accent, accent_soft, accent_text), unsafe_allow_html=True)
+    spark = _ia_spark_svg(16, accent, "#FFFFFF")
     raison_html = "".join(f"<li>{escape(r)}</li>" for r in raisons)
     raisons_bloc = (
-        f'<div class="col pros"><b>⚠️ À SAVOIR</b><ul>{raison_html}</ul></div>' if raison_html else ""
+        f'<div class="col pros"><b>⚠️ À SAVOIR AVANT DE REGARDER EN FAMILLE</b><ul>{raison_html}</ul></div>'
+        if raison_html else ""
     )
-    label = "Tous publics" if age == 0 else f"{age} ans et +"
+    label = "tous publics" if age == 0 else f"{age} ans et +"
+    head_html = (
+        f'<div class="ia-head">{spark}<div>'
+        '<div class="ia-title">PUBLIC CONSEILLÉ</div>'
+        f'<div class="ia-sub">à partir de {label} · estimation IA · sans spoiler</div>'
+        "</div></div>"
+    )
     st.markdown(
-        f'<div class="ia-block">'
-        f'<div class="ia-head">🧒<div><div class="ia-title">PUBLIC CONSEILLÉ</div>'
-        f'<div class="ia-sub">à partir de {label}</div></div></div>'
-        f'<div style="display:flex;gap:.9rem;align-items:center;margin:.4rem 0 .2rem;">'
-        f'<div style="font-size:2rem;font-weight:900;color:{accent};min-width:3.2rem;'
-        f'text-align:center;">{age if age else "TP"}</div>'
-        f'<div style="font-size:.85rem;color:{accent_text};line-height:1.45;">'
-        f'{escape(avis)}</div></div>'
-        f"{raisons_bloc}"
-        f'</div>',
+        '<div class="ia-block">'
+        + head_html
+        + f'<div class="ia-text"><strong>🧒 {"Tous publics" if age == 0 else f"Dès {age} ans"}</strong> — {escape(avis)}</div>'
+        + f'<div class="ia-pc">{raisons_bloc}</div>'
+        + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -12289,6 +12336,7 @@ def _alike_tile_html(pick: dict, accent: str, accent_text: str,
         )
     head = (
         f'<div class="mc-head">{_type_chip("Série" if lk_kind == "tv" else "Film")}'
+        f"{_age_chip_html(lk)}"
         f"<strong>{title}</strong>"
         f'<span style="display:inline-flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">'
         f"{lead_pill}{note_pill}{year_pill}</span></div>"
@@ -13496,6 +13544,7 @@ def _render_live_now_playing_rows(rows: list[dict], fetched_at: float, note: str
         head = (
             f'<div class="mc-head">'
             f'{_type_chip(str(row.get("type") or ""))}'
+            f'{_age_chip_html(row)}'
             f'<strong>{title}{year}</strong>'
             f'{pct_inline}'
             f'<span class="source-badge">EN COURS MAINTENANT</span>'
@@ -13723,6 +13772,7 @@ def render_ghost_page() -> None:
         head = (
             f'<div class="mc-head">'
             f'{_type_chip(str(row.get("type") or ""))}'
+            f'{_age_chip_html(row)}'
             f'<strong>{title}{year}</strong>'
             f'{_public_note_html(row)}'
             f'</div>'
@@ -14815,6 +14865,7 @@ def _render_calendar_body(rows: list[dict], checked_caption: str,
                 head = (
                     f'<div class="mc-head">'
                     f'{_type_chip(str(row.get("type") or ""))}'
+                    f'{_age_chip_html(row)}'
                     f'<strong>{title}{year}</strong>'
                     f'{_public_note_html(row)}'
                     f'</div>'
