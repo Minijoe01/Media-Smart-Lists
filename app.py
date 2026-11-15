@@ -102,7 +102,10 @@ APP_VERSION = "0.15.0-alpha"
 # ne coûte AUCUN appel réseau : il ne refait que l'extraction locale.
 # Historique : v1 = jusqu'à V148 (cast cap order≥20, directors parfois absents
 # des vieux enrichissements → « 0 vu » pour Martin Scorsese dans les stats).
-ENRICH_VERSION = 3
+# V200 — 4 : certifications relues avec la classification US en plus
+# de la FR (le payload TMDB est déjà en cache 30 j → aucun nouvel
+# appel réseau, juste un recalcul une fois au prochain chargement).
+ENRICH_VERSION = 4
 # Année courante (Paris) : borne haute ADAPTATIVE du slider d'époque — les
 # sorties de l'année en cours (2026…) ne sont plus masquées.
 _CURRENT_YEAR = datetime.now(ZoneInfo("Europe/Paris")).year
@@ -4325,15 +4328,25 @@ def _enrich_tmdb_metadata(data: dict, progress: dict | None = None) -> None:
                 # MDBList (souvent US), LA PLUS PROTECTRICE l'emporte
                 # (Rocky : FR TP vs US PG → PG, 10 ans).
                 try:
-                    _fr_v199 = _cert_fr_from_payload(payload, k)
-                    _mdb_v199 = str(m.get("certification") or "").strip()
-                    if _fr_v199 or _mdb_v199:
-                        _a_fr_v199 = _cert_age(_fr_v199)
-                        _a_mdb_v199 = _cert_age(_mdb_v199)
-                        if _a_fr_v199 is not None and (_a_mdb_v199 is None or _a_fr_v199 >= _a_mdb_v199):
-                            m["certification"] = _fr_v199
-                        elif _mdb_v199:
-                            m["certification"] = _mdb_v199  # plus protectrice : gardée
+                    _fr_v200 = _cert_fr_from_payload(payload, k)
+                    # V200 — la classification US du MÊME payload entre
+                    # dans le calcul : la plus protectrice des TROIS
+                    # sources est stockée (Rocky : TP + PG → « PG », 10).
+                    # NB : comparaison SANS l'astuce « or -1 » — un âge 0
+                    # (TP) est faussement « falsy » en Python et serait
+                    # écrasé par une source vide.
+                    _us_v200 = _cert_us_from_payload(payload, k)
+                    _mdb_v200 = str(m.get("certification") or "").strip()
+                    _age_v200 = _cert_age_max(_fr_v200, _us_v200, _mdb_v200)
+                    if _age_v200 is not None:
+                        _a_fr_v200 = _cert_age(_fr_v200)
+                        _a_us_v200 = _cert_age(_us_v200)
+                        if _a_fr_v200 is not None and _a_fr_v200 == _age_v200:
+                            m["certification"] = _fr_v200
+                        elif _a_us_v200 is not None and _a_us_v200 == _age_v200:
+                            m["certification"] = _us_v200
+                        else:
+                            m["certification"] = _mdb_v200
                 except Exception:
                     pass
             # MOTS-CLÉS TMDB (sport, superhero, biography…) : stockés sur le
@@ -5935,6 +5948,33 @@ def _cert_fr_from_payload(fr_payload: dict, kind: str) -> str:
     return ""
 
 
+def _cert_us_from_payload(fr_payload: dict, kind: str) -> str:
+    """V200 — certification US depuis le MÊME payload TMDB (movie →
+    release_dates ISO US ; tv → content_ratings ISO US). LA SOURCE QUI
+    MANQUAIT (retour V199 : « Rocky : tous publics alors que l'IA
+    recommande 10 ans — tu as appelé tous les PEGI possibles ? ») :
+    l'appel la ramenait déjà depuis V197, mais seule la FR était lue —
+    et la ligne MDBList est vide pour Rocky. Rocky : FR « TP » mais
+    US « PG » → la plus protectrice = 10 ans."""
+    try:
+        if kind == "movie":
+            for res in (fr_payload.get("release_dates") or {}).get("results") or []:
+                if str(res.get("iso_3166_1") or "").upper() == "US":
+                    for rd in res.get("release_dates") or []:
+                        c = str(rd.get("certification") or "").strip()
+                        if c:
+                            return c
+        else:
+            for res in (fr_payload.get("content_ratings") or {}).get("results") or []:
+                if str(res.get("iso_3166_1") or "").upper() == "US":
+                    c = str(res.get("rating") or "").strip()
+                    if c:
+                        return c
+    except Exception:
+        pass
+    return ""
+
+
 def _cert_age_max(*certs) -> int | None:
     """V199 — FIABILISATION (retour : « Rocky : tous publics alors que
     l'IA recommande 10 ans — tu as moyen de fiabiliser l'info du
@@ -6306,26 +6346,38 @@ def _render_cinema_detail_body(row: dict) -> None:
         except (TypeError, ValueError):
             pass
     # V196 — PASTILLE ÂGE CONSEILLÉ (demande : « des infos comme "à
-    # partir de quel âge" ») : certification FR (TMDB) en priorité,
-    # sinon celle de MDBList (souvent US). Affichée dès qu'elle est
-    # connue ; info-bulle = la classification brute.
-    _cert_fr_v199 = _cert_fr_from_payload(
-        fr_payload, "movie" if row.get("type") != "Série" else "tv"
-    )
+    # partir de quel âge" ») : la classification LA PLUS PROTECTRICE
+    # des sources disponibles est affichée ; info-bulle = les sources.
+    _cert_kind_v200 = "movie" if row.get("type") != "Série" else "tv"
+    _cert_fr_v199 = _cert_fr_from_payload(fr_payload, _cert_kind_v200)
+    # V200 — LA SOURCE QUI MANQUAIT (retour : « je ne vois pas de
+    # différence, tu es certain que tu as appelé tous les PEGI
+    # possibles ? ») : la classification US est dans le MÊME payload
+    # TMDB mais n'était pas lue — et la ligne MDBList est vide pour
+    # Rocky. On lit désormais FR + US + MDBList et LA PLUS PROTECTRICE
+    # l'emporte (Rocky : TP + PG → 10 ans, cohérent avec l'IA).
+    _cert_us_v200 = _cert_us_from_payload(fr_payload, _cert_kind_v200)
     _cert_mdb_v199 = str(row.get("certification") or "").strip()
-    # V199 — FIABILISATION : la plus protectrice des deux sources
-    # (Rocky : FR « Tous publics » vs MDBList « PG » → 10 ans).
-    _cert_age_v196 = _cert_age_max(_cert_fr_v199, _cert_mdb_v199)
-    _cert_raw_v196 = (
-        _cert_fr_v199 if (_cert_age(_cert_fr_v199) or -1) == (_cert_age_v196 or -1) and _cert_fr_v199
-        else (_cert_mdb_v199 if (_cert_age(_cert_mdb_v199) or -1) == (_cert_age_v196 or -1) else (_cert_fr_v199 or _cert_mdb_v199))
-    )
+    _cert_age_v196 = _cert_age_max(_cert_fr_v199, _cert_us_v200, _cert_mdb_v199)
+    # Sources connues, dédoublonnées, pour l'info-bulle (transparence).
+    _cert_srcs_v200 = []
+    if _cert_fr_v199:
+        _cert_srcs_v200.append(f"{_cert_fr_v199} (FR)")
+    if _cert_us_v200 and _cert_us_v200.casefold() != _cert_fr_v199.casefold():
+        _cert_srcs_v200.append(f"{_cert_us_v200} (US)")
+    if _cert_mdb_v199 and _cert_mdb_v199.casefold() not in (
+        _cert_fr_v199.casefold(), _cert_us_v200.casefold()
+    ):
+        _cert_srcs_v200.append(str(_cert_mdb_v199))
     if _cert_age_v196 is not None:
         _cert_lbl_v196 = "Tous publics" if _cert_age_v196 == 0 else f"Dès {_cert_age_v196} ans"
         _cert_ico_v196 = "🧒" if _cert_age_v196 <= 12 else "🔞"
+        _cert_tip_v200 = " · ".join(_cert_srcs_v200) or "tous publics"
+        if len(_cert_srcs_v200) > 1:
+            _cert_tip_v200 += " → la plus protectrice"
         meta_bits.append(
             f'<span class="mc-year" data-tooltip="Classification officielle : '
-            f'{escape(_cert_raw_v196 or "tous publics")}">{_cert_ico_v196} {_cert_lbl_v196}</span>'
+            f'{escape(_cert_tip_v200)}">{_cert_ico_v196} {_cert_lbl_v196}</span>'
         )
     if row.get("note") is not None:
         meta_bits.append(f'<span class="mc-note">⭐ {row["note"]:.1f}</span>')
@@ -6981,15 +7033,22 @@ def _render_cinema_detail_body(row: dict) -> None:
         # classification officielle (l'IA la nuance) et les genres.
         try:
             _genres_txt_v197 = ", ".join(str(g) for g in (row.get("genres") or [])[:4])
-            _cert_fr_hint_v199 = _cert_fr_from_payload(
-                fr_payload, "movie" if row.get("type") != "Série" else "tv"
-            )
+            _cert_kind_hint_v200 = "movie" if row.get("type") != "Série" else "tv"
+            _cert_fr_hint_v199 = _cert_fr_from_payload(fr_payload, _cert_kind_hint_v200)
+            # V200 — l'IA reçoit AUSSI la classification US (la source
+            # qui manquait) : elle nuance la plus protectrice des trois.
+            _cert_us_hint_v200 = _cert_us_from_payload(fr_payload, _cert_kind_hint_v200)
             _cert_mdb_hint_v199 = _row_cert(row)
-            _cert_officiel_v199 = ""
-            if _cert_fr_hint_v199 and _cert_mdb_hint_v199 and _cert_fr_hint_v199 != _cert_mdb_hint_v199:
-                _cert_officiel_v199 = f"{_cert_fr_hint_v199} (FR) / {_cert_mdb_hint_v199}"
-            else:
-                _cert_officiel_v199 = _cert_fr_hint_v199 or _cert_mdb_hint_v199
+            _cert_parts_hint_v200 = []
+            if _cert_fr_hint_v199:
+                _cert_parts_hint_v200.append(f"{_cert_fr_hint_v199} (FR)")
+            if _cert_us_hint_v200 and _cert_us_hint_v200.casefold() != _cert_fr_hint_v199.casefold():
+                _cert_parts_hint_v200.append(f"{_cert_us_hint_v200} (US)")
+            if _cert_mdb_hint_v199 and _cert_mdb_hint_v199.casefold() not in (
+                _cert_fr_hint_v199.casefold(), _cert_us_hint_v200.casefold()
+            ):
+                _cert_parts_hint_v200.append(str(_cert_mdb_hint_v199))
+            _cert_officiel_v199 = " / ".join(_cert_parts_hint_v200)
             _cert_raw_hint_v197 = _cert_officiel_v199
             _hint_v197 = (
                 (f"genres : {_genres_txt_v197}" if _genres_txt_v197 else "")
